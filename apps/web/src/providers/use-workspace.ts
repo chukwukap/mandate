@@ -87,10 +87,16 @@ export function useWorkspace() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  const price = (symbol: string) =>
-    preview
-      ? demoPrices[symbol]
-      : market?.feeds.find((feed) => feed.uri === `oracle:${symbol}` && !feed.stale)?.value;
+  // The live reference wherever it is available, in preview as well — the demo simulates
+  // positions, not the market. The fixture is the fallback for the first paint and for when the
+  // endpoint cannot be reached, and only in preview: an empty price in the signed-in workspace
+  // must stay empty rather than quietly showing a number from a file.
+  const price = (symbol: string) => {
+    const live = market?.feeds.find(
+      (feed) => feed.uri === `oracle:${symbol}` && !feed.stale,
+    )?.value;
+    return live ?? (preview ? demoPrices[symbol] : undefined);
+  };
   const company = companies[selected];
   const visibleStocks = stocks
     .filter(

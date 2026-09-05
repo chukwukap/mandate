@@ -235,7 +235,13 @@ export type InjectOptions = {
   url: string;
   token?: string | undefined;
   wallet?: string | undefined;
-  payload?: unknown;
+  /**
+   * A JSON body, or a raw string when the point of the test is a malformed one.
+   *
+   * Not `unknown`: fastify's `inject` takes `string | object | Buffer | ReadableStream`, and
+   * widening it here would make every call site compile against an overload that does not exist.
+   */
+  payload?: string | object | undefined;
   headers?: Record<string, string>;
   /** Overrides the rotating source address. Use `TRUSTED_PROXY_IP` to assert a jurisdiction. */
   remoteAddress?: string;
