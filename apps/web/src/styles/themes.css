@@ -1,0 +1,76 @@
+/*
+ * Desk palette.
+ *
+ * ThemeProvider stamps `data-theme="light" | "dark"` on <html> after mount, so the tokens
+ * are defined three times over: on bare :root for the first paint before that runs, under
+ * prefers-color-scheme for a device default, and under each explicit stamp so a chosen
+ * theme beats the device in both directions. A token defined only inside one of those
+ * blocks renders one theme's text on the other theme's ground.
+ *
+ * The neutrals carry a slight cool bias rather than being pure grey — a desk that reads as
+ * chosen instead of defaulted. Gain and loss are deliberately not the accent: they carry
+ * meaning, and a palette that spends the same hue on decoration makes a position's
+ * direction harder to read at a glance, which is the one thing this screen must never do.
+ */
+
+:root {
+  --desk-bg: #f2f4f6;
+  --desk-surface: #ffffff;
+  --desk-soft: #eaedf1;
+  --desk-hover: #e2e6ec;
+  --desk-line: #d6dbe2;
+  --desk-ink: #171a1f;
+  --desk-muted: #5c6472;
+  --desk-chart-grid: #dfe4ea;
+
+  /* Darkened from the usual screen green/red so both pass contrast on a light ground. */
+  --desk-green: #14794f;
+  --desk-green-soft: #dff2e8;
+  --desk-red: #b3382f;
+
+  --desk-shadow: 0 1px 2px rgb(16 20 28 / 6%), 0 8px 24px -14px rgb(16 20 28 / 22%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --desk-bg: #101318;
+    --desk-surface: #171b21;
+    --desk-soft: #1d222a;
+    --desk-hover: #242a34;
+    --desk-line: #2a313b;
+    --desk-ink: #e6e9ee;
+    --desk-muted: #949dab;
+    --desk-chart-grid: #262d37;
+
+    /* Lifted, not inverted: the light-theme green is unreadable on this ground. */
+    --desk-green: #4ec98d;
+    --desk-green-soft: #102b20;
+    --desk-red: #f0796b;
+
+    --desk-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 28px -16px rgb(0 0 0 / 70%);
+  }
+}
+
+:root[data-theme="dark"] {
+  --desk-bg: #101318;
+  --desk-surface: #171b21;
+  --desk-soft: #1d222a;
+  --desk-hover: #242a34;
+  --desk-line: #2a313b;
+  --desk-ink: #e6e9ee;
+  --desk-muted: #949dab;
+  --desk-chart-grid: #262d37;
+
+  --desk-green: #4ec98d;
+  --desk-green-soft: #102b20;
+  --desk-red: #f0796b;
+
+  --desk-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 28px -16px rgb(0 0 0 / 70%);
+}
+
+/* The viewer's chrome paints behind the page, so the ground is set explicitly. */
+html,
+body {
+  background: var(--desk-bg);
+  color: var(--desk-ink);
+}
