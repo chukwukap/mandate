@@ -39,6 +39,26 @@ const accountAbi = parseAbi(["function isOwnerAddress(address owner) view return
 const quoterAbi = parseAbi([
   "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,int24 tickSpacing,uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut,uint160 sqrtPriceX96After,uint32 initializedTicksCrossed,uint256 gasEstimate)",
 ]);
+/** USDC precision. Published prices are quoted in it, so they are rounded to it. */
+const USDC_DECIMALS = 6;
+
+/**
+ * How old a Chainlink answer may be before the reference is called stale.
+ *
+ * These are Coinbase total-return equity feeds, and Chainlink documents that they have NO
+ * heartbeat during off-hours and simply hold the last close while the underlying market is shut.
+ * Measured on a weekday evening, the AAPL feed's answer was already 15.07h old with nothing wrong.
+ *
+ * So this bound cannot be read as "the feed is broken". It is the point past which the reference
+ * is too old to price against, and a normal weekend — Friday close to Monday open is roughly 64h —
+ * exceeds any value tuned to a weeknight. 26h therefore marks every asset stale for the whole
+ * weekend, which is a deliberate refusal to trade against a two-day-old reference on a token that
+ * itself trades 24/7, NOT a malfunction to be widened away.
+ *
+ * Widening it is a product decision with real risk attached: the pool price moves over a weekend
+ * while the reference does not, so a wider bound silently authorises trading against a number that
+ * no longer describes the asset. Left narrow on purpose, and named so the choice is visible.
+ */
 const MAX_REFERENCE_AGE = 26 * 3600;
 export class BaseReader implements ChainReader {
   private networkCheckedAt = 0;
@@ -56,7 +76,7 @@ export class BaseReader implements ChainReader {
           timeout: 5000,
           retryCount: 1,
           retryDelay: 1000,
-          batch: { wait: 30, batchSize: 5 },
+          batch: { wait: 30, batchSize: 20 },
           fetchFn: pacedFetch(),
         }),
       }),
@@ -266,9 +286,26 @@ export class BaseReader implements ChainReader {
     } catch {
       return this.assets.flatMap((asset) => this.unavailable(asset));
     }
-    // Bound RPC bursts on the public endpoint. Concurrent HTTP callers share this refresh.
+    // Bound RPC bursts on the public endpoint — but bound them, do not serialise them.
+    //
+    // Measured against a public Base endpoint, a single eth_call round trip is ~0.85s, and each
+    // asset costs two of them (the reference read, then the routed quote). Walking the catalogue
+    // one asset at a time therefore grows linearly and crossed the 10s snapshot deadline at four
+    // assets, which surfaced as every asset after the first reporting "chain-unavailable" — a
+    // caller cannot tell that from the chain actually being down.
+    //
+    // A small window keeps the burst polite while making the wall clock depend on the catalogue's
+    // size only in steps. Four is chosen to match the free-tier concurrency these endpoints
+    // tolerate without shedding; raising it trades reliability for latency, so it is a constant
+    // with a reason rather than a knob.
+    const WINDOW = 4;
     const values: MarketFeed[][] = [];
-    for (const asset of this.assets) values.push(await this.assetMarket(asset));
+    for (let i = 0; i < this.assets.length; i += WINDOW) {
+      const window = this.assets.slice(i, i + WINDOW);
+      // assetMarket never rejects — it degrades each asset to "unavailable" — so allSettled would
+      // add nothing here beyond hiding a future refactor that starts throwing.
+      values.push(...(await Promise.all(window.map((asset) => this.assetMarket(asset)))));
+    }
     return values.flat();
   }
   private async assetMarket(asset: Asset): Promise<MarketFeed[]> {
@@ -278,8 +315,15 @@ export class BaseReader implements ChainReader {
         return [reference, this.unavailableFeed(asset, "dex")];
       try {
         const quote = await this.route(asset, "buy", "10", 50, reference.value);
+        // Quantised to the quote token's precision. `Money` carries 78 significant digits so
+        // intermediate arithmetic never rounds, but a *published* price must not: an unrounded
+        // division emits values like 321.327468035950117123, which is not a USDC price, breaks
+        // any consumer parsing it as a decimal, and implies precision the pool cannot settle at.
+        // ROUND_DOWN is inherited from Money, so this never rounds a price up into a band it did
+        // not actually reach.
         const price = new Money(10)
           .div(formatUnits(BigInt(quote.amount_out), asset.decimals))
+          .toDecimalPlaces(USDC_DECIMALS, Decimal.ROUND_DOWN)
           .toFixed();
         return [
           reference,
