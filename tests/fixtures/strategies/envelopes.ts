@@ -49,9 +49,7 @@ export function caps(overrides: Partial<Record<keyof Caps, unknown>> = {}): Caps
   });
 }
 
-export function envelope(
-  overrides: { caps?: Caps; assets?: readonly WireAsset[] } = {},
-): Envelope {
+export function envelope(overrides: { caps?: Caps; assets?: readonly WireAsset[] } = {}): Envelope {
   return {
     version: "mandate/2",
     caps: overrides.caps ?? caps(),

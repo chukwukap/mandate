@@ -110,10 +110,9 @@ export class SpenderKey {
     } catch (error) {
       // The scrubbed error is attached as the cause so an operator still sees WHICH library
       // rejected the key, with the value taken out of it.
-      throw Object.assign(
-        unusable("The spender key could not be converted into an address."),
-        { cause: guard.error(error) },
-      );
+      throw Object.assign(unusable("The spender key could not be converted into an address."), {
+        cause: guard.error(error),
+      });
     }
     if (!/^0x[0-9a-fA-F]{40}$/.test(address))
       throw unusable("The spender key derived something that is not an address.");

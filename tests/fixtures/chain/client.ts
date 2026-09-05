@@ -1,5 +1,6 @@
 import {
   type Asset,
+  type ChainReader,
   type Hex,
   type Identity,
   type MarketFeed,
@@ -8,7 +9,6 @@ import {
   Problem,
   type Quote,
 } from "../../../packages/contracts/src/index.js";
-import type { ChainReader } from "../../../packages/contracts/src/index.js";
 import { assessRound } from "../../../packages/evm/src/feeds/staleness.js";
 import { permissionHash } from "../../../packages/evm/src/permissions/index.js";
 import { minOut, selectRoute } from "../../../packages/evm/src/venues/sanity.js";
@@ -21,8 +21,8 @@ import {
   USDC,
   USDC_DECIMALS,
 } from "./catalogue.js";
-import { CLOCKS, marketRounds, type RecordedRound } from "./feeds.js";
 import { type BalanceSheet, balanceOf, DEFAULT_BALANCES, tokenOf } from "./erc20.js";
+import { CLOCKS, marketRounds, type RecordedRound } from "./feeds.js";
 import { probesFor, splitProbes } from "./quotes.js";
 import { RECEIPTS, type ReceiptFixture } from "./receipts.js";
 
@@ -215,7 +215,9 @@ export class FakeChainClient implements ChainReader {
   async verifyPermission(payload: PermissionPayload, signature: Hex): Promise<boolean> {
     this.calls.verifyPermission += 1;
     const state = this.permissions.get(permissionHash(payload).toLowerCase());
-    return state?.signature !== undefined && state.signature.toLowerCase() === signature.toLowerCase();
+    return (
+      state?.signature !== undefined && state.signature.toLowerCase() === signature.toLowerCase()
+    );
   }
 
   async walletKind(address: Hex): Promise<Identity["walletKind"]> {
@@ -236,7 +238,9 @@ export class FakeChainClient implements ChainReader {
    * undefined rather than propagating, because that is what an unreadable feed is: an absent
    * observation, not a crash in the caller.
    */
-  private reference(asset: Asset): { value: string; updatedAt: number; stale: boolean } | undefined {
+  private reference(
+    asset: Asset,
+  ): { value: string; updatedAt: number; stale: boolean } | undefined {
     if (this.faults.network) return undefined;
     if (this.faults.feeds?.includes(asset.symbol)) return undefined;
     const round = this.rounds.get(asset.feed.toLowerCase());

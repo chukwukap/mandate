@@ -1,4 +1,5 @@
 import { Problem } from "../../packages/contracts/src/index.js";
+import { BASE_CAIP2 } from "./catalogue.js";
 import type { SqlClient } from "./sql.js";
 import { makeSessionReadOnly } from "./sql.js";
 import type { LegacyEnvelope, LegacyStrategy } from "./translate.js";
@@ -90,6 +91,7 @@ export async function openLegacySource(
     );
   await makeSessionReadOnly(client);
   await client.query(`set search_path to ${schema}`);
+  await requireCrossTenantRead(client);
   return {
     users: () => readUsers(client),
     strategies: () => readStrategies(client),
@@ -98,6 +100,49 @@ export async function openLegacySource(
   };
 }
 
+/**
+ * Refuse a connection that cannot see other tenants' rows.
+ *
+ * THE most dangerous failure this tool can have, because it does not look like a failure.
+ * Every legacy table that matters — `wallet`, `strategy`, `strategy_version`, `envelope`,
+ * `allowlist_entry`, `spend_permission`, `instance`, `submission`, `fill` — carries
+ * `FORCE ROW LEVEL SECURITY` with `USING (user_id = current_setting('app.user_id', true)::uuid)`.
+ * `current_setting(..., true)` is NULL when unset and `user_id = NULL` is NULL, so a session
+ * that never adopts a tenant sees ZERO rows. Not an error. Not a permission denied. Zero rows,
+ * from every table, forever.
+ *
+ * A migration run on such a connection reports "0 users, 0 strategies, nothing to do" and an
+ * operator concludes the legacy database was already drained. FORCE means even the schema
+ * owner is bound, so "connect as the owner" does not save you; only a `BYPASSRLS` role
+ * (`mandate_work`) or a superuser can read across tenants, which is exactly and only what this
+ * tool is for.
+ *
+ * Checking `pg_roles` rather than probing a table for rows: an empty table would be
+ * indistinguishable from an invisible one, and that ambiguity is the whole problem.
+ */
+async function requireCrossTenantRead(client: SqlClient): Promise<void> {
+  const { rows } = await client.query<{ allowed: boolean }>(
+    "select rolsuper or rolbypassrls as allowed from pg_roles where rolname = current_user",
+  );
+  if (rows[0]?.allowed !== true)
+    throw new Problem(
+      403,
+      "legacy-read-blocked",
+      "Legacy connection cannot read every tenant",
+      "The legacy tables force row-level security, so this role would silently read zero rows instead of failing. Connect as the BYPASSRLS worker role (mandate_work) or a superuser to migrate.",
+    );
+}
+
+/**
+ * Every user with their Base wallets.
+ *
+ * The join drops any wallet whose address is not 20 bytes. `wallet.address` is
+ * `CHECK (octet_length(address) IN (20,32))` because the legacy deployment also held Solana
+ * keys, which are 32. Decoding one as an EVM address is not a thing `values.address` will do
+ * — correctly — and without this predicate a single Solana wallet anywhere in the table would
+ * abort the entire read for every user. Dropping them changes no outcome: `resolveIdentity`
+ * only ever looks at `eip155:8453` wallets.
+ */
 async function readUsers(client: SqlClient): Promise<readonly LegacyUser[]> {
   const { rows } = await client.query<{
     id: string;
@@ -114,7 +159,7 @@ async function readUsers(client: SqlClient): Promise<readonly LegacyUser[]> {
                               order by w.created_at)
                      filter (where w.id is not null), '[]'::json) as wallets
        from app_user u
-       left join wallet w on w.user_id = u.id
+       left join wallet w on w.user_id = u.id and octet_length(w.address) = 20
       group by u.id
       order by u.created_at`,
   );
@@ -266,10 +311,11 @@ async function readAllowlists(
     envelope_id: string;
     kind: string;
     idx: unknown;
+    chain_id: string;
     value: string;
     decimals: unknown;
   }>(
-    `select envelope_id, kind, idx, value, decimals
+    `select envelope_id, kind, idx, chain_id, value, decimals
        from allowlist_entry
       where envelope_id = any($1::uuid[])
       order by envelope_id, kind, idx`,
@@ -277,6 +323,18 @@ async function readAllowlists(
   );
   for (const row of rows) {
     const lists = out.get(row.envelope_id) ?? { venues: [], assets: [] };
+    // `allowlist_entry` is namespaced per chain and the legacy deployment had a Solana crate.
+    // An entry for another chain is not a naming difference this tool may paper over: the
+    // plan would keep its position but point at a token that does not exist on Base, and
+    // `resolveAsset` would refuse it with "not in catalogue", which reads like a delisting
+    // rather than the chain mix-up it is. Refuse here, where the reason is still visible.
+    if (row.chain_id !== BASE_CAIP2)
+      throw new Problem(
+        422,
+        "migration-value",
+        "Allowlist entry on another chain",
+        `Envelope ${row.envelope_id} allowlists ${row.kind} "${row.value}" on ${row.chain_id}; this deployment only trades ${BASE_CAIP2}.`,
+      );
     if (row.kind === "venue") lists.venues.push(text(row.value, "allowlist_entry.value"));
     else if (row.kind === "asset")
       lists.assets.push({

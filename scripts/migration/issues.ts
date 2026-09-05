@@ -18,6 +18,7 @@ export type IssueCode =
   | "identity.did-conflict"
   | "identity.account-missing"
   | "identity.account-ambiguous"
+  | "identity.not-active"
   // The signed envelope.
   | "envelope.quote-not-usdc"
   | "envelope.quote-scale"
@@ -73,6 +74,32 @@ export type Substitution = {
   readonly to: string;
   readonly reason: string;
 };
+
+/**
+ * Something the operator must know about a row that WAS carried across.
+ *
+ * Separate from `Issue` because the two drive different actions. An issue is work to do
+ * before the migration is complete; a note is a fact about the result — a user who cannot
+ * arm from their jurisdiction today, a draft a previous run already imported, an onchain
+ * authority still pointing at a spender this deployment does not operate. Folding them into
+ * one list would let a page of harmless notes bury a refusal, which is how the refusals stop
+ * being read.
+ */
+export type NoteCode =
+  | "jurisdiction.ineligible"
+  | "draft.already-present"
+  | "permission.live"
+  | "identity.reused";
+
+export type Note = {
+  readonly code: NoteCode;
+  readonly subject: string;
+  readonly detail: string;
+};
+
+export function note(code: NoteCode, subject: string, detail: string): Note {
+  return { code, subject, detail };
+}
 
 /** Thrown by the pure translation functions. Carries the issue so callers can collect it. */
 export class Refused extends Error {

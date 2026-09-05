@@ -74,13 +74,25 @@ test("the fixture catalogue and the shipped catalogue cannot drift apart", () =>
 });
 
 test("8 decimals, not 18: the same integer is two positions ten orders of magnitude apart", () => {
-  expect(units(DECIMALS_TRAP.shares, DECIMALS_TRAP.correctDecimals)).toBe(DECIMALS_TRAP.rawAtCorrect);
+  expect(units(DECIMALS_TRAP.shares, DECIMALS_TRAP.correctDecimals)).toBe(
+    DECIMALS_TRAP.rawAtCorrect,
+  );
   expect(units(DECIMALS_TRAP.shares, DECIMALS_TRAP.wrongDecimals)).toBe(DECIMALS_TRAP.rawAtWrong);
   expect(DECIMALS_TRAP.rawAtWrong / DECIMALS_TRAP.rawAtCorrect).toBe(DECIMALS_TRAP.factor);
   // Priced at the wrong scale the fill looks 1e10 cheaper, which is how an order gets sized
   // ten billion times too large before anything on chain has a chance to refuse it.
-  const right = impliedPrice({ side: "buy", amountIn: 10_000_000n, amountOut: 3_122_852n, assetDecimals: 8 });
-  const wrong = impliedPrice({ side: "buy", amountIn: 10_000_000n, amountOut: 3_122_852n, assetDecimals: 18 });
+  const right = impliedPrice({
+    side: "buy",
+    amountIn: 10_000_000n,
+    amountOut: 3_122_852n,
+    assetDecimals: 8,
+  });
+  const wrong = impliedPrice({
+    side: "buy",
+    amountIn: 10_000_000n,
+    amountOut: 3_122_852n,
+    assetDecimals: 18,
+  });
   expect(right.startsWith("320.22")).toBe(true);
   expect(Number(wrong) / Number(right)).toBeCloseTo(1e10, -5);
 });
@@ -192,9 +204,9 @@ test("a receipt's status is not the same thing as settlement", () => {
   const fund = receiptOf("fund-confirmed");
   const funded = fund.receipt;
   if (!funded) throw new Error("fund-confirmed must carry a receipt");
-  expect(creditedTo(funded, { token: USDC, recipient: ACCOUNTS.spender, from: ACCOUNTS.user })).toBe(
-    ORDER.amountInUsdc,
-  );
+  expect(
+    creditedTo(funded, { token: USDC, recipient: ACCOUNTS.spender, from: ACCOUNTS.user }),
+  ).toBe(ORDER.amountInUsdc);
   expect(confirmationsOf(fund)).toBe(7);
   expect(reorged(fund)).toBe(false);
 

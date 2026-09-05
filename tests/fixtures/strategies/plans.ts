@@ -154,9 +154,7 @@ export const LEVEL_TRIGGERED = {
  */
 export const UNTRADABLE_ASSET = {
   params: [],
-  nodes: [
-    { id: "msft_cheap", op: "lt", args: [feed("oracle:MSFTc"), constant("500")] },
-  ],
+  nodes: [{ id: "msft_cheap", op: "lt", args: [feed("oracle:MSFTc"), constant("500")] }],
   machines: [
     {
       id: "entry_machine",

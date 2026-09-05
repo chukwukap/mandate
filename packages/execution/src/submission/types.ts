@@ -69,11 +69,7 @@ export interface SubmissionChain {
   /** Current fee ceiling in wei per gas, for the affordability check only. */
   maxFeePerGas(): Promise<bigint>;
   /** Sign locally. The implementation owns the key; this package never sees it. */
-  sign(input: {
-    signer: Hex;
-    call: SubmissionCall;
-    nonce: number;
-  }): Promise<SignedTransaction>;
+  sign(input: { signer: Hex; call: SubmissionCall; nonce: number }): Promise<SignedTransaction>;
   /**
    * `eth_sendRawTransaction`.
    *
@@ -128,10 +124,18 @@ export type SubmissionRefusalCode =
   | "nonce-conflict"
   /** The key cannot pay for the transactions this order still needs. */
   | "insufficient-gas"
-  /** The journal already holds this leg. Reconcile the existing row instead of signing. */
-  | "already-journaled"
+  /** Local signing failed. Not transient: the key or the request is wrong. */
+  | "sign-failed"
   /** The durable write failed. Nothing was broadcast, which is the point. */
   | "not-recorded"
+  /**
+   * Already-journaled bytes now simulate as a revert.
+   *
+   * Distinct from `would-revert` because the remedy is different and heavier: the row and
+   * its nonce already exist, the schema has no abandoned state to move them to, and the
+   * spender key cannot sign anything else until an operator resolves it.
+   */
+  | "stale-submission"
   /** The chain could not be reached at all. */
   | "chain-unavailable";
 
@@ -161,6 +165,11 @@ export type SubmissionResult =
  * consuming spend-permission allowance attempts while the user watches an order fail
  * silently. If the state that caused the revert changes, the order is re-prepared from
  * scratch on a later tick with a fresh quote, which is the correct path.
+ *
+ * `nonce-conflict` is terminal for the same reason in the opposite direction: every branch
+ * that produces it is a statement that the spender key's state cannot be explained, and
+ * time does not explain it. It needs the receipt read that `../reconciliation` performs, or
+ * an operator.
  */
 export function retryable(code: SubmissionRefusalCode): boolean {
   return code === "simulation-unavailable" || code === "chain-unavailable";

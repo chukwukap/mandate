@@ -128,14 +128,17 @@ export function revertReason(data: string | null): string {
     const hex = `0x${code.toString(16).padStart(2, "0")}`;
     return `Panic(${hex}): ${PANIC_CODES[hex] ?? "unspecified panic code"}.`;
   }
-  if (selector !== ERROR_STRING_SELECTOR) return `Custom error ${selector} (signature not resolved).`;
+  if (selector !== ERROR_STRING_SELECTOR)
+    return `Custom error ${selector} (signature not resolved).`;
   const offset = word(data, 0);
   const length = word(data, 1);
   // The length prefix is attacker-controlled: a contract can claim gigabytes. Read at most
   // 256 bytes and only what the payload actually contains.
-  if (offset !== 32n || length === null || length === 0n) return "The call reverted with an empty reason.";
+  if (offset !== 32n || length === null || length === 0n)
+    return "The call reverted with an empty reason.";
   const bytes = Number(length > 256n ? 256n : length);
-  const body = data.slice(10 + 64, 10 + 64 + bytes * 2);
+  // Two words follow the selector before the string itself: the offset, then the length.
+  const body = data.slice(10 + 128, 10 + 128 + bytes * 2);
   if (body.length < bytes * 2) return "The call reverted with a truncated reason.";
   try {
     return sanitize(Buffer.from(body, "hex").toString("utf8"));
@@ -182,9 +185,7 @@ export function classifySimulationFailure(error: unknown): SimulationVerdict {
  * throw meant, so every caller in the pipeline branches on a verdict rather than on an
  * error class it would have to keep in sync.
  */
-export async function simulate(
-  run: () => Promise<void>,
-): Promise<SimulationVerdict> {
+export async function simulate(run: () => Promise<void>): Promise<SimulationVerdict> {
   try {
     await run();
     return { kind: "ok" };

@@ -128,6 +128,19 @@ export function planNonce(facts: NonceFacts): NoncePlan {
         detail: `Nonce ${own.nonce} has been consumed on chain but the ${own.leg} leg is still recorded as unsettled; its receipt must be read before anything else is sent.`,
         nonce: own.nonce,
       };
+    if (own.nonce > latest)
+      // A gap: an earlier nonce is unconsumed, so these bytes physically cannot mine no
+      // matter how often they are resent. Reaching this at all means the chain went
+      // BACKWARDS relative to the journal — nothing is ever signed above `latest`, so a row
+      // above it implies a reorg that unwound one of our mined transactions, a restored
+      // database, or an RPC serving a different chain. Resending here would loop forever
+      // while the worker believed it was making progress.
+      return {
+        kind: "blocked",
+        code: "journal-ahead",
+        detail: `The ${own.leg} leg is journaled at nonce ${own.nonce} but the chain has consumed only ${latest}; the missing nonce must be resolved before these bytes can mine.`,
+        nonce: own.nonce,
+      };
     return { kind: "resend", entry: own };
   }
 

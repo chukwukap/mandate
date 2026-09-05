@@ -1,6 +1,6 @@
 "use client";
 import { useDesk } from "../providers/desk-provider";
-import { sectionTitles } from "../lib/navigation";
+import { sectionTitles, type WorkspaceSection } from "../lib/navigation";
 import { DemoBoundary } from "./demo-boundary";
 import { OverviewView } from "../features/portfolio/overview-view";
 import { PortfolioView } from "../features/portfolio/portfolio-view";
@@ -49,6 +49,19 @@ import type { Strategy } from "../features/strategies/types";
 import { currency, shortAddress } from "../lib/format";
 import { useWorkspace } from "../providers/use-workspace";
 import { Dialog } from "./dialog";
+
+const sectionSubtitles: Record<WorkspaceSection, string> = {
+  overview: "Your workspace at a glance.",
+  markets: "A familiar market. A different way to trade.",
+  portfolio: "Everything you hold, in one view.",
+  trade: "Place an order. Keep the receipt.",
+  automations: "Rules that work while you do not.",
+  signals: "What the market is doing right now.",
+  discover: "Find your next position.",
+  strategies: "Good decisions start with a plan.",
+  activity: "Every move, in one place.",
+  settings: "Make yourself at home.",
+};
 
 const navigation = [
   { href: "/", section: "overview", label: "Overview", icon: LayoutGrid },
@@ -296,14 +309,7 @@ export function Workspace() {
           <div className="page-heading">
             <div>
               <div className="eyebrow">
-                {section === "overview" && <DemoBoundary preview={preview} path="/"><OverviewView /></DemoBoundary>}
-          {section === "markets" && preview && <MarketExplorer />}
-          {section === "trade" && <DemoBoundary preview={preview} path="/trade"><TerminalView /></DemoBoundary>}
-          {section === "automations" && <DemoBoundary preview={preview} path="/automations"><AutomationsView /></DemoBoundary>}
-          {section === "signals" && <DemoBoundary preview={preview} path="/signals"><SignalsView /></DemoBoundary>}
-          {section === "discover" && <DemoBoundary preview={preview} path="/discover"><DiscoverView /></DemoBoundary>}
-          {section === "portfolio" && <DemoBoundary preview={preview} path="/portfolio"><PortfolioView /></DemoBoundary>}
-          {section === "markets" ? "ONCHAIN EQUITIES" : "YOUR WORKSPACE"}
+                {section === "markets" ? "ONCHAIN EQUITIES" : "YOUR WORKSPACE"}
               </div>
               <h1>
                 {
@@ -318,15 +324,14 @@ export function Workspace() {
               </h1>
               <p>
                 {
-                  {
-                    ...Object.fromEntries(Object.keys(sectionTitles).map(key => [key, ""])),
-                    markets: "A familiar market. A different way to trade.",
-                    strategies: model.detailPage
-                      ? "Your rule, limits, and recorded activity."
-                      : "Good decisions start with a plan.",
-                    activity: "Every move, in one place.",
-                    settings: "Make yourself at home.",
-                  }[section]
+                  (
+                    {
+                      ...sectionSubtitles,
+                      strategies: model.detailPage
+                        ? "Your rule, limits, and recorded activity."
+                        : "Good decisions start with a plan.",
+                    } satisfies Record<WorkspaceSection, string>
+                  )[section]
                 }
               </p>
             </div>
@@ -345,6 +350,37 @@ export function Workspace() {
                 <X size={16} />
               </button>
             </div>
+          )}
+          {section === "overview" && (
+            <DemoBoundary preview={preview} path="/">
+              <OverviewView />
+            </DemoBoundary>
+          )}
+          {section === "markets" && preview && <MarketExplorer />}
+          {section === "trade" && (
+            <DemoBoundary preview={preview} path="/trade">
+              <TerminalView />
+            </DemoBoundary>
+          )}
+          {section === "automations" && (
+            <DemoBoundary preview={preview} path="/automations">
+              <AutomationsView />
+            </DemoBoundary>
+          )}
+          {section === "signals" && (
+            <DemoBoundary preview={preview} path="/signals">
+              <SignalsView />
+            </DemoBoundary>
+          )}
+          {section === "discover" && (
+            <DemoBoundary preview={preview} path="/discover">
+              <DiscoverView />
+            </DemoBoundary>
+          )}
+          {section === "portfolio" && (
+            <DemoBoundary preview={preview} path="/portfolio">
+              <PortfolioView />
+            </DemoBoundary>
           )}
           {section === "markets" && !preview && (
             <MarketsView model={model} strategyRow={strategyRow} empty={empty} />
