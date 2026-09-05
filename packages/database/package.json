@@ -1,0 +1,20 @@
+{
+  "name": "@mandate/database",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Drizzle schema, migrations and tenant-scoped repositories.",
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "pg": "8.23.0",
+    "@mandate/contracts": "workspace:*",
+    "@mandate/strategy": "workspace:*"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.10",
+    "@types/pg": "8.23.1"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

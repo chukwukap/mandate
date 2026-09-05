@@ -1,0 +1,10 @@
+{
+  "name": "@mandate/observability",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Structured logging, metrics and tracing conventions.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

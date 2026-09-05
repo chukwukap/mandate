@@ -1,0 +1,13 @@
+{
+  "name": "@mandate/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared API schemas and transport types.",
+  "dependencies": {
+    "zod": "4.5.4"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -1,0 +1,2 @@
+ALTER TABLE "mandate_v2"."drafts" ADD COLUMN "account" text NOT NULL;--> statement-breakpoint
+ALTER TABLE "mandate_v2"."drafts" ADD CONSTRAINT "draft_account_valid" CHECK ("mandate_v2"."drafts"."account" ~ '^0x[0-9a-f]{40}$');

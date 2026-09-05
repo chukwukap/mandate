@@ -1,0 +1,15 @@
+{
+  "name": "@mandate/evm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Base RPC, verified assets, market feeds, swap routes and permission calls.",
+  "dependencies": {
+    "viem": "2.56.3",
+    "@mandate/contracts": "workspace:*",
+    "decimal.js": "10.6.0"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

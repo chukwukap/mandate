@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788565528173,
+      "tag": "0000_jittery_wilson_fisk",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788565548419,
+      "tag": "0001_sparkling_killmonger",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788565559291,
+      "tag": "0002_enforce_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788566680919,
+      "tag": "0003_millisecond_timestamps",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788567361260,
+      "tag": "0004_worker_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788567396694,
+      "tag": "0005_worker_authority",
+      "breakpoints": true
+    }
+  ]
+}

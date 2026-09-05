@@ -1,0 +1,16 @@
+{
+  "name": "@mandate/auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Wallet proof, sessions, CSRF and eligibility policies.",
+  "dependencies": {
+    "@mandate/contracts": "workspace:*",
+    "@mandate/database": "workspace:*",
+    "@privy-io/node": "0.34.0",
+    "viem": "2.56.3"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

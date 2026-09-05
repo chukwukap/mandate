@@ -1,0 +1,13 @@
+{
+  "name": "@mandate/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Validated environment configuration.",
+  "dependencies": {
+    "zod": "4.5.4"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

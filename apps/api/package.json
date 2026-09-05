@@ -1,0 +1,28 @@
+{
+  "name": "@mandate/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fastify HTTP application. Runs on Node.js.",
+  "dependencies": {
+    "fastify": "5.12.3",
+    "@fastify/cookie": "11.1.2",
+    "@fastify/helmet": "13.1.1",
+    "@fastify/rate-limit": "11.2.0",
+    "@fastify/swagger": "9.8.1",
+    "@mandate/contracts": "workspace:*",
+    "@mandate/strategy": "workspace:*",
+    "@mandate/database": "workspace:*",
+    "@mandate/evm": "workspace:*",
+    "@mandate/auth": "workspace:*",
+    "@mandate/config": "workspace:*",
+    "@mandate/observability": "workspace:*",
+    "zod": "4.5.4",
+    "@privy-io/node": "0.34.0",
+    "@anthropic-ai/sdk": "0.124.0",
+    "decimal.js": "10.6.0",
+    "drizzle-orm": "0.45.2",
+    "pg": "8.23.0",
+    "viem": "2.56.3"
+  }
+}

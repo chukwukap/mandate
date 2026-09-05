@@ -1,0 +1,760 @@
+{
+  "id": "ef6d57ba-8341-4a41-80b4-ec95eb8c7cbd",
+  "prevId": "bf3ec880-f9d7-4506-863c-0651cd339022",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "mandate_v2.drafts": {
+      "name": "drafts",
+      "schema": "mandate_v2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account": {
+          "name": "account",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "plan": {
+          "name": "plan",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "envelope": {
+          "name": "envelope",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reading": {
+          "name": "reading",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "render_text": {
+          "name": "render_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "render_hash": {
+          "name": "render_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirm_message": {
+          "name": "confirm_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "drafts_user_id_users_id_fk": {
+          "name": "drafts_user_id_users_id_fk",
+          "tableFrom": "drafts",
+          "columnsFrom": ["user_id"],
+          "tableTo": "users",
+          "schemaTo": "mandate_v2",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "drafts_artifact_id_unique": {
+          "name": "drafts_artifact_id_unique",
+          "columns": ["artifact_id"],
+          "nullsNotDistinct": false
+        },
+        "draft_owner": {
+          "name": "draft_owner",
+          "columns": ["id", "user_id"],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {
+        "tenant_isolation": {
+          "name": "tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": ["public"],
+          "using": "\"mandate_v2\".\"drafts\".\"user_id\" = nullif(current_setting('mandate.user_id', true), '')::uuid",
+          "withCheck": "\"mandate_v2\".\"drafts\".\"user_id\" = nullif(current_setting('mandate.user_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "draft_account_valid": {
+          "name": "draft_account_valid",
+          "value": "\"mandate_v2\".\"drafts\".\"account\" ~ '^0x[0-9a-f]{40}$'"
+        },
+        "draft_mode_valid": {
+          "name": "draft_mode_valid",
+          "value": "\"mandate_v2\".\"drafts\".\"mode\" in ('manual','auto')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "mandate_v2.evaluations": {
+      "name": "evaluations",
+      "schema": "mandate_v2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instance_id": {
+          "name": "instance_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "admitted": {
+          "name": "admitted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "refused": {
+          "name": "refused",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inputs": {
+          "name": "inputs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "evaluations_time": {
+          "name": "evaluations_time",
+          "columns": [
+            {
+              "expression": "instance_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "evaluations_user_id_users_id_fk": {
+          "name": "evaluations_user_id_users_id_fk",
+          "tableFrom": "evaluations",
+          "columnsFrom": ["user_id"],
+          "tableTo": "users",
+          "schemaTo": "mandate_v2",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "evaluations_instance_id_user_id_instances_id_user_id_fk": {
+          "name": "evaluations_instance_id_user_id_instances_id_user_id_fk",
+          "tableFrom": "evaluations",
+          "columnsFrom": ["instance_id", "user_id"],
+          "tableTo": "instances",
+          "schemaTo": "mandate_v2",
+          "columnsTo": ["id", "user_id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "tenant_isolation": {
+          "name": "tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": ["public"],
+          "using": "\"mandate_v2\".\"evaluations\".\"user_id\" = nullif(current_setting('mandate.user_id', true), '')::uuid",
+          "withCheck": "\"mandate_v2\".\"evaluations\".\"user_id\" = nullif(current_setting('mandate.user_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "admissions_nonnegative": {
+          "name": "admissions_nonnegative",
+          "value": "\"mandate_v2\".\"evaluations\".\"admitted\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "mandate_v2.executions": {
+      "name": "executions",
+      "schema": "mandate_v2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instance_id": {
+          "name": "instance_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_in": {
+          "name": "token_in",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_out": {
+          "name": "token_out",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_in": {
+          "name": "amount_in",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tx_hash": {
+          "name": "tx_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "executions_time": {
+          "name": "executions_time",
+          "columns": [
+            {
+              "expression": "instance_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "executions_user_id_users_id_fk": {
+          "name": "executions_user_id_users_id_fk",
+          "tableFrom": "executions",
+          "columnsFrom": ["user_id"],
+          "tableTo": "users",
+          "schemaTo": "mandate_v2",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "executions_instance_id_user_id_instances_id_user_id_fk": {
+          "name": "executions_instance_id_user_id_instances_id_user_id_fk",
+          "tableFrom": "executions",
+          "columnsFrom": ["instance_id", "user_id"],
+          "tableTo": "instances",
+          "schemaTo": "mandate_v2",
+          "columnsTo": ["id", "user_id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "tenant_isolation": {
+          "name": "tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": ["public"],
+          "using": "\"mandate_v2\".\"executions\".\"user_id\" = nullif(current_setting('mandate.user_id', true), '')::uuid",
+          "withCheck": "\"mandate_v2\".\"executions\".\"user_id\" = nullif(current_setting('mandate.user_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "execution_status_valid": {
+          "name": "execution_status_valid",
+          "value": "\"mandate_v2\".\"executions\".\"status\" in ('admitted','pending','confirmed','reverted','cancelled','recovery_required')"
+        },
+        "execution_amount_valid": {
+          "name": "execution_amount_valid",
+          "value": "\"mandate_v2\".\"executions\".\"amount_in\" ~ '^[0-9]+$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "mandate_v2.instances": {
+      "name": "instances",
+      "schema": "mandate_v2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "draft_id": {
+          "name": "draft_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'manual'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'paused'"
+        },
+        "halt_reason": {
+          "name": "halt_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "signature": {
+          "name": "signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "runtime": {
+          "name": "runtime",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tick_interval_ms": {
+          "name": "tick_interval_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 12000
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "next_tick_at": {
+          "name": "next_tick_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_tick_at": {
+          "name": "last_tick_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "instance_schedule": {
+          "name": "instance_schedule",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_tick_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "instances_user_id_users_id_fk": {
+          "name": "instances_user_id_users_id_fk",
+          "tableFrom": "instances",
+          "columnsFrom": ["user_id"],
+          "tableTo": "users",
+          "schemaTo": "mandate_v2",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "instances_draft_id_user_id_drafts_id_user_id_fk": {
+          "name": "instances_draft_id_user_id_drafts_id_user_id_fk",
+          "tableFrom": "instances",
+          "columnsFrom": ["draft_id", "user_id"],
+          "tableTo": "drafts",
+          "schemaTo": "mandate_v2",
+          "columnsTo": ["id", "user_id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "instances_draft_id_unique": {
+          "name": "instances_draft_id_unique",
+          "columns": ["draft_id"],
+          "nullsNotDistinct": false
+        },
+        "instance_owner": {
+          "name": "instance_owner",
+          "columns": ["id", "user_id"],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {
+        "tenant_isolation": {
+          "name": "tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": ["public"],
+          "using": "\"mandate_v2\".\"instances\".\"user_id\" = nullif(current_setting('mandate.user_id', true), '')::uuid",
+          "withCheck": "\"mandate_v2\".\"instances\".\"user_id\" = nullif(current_setting('mandate.user_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "instance_mode_valid": {
+          "name": "instance_mode_valid",
+          "value": "\"mandate_v2\".\"instances\".\"mode\" in ('manual','auto')"
+        },
+        "instance_status_valid": {
+          "name": "instance_status_valid",
+          "value": "\"mandate_v2\".\"instances\".\"status\" in ('armed','paused','halted','ended')"
+        },
+        "tick_interval_valid": {
+          "name": "tick_interval_valid",
+          "value": "\"mandate_v2\".\"instances\".\"tick_interval_ms\" between 1000 and 3600000"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "mandate_v2.permissions": {
+      "name": "permissions",
+      "schema": "mandate_v2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instance_id": {
+          "name": "instance_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'prepared'"
+        },
+        "signature": {
+          "name": "signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "permissions_user_id_users_id_fk": {
+          "name": "permissions_user_id_users_id_fk",
+          "tableFrom": "permissions",
+          "columnsFrom": ["user_id"],
+          "tableTo": "users",
+          "schemaTo": "mandate_v2",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "permissions_instance_id_user_id_instances_id_user_id_fk": {
+          "name": "permissions_instance_id_user_id_instances_id_user_id_fk",
+          "tableFrom": "permissions",
+          "columnsFrom": ["instance_id", "user_id"],
+          "tableTo": "instances",
+          "schemaTo": "mandate_v2",
+          "columnsTo": ["id", "user_id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "permissions_hash_unique": {
+          "name": "permissions_hash_unique",
+          "columns": ["hash"],
+          "nullsNotDistinct": false
+        },
+        "permission_instance_token": {
+          "name": "permission_instance_token",
+          "columns": ["instance_id", "token"],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {
+        "tenant_isolation": {
+          "name": "tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": ["public"],
+          "using": "\"mandate_v2\".\"permissions\".\"user_id\" = nullif(current_setting('mandate.user_id', true), '')::uuid",
+          "withCheck": "\"mandate_v2\".\"permissions\".\"user_id\" = nullif(current_setting('mandate.user_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "permission_status_valid": {
+          "name": "permission_status_valid",
+          "value": "\"mandate_v2\".\"permissions\".\"status\" in ('prepared','signed','active','revoked','expired')"
+        },
+        "permission_has_signature": {
+          "name": "permission_has_signature",
+          "value": "\"mandate_v2\".\"permissions\".\"status\" not in ('signed','active') or \"mandate_v2\".\"permissions\".\"signature\" is not null"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "mandate_v2.users": {
+      "name": "users",
+      "schema": "mandate_v2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "privy_did": {
+          "name": "privy_did",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_privy_did_unique": {
+          "name": "users_privy_did_unique",
+          "columns": ["privy_did"],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "privy_did_valid": {
+          "name": "privy_did_valid",
+          "value": "\"mandate_v2\".\"users\".\"privy_did\" ~ '^did:privy:[A-Za-z0-9]+$'"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "mandate_v2": "mandate_v2"
+  },
+  "views": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

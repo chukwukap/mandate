@@ -1,0 +1,23 @@
+{
+  "name": "@mandate/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Market polling and durable strategy/execution jobs. Runs on Node.js.",
+  "dependencies": {
+    "@mandate/execution": "workspace:*",
+    "@mandate/strategy": "workspace:*",
+    "@mandate/database": "workspace:*",
+    "@mandate/evm": "workspace:*",
+    "@mandate/config": "workspace:*",
+    "@mandate/observability": "workspace:*",
+    "@mandate/contracts": "workspace:*",
+    "decimal.js": "10.6.0",
+    "drizzle-orm": "0.45.2",
+    "pg": "8.23.0",
+    "viem": "2.56.3",
+    "zod": "4.5.4",
+    "@anthropic-ai/sdk": "0.124.0",
+    "pino": "10.3.1"
+  }
+}

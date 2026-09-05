@@ -1,0 +1,17 @@
+{
+  "name": "@mandate/execution",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Admission, durable order lifecycle, signing and reconciliation.",
+  "dependencies": {
+    "@mandate/strategy": "workspace:*",
+    "@mandate/database": "workspace:*",
+    "@mandate/evm": "workspace:*",
+    "@mandate/contracts": "workspace:*",
+    "drizzle-orm": "0.45.2"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
