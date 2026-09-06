@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
   APP_ORIGIN,
+  type ContractApi,
   call,
   commitStrategy,
-  type ContractApi,
   newIdentity,
   PROVIDER_DOWN_TOKEN,
   startContractApi,
@@ -119,9 +119,7 @@ describe("the RFC7807 body", () => {
 
 describe("the status a caller gets, per failure", () => {
   test("401 for a missing token and 401 for a token that does not verify", async () => {
-    expect((await problemOf(await call(api, { url: "/v1/me" }), 401)).code).toBe(
-      "unauthenticated",
-    );
+    expect((await problemOf(await call(api, { url: "/v1/me" }), 401)).code).toBe("unauthenticated");
     expect(
       (await problemOf(await call(api, { url: "/v1/me", token: "not-a-token" }), 401)).code,
     ).toBe("unauthenticated");
@@ -176,8 +174,7 @@ describe("the status a caller gets, per failure", () => {
 
   test("404 for an unknown path and 404 for a resource owned by somebody else", async () => {
     expect(
-      (await problemOf(await call(api, { url: "/v1/nothing-here", token: alice.token }), 404))
-        .code,
+      (await problemOf(await call(api, { url: "/v1/nothing-here", token: alice.token }), 404)).code,
     ).toBe("not-found");
     const mine = await commitStrategy(api, alice);
     // "This is not yours" and "this never existed" must look identical from outside, or the id

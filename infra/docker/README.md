@@ -86,11 +86,12 @@ a `node:24-alpine` runtime that receives only `node_modules`, the built bundle a
 `package.json` that marks it ESM. The application files stay root-owned and the process runs as
 the unprivileged `node` user, so it can read its own bundle and not rewrite it.
 
-`--filter` is doing real work: the unfiltered workspace install is 1.8 GB (it includes Next,
-React, wagmi and the wallet SDKs), against 240 MB for the API's closure and 181 MB for the
-worker's. Both then drop `@electric-sql/pglite` and `typescript`, which return as *optional peer*
-dependencies of `drizzle-orm` and `@solana/*` despite `--production` and are never imported at
-runtime — 185 MB and 126 MB of `node_modules` respectively.
+`--filter` is doing real work: the unfiltered workspace install is 1.8 GB — it includes Next,
+React, wagmi and the wallet SDKs — against 240 MB for the API's closure and 181 MB for the
+worker's. Both then drop `@electric-sql/pglite` and `typescript`, which come back as *optional
+peer* dependencies of `drizzle-orm` and `@solana/*` despite `--production` and are never imported
+at runtime. Built here, that lands at 278 MB for the API image (187 MB of it `node_modules`) and
+240 MB for the worker.
 
 Run them with configuration from the environment; no image layer contains a secret.
 

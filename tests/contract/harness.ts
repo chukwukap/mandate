@@ -1,13 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
 import { type ApiDependencies, buildApp } from "../../apps/api/src/app.js";
 import type { ReceiptReader, Settlement } from "../../apps/api/src/modules/executions/index.js";
 import type { AuthenticatedUser, Authenticator } from "../../packages/auth/src/index.js";
 import { type Config, loadConfig } from "../../packages/config/src/index.js";
 import type { Hex, Identity, PermissionPayload } from "../../packages/contracts/src/index.js";
 import { Problem } from "../../packages/contracts/src/index.js";
-import { drizzle } from "drizzle-orm/pglite";
 import { type Database, Repository, schema } from "../../packages/database/src/index.js";
 import { ASSETS } from "../../packages/evm/src/addresses/index.js";
 import { permissionHash } from "../../packages/evm/src/permissions/index.js";
@@ -400,7 +400,13 @@ export async function commitStrategy(
 export async function seedPermission(
   api: ContractApi,
   user: string,
-  seed: { instance: string; account: string; expiresAt: string; perPeriod: string; periodSecs: number },
+  seed: {
+    instance: string;
+    account: string;
+    expiresAt: string;
+    perPeriod: string;
+    periodSecs: number;
+  },
   options: {
     status?: "prepared" | "signed" | "active" | "revoked" | "expired";
     approved?: boolean;

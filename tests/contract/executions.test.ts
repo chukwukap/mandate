@@ -2,15 +2,15 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Settlement } from "../../apps/api/src/modules/executions/index.js";
 import { EXECUTION_STATUSES } from "../../packages/contracts/src/index.js";
 import {
-  call,
-  commitStrategy,
   type Committed,
   type ContractApi,
+  call,
+  commitStrategy,
   newIdentity,
+  StubReceipts,
   seedEvaluation,
   seedExecution,
   seedTransaction,
-  StubReceipts,
   startContractApi,
   type TestIdentity,
 } from "./harness.js";
@@ -117,9 +117,9 @@ describe("GET /v1/executions", () => {
     const api2 = await startContractApi({ identities: [other] });
     try {
       const own = await commitStrategy(api2, other);
-      const owner = (
-        await call(api2, { url: "/v1/me", token: other.token })
-      ).json<{ user: string }>().user;
+      const owner = (await call(api2, { url: "/v1/me", token: other.token })).json<{
+        user: string;
+      }>().user;
       // One order per status the CHECK allows, so the vocabulary cannot gain a member the
       // response does not describe. `recovery_required` was added by migration 0004 and a
       // hand-written copy of the list that had not learned it would silently drop the row.
@@ -236,9 +236,9 @@ describe("GET /v1/executions/:id", () => {
     });
     try {
       // The order lives in the first app's database, so re-seed it into the second.
-      const owner = (
-        await call(withReceipts, { url: "/v1/me", token: alice.token })
-      ).json<{ user: string }>().user;
+      const owner = (await call(withReceipts, { url: "/v1/me", token: alice.token })).json<{
+        user: string;
+      }>().user;
       const committed = await commitStrategy(withReceipts, alice);
       const seeded = await seedExecution(withReceipts, owner, committed.instance, {
         status: "confirmed",
@@ -391,9 +391,9 @@ describe("GET /v1/instances/:id/executions/summary", () => {
     const owner = newIdentity();
     const api2 = await startContractApi({ identities: [owner] });
     try {
-      const ownerId = (
-        await call(api2, { url: "/v1/me", token: owner.token })
-      ).json<{ user: string }>().user;
+      const ownerId = (await call(api2, { url: "/v1/me", token: owner.token })).json<{
+        user: string;
+      }>().user;
       const committed = await commitStrategy(api2, owner);
       await seedExecution(api2, ownerId, committed.instance, {
         status: "confirmed",

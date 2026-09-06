@@ -13,6 +13,12 @@ const secretNames = [
   "accessToken",
   "rawTransaction",
   "typed_data",
+  // Hosted Base providers put the API key in the URL itself — Alchemy as a path segment, Helius
+  // as a query parameter. So the endpoint is a credential, not just an address, and logging a
+  // config object hands out a billable, rate-limited key. Censored by origin rather than removed
+  // entirely: which provider is in use is the first thing anyone asks when the chain is slow.
+  "rpcUrl",
+  "BASE_RPC_URL",
 ];
 
 /**
@@ -50,6 +56,24 @@ export const secretPaths = [
   ...secretNames.flatMap(atEveryDepth),
 ];
 
+/**
+ * Replace a secret with something safe, keeping whatever is safe to keep.
+ *
+ * A URL keeps its origin: "https://base-mainnet.g.alchemy.com/v2/[REDACTED]" still answers "which
+ * provider, which network" without handing over the key. Everything else is replaced whole,
+ * because for a private key or a bearer token there is no safe prefix to keep.
+ */
+function censor(value: unknown): string {
+  if (typeof value === "string" && /^https?:\/\//.test(value)) {
+    try {
+      return `${new URL(value).origin}/[REDACTED]`;
+    } catch {
+      // Not parseable as a URL after all; fall through and redact the whole thing.
+    }
+  }
+  return "[REDACTED]";
+}
+
 export function loggerOptions(level: string) {
-  return { level, redact: { paths: secretPaths, censor: "[REDACTED]" } };
+  return { level, redact: { paths: secretPaths, censor } };
 }

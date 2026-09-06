@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { DEFAULT_PUBLIC_PATHS } from "../../apps/api/src/plugins/index.js";
-import { call, type ContractApi, newIdentity, startContractApi, type TestIdentity } from "./harness.js";
+import {
+  type ContractApi,
+  call,
+  newIdentity,
+  startContractApi,
+  type TestIdentity,
+} from "./harness.js";
 
 /**
  * The OpenAPI document the API serves at `/openapi.json`.
@@ -127,7 +133,8 @@ describe("what the document says about authentication", () => {
 
   test("the runtime agrees: the documented-anonymous path is the only one served anonymously", async () => {
     for (const path of PATHS) {
-      if (path.includes("{id}") || path.startsWith("/health") || path.startsWith("/ready")) continue;
+      if (path.includes("{id}") || path.startsWith("/health") || path.startsWith("/ready"))
+        continue;
       const response = await call(api, { url: path, method: "GET" });
       if (DEFAULT_PUBLIC_PATHS.includes(path)) expect(response.statusCode).toBe(200);
       // Everything else is 401 or 404-for-the-method, never a 200 body.

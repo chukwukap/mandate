@@ -7,8 +7,8 @@ import { MAX_FEED_AGE_SECONDS } from "../../packages/evm/src/feeds/staleness.js"
 import { FEED_PATTERN } from "../../packages/strategy/src/evaluation/money.js";
 import {
   CATALOGUE,
-  call,
   type ContractApi,
+  call,
   newIdentity,
   startContractApi,
   type TestIdentity,
@@ -102,9 +102,7 @@ describe("GET /v1/market", () => {
     expect(body.catalogue.map((entry) => entry.symbol)).toEqual(
       CATALOGUE.map((asset) => asset.symbol),
     );
-    expect(body.assets.map((asset) => asset.token)).toEqual(
-      CATALOGUE.map((asset) => asset.token),
-    );
+    expect(body.assets.map((asset) => asset.token)).toEqual(CATALOGUE.map((asset) => asset.token));
   });
 
   test("an asset that cannot be traded is listed with a reason AND a detail, never omitted", async () => {

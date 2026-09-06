@@ -1,13 +1,13 @@
 import { createServer } from "node:http";
 import { render } from "./metrics.js";
 import {
-  collect,
   type CollectionState,
+  collect,
   type MarketBody,
   type ProbeOutcome,
   type ReadyBody,
-  type Route,
   ROUTES,
+  type Route,
   scoreStatus,
 } from "./samples.js";
 

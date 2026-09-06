@@ -85,9 +85,7 @@ export const explorerUrlSchema = z
   .nullable();
 
 /** A keyset cursor. Both halves or neither — a timestamp alone is not a key. */
-export const cursorSchema = z
-  .object({ before: timestampSchema, before_id: idSchema })
-  .nullable();
+export const cursorSchema = z.object({ before: timestampSchema, before_id: idSchema }).nullable();
 
 export function pageOf<T extends z.ZodType>(item: T) {
   return z.object({ items: z.array(item), next_page: cursorSchema });

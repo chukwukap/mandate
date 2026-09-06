@@ -1,14 +1,21 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { CHAIN_ID } from "../../packages/evm/src/permissions/index.js";
 import {
-  call,
   type ContractApi,
+  call,
   newIdentity,
   SPENDER_ADDRESS,
   startContractApi,
   type TestIdentity,
 } from "./harness.js";
-import { healthSchema, meSchema, parsed, problemSchema, readySchema, walletsSchema } from "./schemas.js";
+import {
+  healthSchema,
+  meSchema,
+  parsed,
+  problemSchema,
+  readySchema,
+  walletsSchema,
+} from "./schemas.js";
 
 /**
  * `/v1/me`, `/v1/me/wallets`, `/health` and `/ready`.
@@ -52,9 +59,9 @@ describe("GET /v1/me", () => {
   });
 
   test("no session identifier is published, because a 200 does not prove the session is live", async () => {
-    const raw = (
-      await call(api, { url: "/v1/me", token: alice.token })
-    ).json<Record<string, unknown>>();
+    const raw = (await call(api, { url: "/v1/me", token: alice.token })).json<
+      Record<string, unknown>
+    >();
     // Local JWT verification cannot observe a logout or a revocation. A `session_id` field would
     // imply this endpoint knows something it does not, and nothing here may suggest otherwise —
     // there is deliberately no login, logout or nonce route to build a parallel session on.

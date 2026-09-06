@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { MAX_ALLOWANCE, MAX_UINT48 } from "../../packages/contracts/src/index.js";
 import { SPEND_MANAGER, USDC } from "../../packages/evm/src/permissions/index.js";
 import {
+  type ContractApi,
   call,
   commitStrategy,
-  type ContractApi,
   newIdentity,
   SPENDER_ADDRESS,
   startContractApi,
@@ -248,9 +248,9 @@ describe("POST /v1/permissions/prepare", () => {
         ).statusCode,
       ).toBe(404);
       // The capability endpoint reports the same wallet honestly rather than contradicting it.
-      const wallets = (
-        await call(api2, { url: "/v1/me/wallets", token: eoa.token })
-      ).json<{ items: { kind: string; can_authorize_spending: boolean }[] }>();
+      const wallets = (await call(api2, { url: "/v1/me/wallets", token: eoa.token })).json<{
+        items: { kind: string; can_authorize_spending: boolean }[];
+      }>();
       expect(wallets.items[0]?.kind).toBe("eoa");
       expect(wallets.items[0]?.can_authorize_spending).toBe(false);
     } finally {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { EXPORTER_METRICS, referenceAgeSeconds } from "../exporter/samples.js";
 
@@ -40,9 +40,10 @@ interface RuleFile {
 
 const alerts = yaml<RuleFile>("rules/alerts.yml");
 const recording = yaml<RuleFile>("rules/recording.yml");
-const collector = yaml<{ metrics: { metric_name: string; query_ref: string }[]; queries: { query_name: string }[] }>(
-  "collectors/mandate.collector.yml",
-);
+const collector = yaml<{
+  metrics: { metric_name: string; query_ref: string }[];
+  queries: { query_name: string }[];
+}>("collectors/mandate.collector.yml");
 const prometheus = yaml<{
   rule_files: string[];
   scrape_configs: { job_name: string }[];
@@ -61,7 +62,12 @@ const recordRules = recording.groups.flatMap((group) => group.rules);
  * than a permissive fallback: the point of the reference check below is that an unknown name
  * is a bug, and a wildcard escape hatch would let the next typo through silently.
  */
-const EXTERNAL_METRICS = new Set(["up", "probe_success", "probe_http_status_code", "probe_duration_seconds"]);
+const EXTERNAL_METRICS = new Set([
+  "up",
+  "probe_success",
+  "probe_http_status_code",
+  "probe_duration_seconds",
+]);
 
 const PRODUCED = new Set<string>([
   ...collector.metrics.map((metric) => metric.metric_name),
@@ -72,15 +78,72 @@ const PRODUCED = new Set<string>([
 
 /** PromQL keywords, aggregators and functions. Anything left over is a metric name. */
 const RESERVED = new Set([
-  "sum", "min", "max", "avg", "count", "count_values", "stddev", "stdvar", "topk", "bottomk",
-  "quantile", "group", "by", "without", "on", "ignoring", "group_left", "group_right", "and",
-  "or", "unless", "bool", "offset", "rate", "irate", "increase", "delta", "idelta", "deriv",
-  "changes", "resets", "abs", "ceil", "floor", "round", "clamp", "clamp_min", "clamp_max",
-  "vector", "scalar", "time", "timestamp", "absent", "absent_over_time", "label_replace",
-  "label_join", "histogram_quantile", "predict_linear", "holt_winters", "avg_over_time",
-  "max_over_time", "min_over_time", "sum_over_time", "count_over_time", "quantile_over_time",
-  "stddev_over_time", "last_over_time", "present_over_time", "sort", "sort_desc", "exp", "ln",
-  "log2", "log10", "sqrt", "sgn",
+  "sum",
+  "min",
+  "max",
+  "avg",
+  "count",
+  "count_values",
+  "stddev",
+  "stdvar",
+  "topk",
+  "bottomk",
+  "quantile",
+  "group",
+  "by",
+  "without",
+  "on",
+  "ignoring",
+  "group_left",
+  "group_right",
+  "and",
+  "or",
+  "unless",
+  "bool",
+  "offset",
+  "rate",
+  "irate",
+  "increase",
+  "delta",
+  "idelta",
+  "deriv",
+  "changes",
+  "resets",
+  "abs",
+  "ceil",
+  "floor",
+  "round",
+  "clamp",
+  "clamp_min",
+  "clamp_max",
+  "vector",
+  "scalar",
+  "time",
+  "timestamp",
+  "absent",
+  "absent_over_time",
+  "label_replace",
+  "label_join",
+  "histogram_quantile",
+  "predict_linear",
+  "holt_winters",
+  "avg_over_time",
+  "max_over_time",
+  "min_over_time",
+  "sum_over_time",
+  "count_over_time",
+  "quantile_over_time",
+  "stddev_over_time",
+  "last_over_time",
+  "present_over_time",
+  "sort",
+  "sort_desc",
+  "exp",
+  "ln",
+  "log2",
+  "log10",
+  "sqrt",
+  "sgn",
 ]);
 
 /**
@@ -125,8 +188,12 @@ describe("alert rules reference metrics that exist", () => {
     const referenced = new Set(
       [...alertRules, ...recordRules].flatMap((rule) => metricsIn(rule.expr)),
     );
+    // A word-boundary match, not `includes`: `mandate_executions` is a prefix of
+    // `mandate_executions_open`, so a substring test would report the census as covered
+    // because a different metric happens to start with its name.
+    const onDashboard = (name: string) => new RegExp(`${name}(?![A-Za-z0-9_])`).test(dashboard);
     const orphans = [...collector.metrics.map((m) => m.metric_name), ...EXPORTER_METRICS].filter(
-      (name) => !referenced.has(name) && !dashboard.includes(name),
+      (name) => !referenced.has(name) && !onDashboard(name),
     );
     expect(orphans).toEqual([]);
   });
@@ -205,7 +272,9 @@ describe("routing and suppression match the rules", () => {
     const emitted = new Set(alertRules.map((rule) => rule.labels?.severity));
     const routed = new Set(
       alertmanager.route.routes.flatMap((route) =>
-        route.matchers.flatMap((matcher) => [...matcher.matchAll(/severity="([^"]+)"/g)].map((m) => m[1])),
+        route.matchers.flatMap((matcher) =>
+          [...matcher.matchAll(/severity="([^"]+)"/g)].map((m) => m[1]),
+        ),
       ),
     );
     expect([...emitted].sort()).toEqual([...routed].sort());
@@ -234,7 +303,8 @@ describe("routing and suppression match the rules", () => {
     // dashboard during an incident.
     for (const inhibit of alertmanager.inhibit_rules) {
       const touchesSymbol = [...inhibit.source_matchers, ...inhibit.target_matchers].some(
-        (matcher) => matcher.includes("MandateReferenceFeed") || matcher.includes("MandateQuoteDeviation"),
+        (matcher) =>
+          matcher.includes("MandateReferenceFeed") || matcher.includes("MandateQuoteDeviation"),
       );
       if (touchesSymbol) expect(inhibit.equal).toEqual(["symbol"]);
     }

@@ -274,8 +274,7 @@ export function collect(state: CollectionState): MetricFamily[] {
     {
       name: "mandate_api_probe_responses_total",
       type: "counter",
-      help:
-        "Probe responses by route and outcome. A 503 from /ready scores ok: refusing traffic is that route's correct answer, not an API fault.",
+      help: "Probe responses by route and outcome. A 503 from /ready scores ok: refusing traffic is that route's correct answer, not an API fault.",
       samples: responseSamples,
     },
     {
@@ -308,8 +307,7 @@ export function collect(state: CollectionState): MetricFamily[] {
     {
       name: "mandate_api_execution_available",
       type: "gauge",
-      help:
-        "A live execution-enabled worker heartbeat, as the API publishes it. Never a reason for the API to fail readiness.",
+      help: "A live execution-enabled worker heartbeat, as the API publishes it. Never a reason for the API to fail readiness.",
       samples: [{ value: flag(ready?.execution_available) }],
     },
     {
@@ -321,15 +319,13 @@ export function collect(state: CollectionState): MetricFamily[] {
     {
       name: "mandate_market_last_success_age_seconds",
       type: "gauge",
-      help:
-        "Seconds since the last fully successful collection. This is what proves the numbers below are current; every per-symbol gauge keeps its last value while collection is failing.",
+      help: "Seconds since the last fully successful collection. This is what proves the numbers below are current; every per-symbol gauge keeps its last value while collection is failing.",
       samples: [{ value: ageSeconds(state.lastSuccessMs, state.nowMs) }],
     },
     {
       name: "mandate_market_snapshot_age_seconds",
       type: "gauge",
-      help:
-        "Age of the API's own market snapshot (as_of). Oscillates within its 15s cache TTL; a monotonic climb means the refresh is wedged.",
+      help: "Age of the API's own market snapshot (as_of). Oscillates within its 15s cache TTL; a monotonic climb means the refresh is wedged.",
       samples: [{ value: snapshotAge }],
     },
     {
@@ -341,8 +337,7 @@ export function collect(state: CollectionState): MetricFamily[] {
     {
       name: "mandate_market_symbols_dropped",
       type: "gauge",
-      help:
-        "Catalogue entries this exporter refused: malformed symbol, duplicate, or past the cardinality ceiling.",
+      help: "Catalogue entries this exporter refused: malformed symbol, duplicate, or past the cardinality ceiling.",
       samples: [{ value: dropped }],
     },
     {
@@ -354,8 +349,7 @@ export function collect(state: CollectionState): MetricFamily[] {
     {
       name: "mandate_reference_age_seconds",
       type: "gauge",
-      help:
-        "Age of the Chainlink round backing each asset. NaN when the feed could not be read at all; compare against the 96h validation bound, never the 26h display bound.",
+      help: "Age of the Chainlink round backing each asset. NaN when the feed could not be read at all; compare against the 96h validation bound, never the 26h display bound.",
       samples: perSymbol((entry) => referenceAgeSeconds(entry.navUpdatedAt, state.nowMs)),
     },
     {
@@ -367,8 +361,7 @@ export function collect(state: CollectionState): MetricFamily[] {
     {
       name: "mandate_reference_stale",
       type: "gauge",
-      help:
-        "The API's own 26h display verdict. DIAGNOSTIC ONLY: every symbol is 1 for the whole of every weekend by design. Do not alert on this.",
+      help: "The API's own 26h display verdict. DIAGNOSTIC ONLY: every symbol is 1 for the whole of every weekend by design. Do not alert on this.",
       samples: perSymbol((entry) => (entry.navStale ? 1 : 0)),
     },
     {
@@ -380,8 +373,7 @@ export function collect(state: CollectionState): MetricFamily[] {
     {
       name: "mandate_asset_blocked",
       type: "gauge",
-      help:
-        "One-hot: why an asset is not tradable. Every reason is emitted for every symbol so a query for one reason cannot silently return no data.",
+      help: "One-hot: why an asset is not tradable. Every reason is emitted for every symbol so a query for one reason cannot silently return no data.",
       samples: entries.flatMap((entry) =>
         BLOCKERS.map((reason) => ({
           labels: { symbol: entry.symbol, reason },
@@ -392,15 +384,13 @@ export function collect(state: CollectionState): MetricFamily[] {
     {
       name: "mandate_asset_deviation_bps",
       type: "gauge",
-      help:
-        "Signed basis points between the probe price and the Chainlink reference. The router refuses at 500.",
+      help: "Signed basis points between the probe price and the Chainlink reference. The router refuses at 500.",
       samples: perSymbol((entry) => entry.deviationBps),
     },
     {
       name: "mandate_asset_quote_tick_spacing",
       type: "gauge",
-      help:
-        "Aerodrome Slipstream tick spacing the best quote came from. AAPLc/USDC prices correctly at 10 and 11,729% out at 200, so which pool is being routed through is worth watching.",
+      help: "Aerodrome Slipstream tick spacing the best quote came from. AAPLc/USDC prices correctly at 10 and 11,729% out at 200, so which pool is being routed through is worth watching.",
       samples: perSymbol((entry) => entry.tickSpacing),
     },
     {

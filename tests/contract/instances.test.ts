@@ -1,11 +1,11 @@
-import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { EQUITY_DECIMALS } from "../../packages/contracts/src/index.js";
 import {
   BUY_PLAN,
+  type ContractApi,
   call,
   commitStrategy,
-  type ContractApi,
   draftCaps,
   newIdentity,
   seedEvaluation,
@@ -146,9 +146,7 @@ describe("POST /v1/strategies/draft", () => {
     // The envelope is what the worker sizes orders against, so a wrong scale here is a 1e10
     // mispricing that the user has already signed for.
     for (const asset of body.envelope.assets) expect(asset.decimals).toBe(EQUITY_DECIMALS);
-    expect(body.envelope.quote.toLowerCase()).toBe(
-      "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-    );
+    expect(body.envelope.quote.toLowerCase()).toBe("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
   });
 });
 

@@ -6,8 +6,8 @@ import {
   collect,
   EXPORTER_METRICS,
   MAX_SYMBOLS,
-  referenceAgeSeconds,
   ROUTES,
+  referenceAgeSeconds,
   scoreStatus,
 } from "../exporter/samples.js";
 
@@ -42,10 +42,7 @@ function entry(overrides: Record<string, unknown> = {}) {
 const zeroCounters = () => ({
   requests: Object.fromEntries(ROUTES.map((route) => [route, 1])) as Record<Route, number>,
   responses: Object.fromEntries(
-    ROUTES.map((route) => [
-      route,
-      { ok: 1, client_error: 0, server_error: 0, transport_error: 0 },
-    ]),
+    ROUTES.map((route) => [route, { ok: 1, client_error: 0, server_error: 0, transport_error: 0 }]),
   ) as CollectionState["probes"]["responses"],
   durationSeconds: Object.fromEntries(ROUTES.map((route) => [route, 0.01])) as Record<
     Route,
@@ -144,7 +141,12 @@ describe("catalogue mapping", () => {
 
   test("an unreadable feed is available=0 with a NaN age", () => {
     const families = collect(
-      state({ market: { as_of: new Date(NOW_MS).toISOString(), catalogue: [entry({ nav_updated_at: 0 })] } }),
+      state({
+        market: {
+          as_of: new Date(NOW_MS).toISOString(),
+          catalogue: [entry({ nav_updated_at: 0 })],
+        },
+      }),
     );
     expect(family(families, "mandate_reference_available").get("AAPLc")).toBe(0);
     expect(family(families, "mandate_reference_age_seconds").get("AAPLc")).toBeNaN();
@@ -155,7 +157,9 @@ describe("catalogue mapping", () => {
       state({
         market: {
           as_of: new Date(NOW_MS).toISOString(),
-          catalogue: [entry({ tradable: false, reason: "no-priced-route", quote: null, deviation_bps: null })],
+          catalogue: [
+            entry({ tradable: false, reason: "no-priced-route", quote: null, deviation_bps: null }),
+          ],
         },
       }),
     );
@@ -265,7 +269,9 @@ describe("degradation", () => {
 
   test("readiness comes from the endpoint's own verdict", () => {
     const families = collect(
-      state({ ready: { status: "unavailable", database: false, chain: true, execution_available: false } }),
+      state({
+        ready: { status: "unavailable", database: false, chain: true, execution_available: false },
+      }),
     );
     expect(family(families, "mandate_api_ready").get("-")).toBe(0);
     expect(family(families, "mandate_api_database_ready").get("-")).toBe(0);

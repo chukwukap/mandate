@@ -47,7 +47,7 @@ WORKDIR /app
 
 # Manifests only, and taken from the build context rather than from `source`, so editing a .ts
 # file does not invalidate the install layer. Every workspace member is listed even though the
-# API needs three of them: bun expands the `workspaces` globs before it compares against
+# API's closure names seven: bun expands the `workspaces` globs before it compares against
 # bun.lock, and a member whose package.json is absent reads as a lockfile change, which
 # --frozen-lockfile refuses. A new workspace package therefore needs a line here.
 COPY package.json bun.lock bunfig.toml ./
@@ -86,11 +86,11 @@ RUN bun install --frozen-lockfile --production --ignore-scripts --linker=hoisted
 
 # --production drops devDependencies, but two of them come back as optional PEER dependencies of
 # production packages: drizzle-orm optionally peers on @electric-sql/pglite (the WASM PostgreSQL
-# the tests run against, 25 MB) and every @solana/* package under @privy-io/node optionally
-# peers on typescript (the compiler and its platform binary, 31 MB). Neither is reachable from
-# the bundle -- packages/database imports only drizzle-orm/node-postgres, .../migrator and
-# pg-core, and the @solana peer is types-only -- so a production image has no business shipping
-# a compiler and a second database engine.
+# the tests run against, 25 MB), and abitype -- which viem depends on -- optionally peers on
+# typescript (the compiler and its platform binary, 31 MB). Neither is reachable from the
+# bundle: packages/database imports only drizzle-orm/node-postgres, .../migrator and pg-core,
+# and a peer that exists to type an API is not something a running process loads. A production
+# image has no business shipping a compiler and a second database engine.
 #
 # Removed by name rather than by a general reachability sweep: a sweep that guesses wrong fails
 # with "Cannot find module" in production, while each of these three paths is individually

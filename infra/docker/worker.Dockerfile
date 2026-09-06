@@ -47,7 +47,7 @@ WORKDIR /app
 
 # Manifests only, and taken from the build context rather than from `source`, so editing a .ts
 # file does not invalidate the install layer. Every workspace member is listed even though the
-# worker needs a handful: bun expands the `workspaces` globs before it compares against
+# worker's closure names seven: bun expands the `workspaces` globs before it compares against
 # bun.lock, and a member whose package.json is absent reads as a lockfile change, which
 # --frozen-lockfile refuses. A new workspace package therefore needs a line here.
 COPY package.json bun.lock bunfig.toml ./
@@ -86,10 +86,11 @@ RUN bun install --frozen-lockfile --production --ignore-scripts --linker=hoisted
 
 # --production drops devDependencies, but @electric-sql/pglite comes back as an optional PEER
 # dependency of drizzle-orm (the WASM PostgreSQL the tests run against, 25 MB), and typescript
-# with its platform binary comes back the same way (31 MB). Neither is reachable from the
-# bundle: packages/database imports only drizzle-orm/node-postgres, .../migrator and pg-core.
-# A process that signs transactions should not also carry a compiler and a second database
-# engine it never loads.
+# with its platform binary comes back as an optional peer of abitype, under viem (31 MB).
+# Neither is reachable from the bundle: packages/database imports only
+# drizzle-orm/node-postgres, .../migrator and pg-core, and a peer that exists to type an API is
+# not something a running process loads. The one process that signs transactions should not
+# also carry a compiler and a second database engine it never opens.
 #
 # Removed by name rather than by a general reachability sweep: a sweep that guesses wrong fails
 # with "Cannot find module" in production, while each of these three paths is individually
