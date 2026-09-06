@@ -513,6 +513,30 @@ h1 {
   font-size: 18px;
   font-style: italic;
 }
+/* Fallback colours for the three symbols added with the catalogue. Only used when the token's
+   own image is missing or fails to load, so they follow the muted register of the others
+   rather than each brand's real colour, which would clash with a page of real logos. */
+.microsoft {
+  background: #f1f0ec;
+  color: #6a6f66;
+}
+.amazon {
+  background: #f4f0e7;
+  color: #8a6d38;
+}
+.tesla {
+  background: #f5eeee;
+  color: #a4514c;
+}
+
+/* The image occupies the same slot the initial did, so a row does not reflow when one asset
+   has a logo and the next falls back. `cover` because these are square source files and any
+   letterboxing would read as a rendering fault rather than a design choice. */
+.asset-logo.has-image {
+  object-fit: cover;
+  background: var(--surface, #fff);
+  padding: 0;
+}
 .market-card-price {
   display: flex;
   align-items: baseline;

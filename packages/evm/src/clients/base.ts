@@ -60,6 +60,33 @@ const USDC_DECIMALS = 6;
  * no longer describes the asset. Left narrow on purpose, and named so the choice is visible.
  */
 const MAX_REFERENCE_AGE = 26 * 3600;
+
+/**
+ * How old a reference may be and still be usable to VALIDATE a quote.
+ *
+ * Deliberately separate from MAX_REFERENCE_AGE, because the two answer different questions and
+ * one constant answering both is what took the whole catalogue offline.
+ *
+ *   MAX_REFERENCE_AGE  — is this a live market price? Drives `stale`, and reporting Friday's
+ *                        close as live would be a lie.
+ *   MAX_VALIDATION_AGE — is this recent enough to catch a mispriced pool?
+ *
+ * The reference is a sanity check, not a fair value. Its job is refusing the measured AAPLc
+ * tick-spacing-200 pool that quotes $37,861 against a $320 truth — 11,729% out. A close from
+ * Friday catches that exactly as well as one from a minute ago, because an equity does not move
+ * a hundredfold over a weekend.
+ *
+ * Measured on a Sunday: every one of the seven feeds was 37-43h old and therefore "stale", so no
+ * quote was attempted for any asset and the entire market reported nothing tradable — on tokens
+ * that trade on Aerodrome 24/7 with live liquidity the whole time. 96h spans a weekend plus a
+ * holiday Monday.
+ *
+ * The residual risk is honest and bounded: after a weekend gap-open the close under-reflects the
+ * true price, so the 5% band could admit a quote it should not. That is a sanity bound being
+ * slightly loose, against the alternative of a 24/7 product that switches itself off for two days
+ * out of every seven.
+ */
+export const MAX_VALIDATION_AGE = 96 * 3600;
 export class BaseReader implements ChainReader {
   private networkCheckedAt = 0;
   private cachedMarket: { at: number; feeds: MarketFeed[] } | undefined;
@@ -263,8 +290,14 @@ export class BaseReader implements ChainReader {
     } catch {
       throw Problem.unavailable("A verified reference price is unavailable.");
     }
-    if (reference.stale || !reference.value)
-      throw Problem.unavailable("Reference price is too old for a quote.");
+    // The validation bound, not `stale`. A held last close still anchors the deviation check
+    // that keeps a mispriced pool from filling; measured on a Sunday every feed was 37-43h old,
+    // and refusing here took all seven assets offline while their pools traded normally.
+    if (
+      reference.value === null ||
+      Math.floor(Date.now() / 1000) - reference.updated_at > MAX_VALIDATION_AGE
+    )
+      throw Problem.unavailable("Reference price is too old to validate a quote against.");
     return this.route(asset, side, amount, slippageBps, reference.value);
   }
   async market(): Promise<MarketFeed[]> {
@@ -311,10 +344,16 @@ export class BaseReader implements ChainReader {
   private async assetMarket(asset: Asset): Promise<MarketFeed[]> {
     try {
       const reference = await this.reference(asset);
-      if (reference.stale || !reference.value)
+      // Gated on the validation bound, not on `stale`. A held last close is still a valid
+      // anchor for the deviation check; refusing to quote against it takes a 24/7 market
+      // offline every weekend.
+      const anchor = reference.value;
+      const withinValidation =
+        Math.floor(Date.now() / 1000) - reference.updated_at <= MAX_VALIDATION_AGE;
+      if (anchor === null || !withinValidation)
         return [reference, this.unavailableFeed(asset, "dex")];
       try {
-        const quote = await this.route(asset, "buy", "10", 50, reference.value);
+        const quote = await this.route(asset, "buy", "10", 50, anchor);
         // Quantised to the quote token's precision. `Money` carries 78 significant digits so
         // intermediate arithmetic never rounds, but a *published* price must not: an unrounded
         // division emits values like 321.327468035950117123, which is not a USDC price, breaks

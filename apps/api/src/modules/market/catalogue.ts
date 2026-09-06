@@ -1,4 +1,5 @@
 import type { Asset, Hex, MarketFeed, Quote } from "@mandate/contracts";
+import { MAX_VALIDATION_AGE } from "@mandate/evm";
 import { Decimal } from "decimal.js";
 
 // Token amounts and prices never touch binary floating point. AAPLc has 8 decimals and USDC
@@ -138,6 +139,22 @@ export function impliedPrice(
   );
 }
 
+/**
+ * Whether a reading is past the age at which it can still anchor a deviation check.
+ *
+ * Shares MAX_VALIDATION_AGE with the chain client so the explanation the API gives and the rule
+ * the venue enforces cannot drift apart — two constants for one decision is how a user gets told
+ * one thing while the system does another.
+ *
+ * Only consulted once the reader has already called the feed stale, so this narrows a reason
+ * rather than inventing one: a reader that reports a reading fresh is believed, and age here
+ * only separates "too old to be a live price" from "too old to anchor a check at all".
+ */
+function referenceTooOldToValidate(feed: MarketFeed): boolean {
+  if (!feed.updated_at) return true;
+  return Math.floor(Date.now() / 1000) - feed.updated_at > MAX_VALIDATION_AGE;
+}
+
 function bps(price: Decimal, nav: Decimal): Decimal | null {
   // A zero or negative reference is not a divisor. BaseReader rejects answer <= 0 upstream,
   // so reaching here means a different reader handed us something unusable.
@@ -242,7 +259,12 @@ export function catalogueEntry(input: EntryInput): CatalogueEntry {
         "reference-unavailable",
         "No verified Chainlink reference price is available for this asset.",
       );
-    if (feed?.stale)
+    // Only when the reference is too old to VALIDATE against, which is a longer bound than
+    // `stale`. `stale` merely means "not a live market price", and over a weekend that is true
+    // of every equity feed while its pool trades normally. Reporting it as the blocker sent
+    // users to look at Chainlink when the real answer was that MSFTc and AMZNc have no
+    // Aerodrome route inside the deviation band — measured, on pools holding ~$150k.
+    if (feed?.stale && referenceTooOldToValidate(feed))
       return blocked(
         base,
         "reference-stale",
