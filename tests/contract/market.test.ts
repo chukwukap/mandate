@@ -223,6 +223,36 @@ describe("GET /v1/market", () => {
     expect(body.catalogue.some((entry) => entry.reason === "reference-stale")).toBe(false);
   });
 
+  test("the catalogue price and the dex feed for one asset are the same observation", async () => {
+    const body = parsed(
+      marketSchema(feedValueSchema),
+      (await call(api, { url: "/v1/market" })).json(),
+    );
+    for (const entry of body.catalogue) {
+      if (!entry.quote) continue;
+      const dex = body.feeds.find((feed) => feed.uri === `dex:${entry.symbol}`);
+      expect(dex?.value, entry.symbol).not.toBeNull();
+      // The `dex:` feed and the catalogue row are deliberately probed at the same size — 10
+      // USDC — precisely so they are one observation rendered twice rather than two
+      // independent ones that can disagree. Compared at USDC precision because that is the
+      // scale the catalogue publishes at; a reader that quantises its own feed value (the
+      // shipped BaseReader does) and one that does not (the recorded fixture client) both
+      // satisfy this, and a genuine disagreement fails it either way.
+      // Truncated at six places and then normalised: `Decimal.toFixed()` emits the canonical
+      // form, so the catalogue publishes "177.86002" where a raw truncation of the feed gives
+      // "177.860020". Those are the same price, and a string comparison that called them
+      // different would be asserting a formatting convention rather than a number.
+      const atUsdcPrecision = (value: string) => {
+        const [whole = "0", fraction = ""] = value.split(".");
+        const kept = fraction.slice(0, QUOTE_DECIMALS).replace(/0+$/, "");
+        return kept ? `${whole}.${kept}` : whole;
+      };
+      expect(atUsdcPrecision(dex?.value as string), entry.symbol).toBe(
+        atUsdcPrecision(entry.quote.price),
+      );
+    }
+  });
+
   test("the probe terms are declared, so a reader knows what tradable was measured with", async () => {
     const body = parsed(
       marketSchema(feedValueSchema),

@@ -40,6 +40,7 @@ const PATHS = [
   "/v1/instances/{id}/permission/activate",
   "/v1/instances/{id}/permission/revoke",
   "/v1/market",
+  "/v1/market/candles",
   "/v1/market/quote",
   "/v1/me",
   "/v1/me/wallets",
@@ -128,7 +129,8 @@ describe("what the document says about authentication", () => {
     // this is where they are checked against each other. A `/v1` route that quietly lost its
     // `security` block is a route a generated client would call without a token.
     expect(anonymous.sort()).toEqual([...DEFAULT_PUBLIC_PATHS].sort());
-    expect(anonymous).toEqual(["/v1/market"]);
+    // Both are read-only market data the landing page shows before a wallet is connected.
+    expect(anonymous).toEqual(["/v1/market", "/v1/market/candles"]);
   });
 
   test("the runtime agrees: the documented-anonymous path is the only one served anonymously", async () => {
@@ -136,7 +138,13 @@ describe("what the document says about authentication", () => {
       if (path.includes("{id}") || path.startsWith("/health") || path.startsWith("/ready"))
         continue;
       const response = await call(api, { url: path, method: "GET" });
-      if (DEFAULT_PUBLIC_PATHS.includes(path)) expect(response.statusCode).toBe(200);
+      // The property under test is whether the AUTH gate let the request through, so a public
+      // path must not answer 401. It may still answer 400: /v1/market/candles requires a symbol,
+      // and being rejected for a missing parameter is proof the request reached the handler.
+      if (DEFAULT_PUBLIC_PATHS.includes(path)) {
+        expect(response.statusCode).not.toBe(401);
+        expect([200, 400]).toContain(response.statusCode);
+      }
       // Everything else is 401 or 404-for-the-method, never a 200 body.
       else expect(response.statusCode).not.toBe(200);
     }

@@ -137,8 +137,9 @@ WORKDIR /app
 # the signing key. The worker writes nothing to disk -- its durable state is the database.
 COPY --from=deps /app/node_modules ./node_modules
 # apps/worker/package.json is not decoration: the bundle is ESM with a .js extension, and Node
-# reads the nearest package.json to decide that. Without `"type": "module"` here the process
-# fails at startup with ERR_REQUIRE_ESM.
+# reads the nearest package.json to decide how to parse that. Without `"type": "module"` here
+# it is loaded as CommonJS and dies on the first line: "Cannot use import statement outside a
+# module".
 COPY --from=build /app/apps/worker/package.json ./apps/worker/
 COPY --from=build /app/apps/worker/dist ./apps/worker/dist
 

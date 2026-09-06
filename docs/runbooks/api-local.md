@@ -27,7 +27,10 @@ As the database administrator, grant the application role access after migration
 CREATE ROLE mandate LOGIN NOSUPERUSER NOBYPASSRLS;
 -- Set its password through your administrator's secure credential process.
 GRANT USAGE ON SCHEMA mandate_v2 TO mandate;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mandate_v2 TO mandate;
+-- Superseded by infra/postgres/03-grants.sql, which is narrower and is the source of truth:
+-- no DELETE to any role, no access at all to `transactions`, and read-only on `evaluations`,
+-- `executions` and `worker_state`. Run that file rather than this line.
+\i infra/postgres/03-grants.sql
 ```
 
 The app must not use a superuser/BYPASSRLS role; readiness rejects it. Future schema

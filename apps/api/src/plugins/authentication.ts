@@ -17,11 +17,17 @@ export interface AuthenticationOptions {
 }
 
 /**
- * The only `/v1` route that serves anonymous callers today: the asset catalogue and its
- * observed feeds. Note this is an exact path — `/v1/market/quote` is NOT public, because a
- * quote costs RPC calls and is gated on eligibility.
+ * The `/v1` routes that serve anonymous callers: the asset catalogue with its observed feeds,
+ * and price history. Both are read-only market data that the landing page shows before anyone
+ * connects a wallet — asking for a wallet to see a chart demands a commitment before showing
+ * anything worth committing to.
+ *
+ * These are EXACT paths, not prefixes. `/v1/market/quote` is deliberately absent: a quote costs
+ * RPC calls, is gated on eligibility, and is a step toward trading rather than a way to look.
+ * Candles cost an upstream call too, but a cached one shared by every viewer, and the route
+ * carries its own tighter rate limit.
  */
-export const DEFAULT_PUBLIC_PATHS: readonly string[] = ["/v1/market"];
+export const DEFAULT_PUBLIC_PATHS: readonly string[] = ["/v1/market", "/v1/market/candles"];
 
 /** Base used only to give `new URL` something to resolve against; never contacted. */
 const PARSE_BASE = "http://request.invalid";

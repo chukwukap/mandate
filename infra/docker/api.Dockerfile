@@ -139,8 +139,9 @@ WORKDIR /app
 # nothing to disk -- all state is in PostgreSQL and on chain.
 COPY --from=deps /app/node_modules ./node_modules
 # apps/api/package.json is not decoration: the bundle is ESM with a .js extension, and Node
-# reads the nearest package.json to decide that. Without `"type": "module"` here the process
-# fails at startup with ERR_REQUIRE_ESM.
+# reads the nearest package.json to decide how to parse that. Without `"type": "module"` here
+# it is loaded as CommonJS and dies on the first line: "Cannot use import statement outside a
+# module".
 COPY --from=build /app/apps/api/package.json ./apps/api/
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 

@@ -471,7 +471,7 @@ groups:
 
       - alert: MandateWorkerCannotExecute
         expr: >-
-          mandate_worker_leader == 1
+          mandate_worker_heartbeat_age_seconds < 30
           and mandate_worker_execution_available == 0
           and on() (sum(mandate_instances{status="armed",mode="auto"}) > 0)
         for: 15m
@@ -486,12 +486,16 @@ groups:
             in `recovery_required` (which pages separately). Those strategies are evaluating
             rules and will never fill.
           derivation: >-
-            The thresholds are booleans -- 1 leader, 0 execution availability -- but the third
-            clause is what makes this alertable at all. WORKER_EXECUTE=0 is the DEFAULT and the
-            correct state of an observation deployment, so alerting on the flag alone would
-            fire forever on every install and be muted within a week. It only means something
-            when someone's automatic strategy is armed and expecting fills. `for: 15m` rides
-            out a rolling restart.
+            Three clauses, and each removes a way this would otherwise be wrong. The 30 is the
+            same heartbeat bound as MandateWorkerHeartbeatLost, and it is here rather than
+            `mandate_worker_leader == 1` because that gauge reports only that a worker_state
+            row EXISTS: a clean shutdown leaves the row behind with execution_available 0 and
+            heartbeat_at at the epoch, so a leader test would report a stopped worker as a
+            running one that cannot execute -- the right alert, naming the wrong fault. The 0
+            is the execution flag itself. The armed-automatic clause is what makes this
+            alertable at all: WORKER_EXECUTE=0 is the DEFAULT and the correct state of an
+            observation deployment, so alerting on the flag alone would fire forever on every
+            install and be muted within a week. `for: 15m` rides out a rolling restart.
           action: >-
             If MandateOrderRecoveryRequired is also firing, that is the cause and this is a
             symptom. Otherwise this is configuration: live execution needs all of

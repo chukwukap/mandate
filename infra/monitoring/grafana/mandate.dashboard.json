@@ -2733,7 +2733,7 @@
       "id": 41,
       "type": "stat",
       "title": "Execution available (as the API reports it)",
-      "description": "The same worker heartbeat, read through the API rather than the database. The two disagreeing means one of the two paths is broken.",
+      "description": "The API's view, which requires a heartbeat under 30s old. The database gauge beside it is the raw stored flag with no freshness test, so after a stopped worker the two legitimately disagree -- that difference is the useful part.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

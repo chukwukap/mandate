@@ -224,10 +224,14 @@ test("the public catalogue is anonymous but the quote route under it is not", as
 });
 
 test("the public allowlist is an exact path list, not a prefix", async () => {
-  expect(DEFAULT_PUBLIC_PATHS).toEqual(["/v1/market"]);
+  expect(DEFAULT_PUBLIC_PATHS).toEqual(["/v1/market", "/v1/market/candles"]);
   expect(protectedRequest("/v1/market", DEFAULT_PUBLIC_PATHS)).toBe(false);
   expect(protectedRequest("/v1/market?refresh=1", DEFAULT_PUBLIC_PATHS)).toBe(false);
+  expect(protectedRequest("/v1/market/candles", DEFAULT_PUBLIC_PATHS)).toBe(false);
+  // Still exact paths, not a prefix: a quote costs RPC calls and is gated on eligibility, so it
+  // stays protected even though it shares the /v1/market prefix with two public routes.
   expect(protectedRequest("/v1/market/quote", DEFAULT_PUBLIC_PATHS)).toBe(true);
+  expect(protectedRequest("/v1/market/candles/extra", DEFAULT_PUBLIC_PATHS)).toBe(true);
   expect(protectedRequest("/v1/marketing", DEFAULT_PUBLIC_PATHS)).toBe(true);
   expect(protectedRequest("/health", DEFAULT_PUBLIC_PATHS)).toBe(false);
   expect(protectedRequest("/ready", DEFAULT_PUBLIC_PATHS)).toBe(false);

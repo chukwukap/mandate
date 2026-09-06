@@ -2,6 +2,7 @@ import { type Asset, type ChainReader, Problem } from "@mandate/contracts";
 import { CHAIN_ID } from "@mandate/evm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { candlesFor, INTERVALS, isInterval } from "./candles.js";
 import { DEVIATION_LIMIT_BPS, priceCheck } from "./catalogue.js";
 import { MarketSnapshots } from "./snapshot.js";
 
@@ -82,6 +83,49 @@ export async function registerMarket(app: FastifyInstance, deps: MarketDependenc
         as_of: snapshot.as_of,
         probe: snapshot.probe,
         catalogue: snapshot.catalogue,
+      };
+    },
+  );
+
+  app.get(
+    "/v1/market/candles",
+    {
+      schema: {
+        tags: ["market"],
+        summary: "Observed OHLCV for a listed asset",
+        querystring: {
+          type: "object",
+          required: ["symbol"],
+          properties: {
+            symbol: { type: "string", maxLength: 24 },
+            interval: { type: "string", enum: Object.keys(INTERVALS) },
+          },
+        },
+      },
+      // Public, like /v1/market. A price chart is the first thing a visitor looks at, and
+      // requiring a wallet to see one asks for a commitment before showing anything.
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+    },
+    async (request) => {
+      const query = request.query as { symbol?: string; interval?: string };
+      const asset = deps.assets.find((candidate) => candidate.symbol === query.symbol);
+      if (!asset) {
+        throw new Problem(
+          404,
+          "unknown-asset",
+          "Unknown asset",
+          "That symbol is not in the catalogue.",
+        );
+      }
+      const interval = query.interval && isInterval(query.interval) ? query.interval : "1H";
+      const candles = await candlesFor(asset, interval);
+      return {
+        symbol: asset.symbol,
+        interval,
+        // Named so the chart can say where the marks came from. These are pool trades on
+        // Aerodrome, not the Chainlink reference and not the equity's primary exchange.
+        source: "aerodrome",
+        candles,
       };
     },
   );

@@ -235,6 +235,18 @@ function ageSeconds(fromMs: number, nowMs: number): number {
   return Math.max(0, (nowMs - fromMs) / 1000);
 }
 
+/**
+ * Reported as the last-success age when no collection has EVER succeeded.
+ *
+ * Same value and same reasoning as `metrics_worker()` in infra/postgres/04-metrics.sql: absent
+ * is not fresh. NaN reads as the more honest "unknown" and is exactly wrong here, because NaN
+ * fails every comparison -- an exporter that started while the API was unreachable would
+ * publish an age no threshold can catch, and MandateMarketExporterStale, whose whole job is to
+ * say "these numbers are frozen", would stay silent on the one occasion the numbers were never
+ * live to begin with. A day plots cleanly and exceeds every threshold that matters.
+ */
+export const NEVER_COLLECTED_SECONDS = 86_400;
+
 export function collect(state: CollectionState): MetricFamily[] {
   const { entries, dropped } = readEntries(state.market);
   const ready = state.ready;
@@ -319,8 +331,14 @@ export function collect(state: CollectionState): MetricFamily[] {
     {
       name: "mandate_market_last_success_age_seconds",
       type: "gauge",
-      help: "Seconds since the last fully successful collection. This is what proves the numbers below are current; every per-symbol gauge keeps its last value while collection is failing.",
-      samples: [{ value: ageSeconds(state.lastSuccessMs, state.nowMs) }],
+      help: "Seconds since the last fully successful collection, or 86400 when there has never been one. This is what proves the numbers below are current; every per-symbol gauge keeps its last value while collection is failing.",
+      samples: [
+        {
+          value: Number.isFinite(state.lastSuccessMs)
+            ? ageSeconds(state.lastSuccessMs, state.nowMs)
+            : NEVER_COLLECTED_SECONDS,
+        },
+      ],
     },
     {
       name: "mandate_market_snapshot_age_seconds",

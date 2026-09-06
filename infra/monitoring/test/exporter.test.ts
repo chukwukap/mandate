@@ -6,6 +6,7 @@ import {
   collect,
   EXPORTER_METRICS,
   MAX_SYMBOLS,
+  NEVER_COLLECTED_SECONDS,
   ROUTES,
   referenceAgeSeconds,
   scoreStatus,
@@ -261,10 +262,16 @@ describe("degradation", () => {
     expect(family(families, "mandate_api_ready").get("-")).toBe(0);
   });
 
-  test("last-success age is NaN before the first success, never zero", () => {
-    // Zero would read as "collected just now" on the one occasion it is least true.
+  test("a collection that has never succeeded reports a day, not zero and not NaN", () => {
+    // Zero would read as "collected just now" on the one occasion it is least true, and NaN
+    // fails every comparison -- so MandateMarketExporterStale would stay silent for an
+    // exporter that started while the API was down, which is precisely when it should speak.
+    // Same resolution as metrics_worker() in infra/postgres/04-metrics.sql.
     const families = collect(state({ lastSuccessMs: Number.NaN }));
-    expect(family(families, "mandate_market_last_success_age_seconds").get("-")).toBeNaN();
+    expect(family(families, "mandate_market_last_success_age_seconds").get("-")).toBe(
+      NEVER_COLLECTED_SECONDS,
+    );
+    expect(NEVER_COLLECTED_SECONDS).toBeGreaterThan(120);
   });
 
   test("readiness comes from the endpoint's own verdict", () => {
