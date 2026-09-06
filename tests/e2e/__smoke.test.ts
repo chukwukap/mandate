@@ -1,7 +1,7 @@
 import { test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "../../packages/database/node_modules/drizzle-orm/pglite/index.js";
+import { drizzle } from "drizzle-orm/pglite";
 import { type Database, Repository, schema } from "../../packages/database/src/index.js";
 import { loadConfig } from "../../packages/config/src/index.js";
 import { buildApp } from "../../apps/api/src/app.js";

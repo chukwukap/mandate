@@ -1,0 +1,46 @@
+# burningalchemist/sql_exporter -- the PostgreSQL half of infra/monitoring.
+#
+#   sql_exporter -config.file infra/monitoring/sql_exporter.yml
+#
+# WHY NOT postgres_exporter, which is the usual answer. Its default collectors read pg_stat_*,
+# pg_settings and the table catalogue, and the scrape role deliberately cannot: 01-roles.sql
+# creates `mandate_metrics` with SELECT on no table in this database, and 03-grants.sql asserts
+# that with a check that RAISEs if the role can read one. Running postgres_exporter here means
+# either disabling every default collector and using its deprecated custom-query path, or
+# widening the scrape credential -- and a metrics credential that can read `executions` is a
+# credential that can read every user's positions. sql_exporter runs nothing it is not told to.
+#
+# Everything it is told to run is a SECURITY DEFINER function from infra/postgres/04-metrics.sql
+# returning counts, ages and bounded enums. No user id, instance id, address or amount is
+# reachable through this connection.
+
+global:
+  # Under the 15s Prometheus scrape interval in prometheus.yml. Each query is a single
+  # aggregate over one table; measured against the local development database they return in
+  # low single-digit milliseconds, so this bound is about a pathological plan, not the normal
+  # case.
+  scrape_timeout: 10s
+  scrape_timeout_offset: 500ms
+  # 0 lets Prometheus decide the sampling rate. The collector below sets its own floor.
+  min_interval: 0s
+  # Three connections for eight queries that all run inside one scrape. The scrape role must
+  # never be able to exhaust the connection slots the API and worker need: this is a
+  # monitoring path, and it yielding first is the correct failure.
+  max_connections: 3
+  max_idle_connections: 3
+  max_connection_lifetime: 5m
+
+target:
+  # PASSWORDLESS ON PURPOSE, AND NOT A WORKING DSN.
+  #
+  # Every role in 01-roles.sql is created with LOGIN and no password, because a role that
+  # cannot authenticate is the safe failure of forgetting to set one. This placeholder inherits
+  # that: under scram-sha-256 it fails to connect rather than connecting as somebody.
+  #
+  # Supply the real one out of band through SQLEXPORTER_TARGET_DSN, which overrides this value.
+  # A password committed here would be a credential in git that outlives every rotation.
+  data_source_name: "postgres://mandate_metrics@127.0.0.1:5432/mandate?sslmode=disable"
+  collectors: [mandate_v2]
+
+collector_files:
+  - "collectors/*.collector.yml"

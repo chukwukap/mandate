@@ -55,6 +55,7 @@ export {
   feedOf,
   marketRounds,
   NAV_USD,
+  navFor,
   NVDA_SPLIT_MULTIPLIER,
   readingOf,
   roundAt,

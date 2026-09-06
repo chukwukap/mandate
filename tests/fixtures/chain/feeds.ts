@@ -65,6 +65,21 @@ export const NAV_USD: Readonly<Record<string, string>> = {
   TSLAc: "440.55",
 };
 
+/**
+ * The fixture NAV for a symbol, or a thrown error naming the symbol.
+ *
+ * NAV_USD is keyed by string so the fixture builders can look up whatever asset they are handed,
+ * which makes every read `string | undefined`. A test comparing against a symbol it just named
+ * should not have to defend against a case that cannot happen — and should not paper over it with
+ * a non-null assertion either, because the day someone renames a fixture symbol, the assertion
+ * turns a clear failure into a comparison against undefined.
+ */
+export function navFor(symbol: string): string {
+  const value = NAV_USD[symbol];
+  if (value === undefined) throw new Error(`No fixture NAV for ${symbol}`);
+  return value;
+}
+
 /** A recorded `latestRoundData()` tuple, already named. */
 export type RecordedRound = FeedRound;
 

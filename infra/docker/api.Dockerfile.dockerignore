@@ -1,0 +1,39 @@
+# Build context filter for api.Dockerfile. BuildKit reads <dockerfile>.dockerignore in
+# preference to a .dockerignore at the context root, which is what lets this live beside the
+# Dockerfile it belongs to instead of adding a repository-root file that both images would have
+# to share. The build is still correct without it -- the `source` stage deletes node_modules
+# itself -- but the context upload goes from megabytes to gigabytes.
+
+# Secrets first. Nothing in this build reads them and no layer should be able to. The API image
+# copies only dist and node_modules into the final stage, so a leaked .env would not reach the
+# published image -- but it would reach the build cache and any intermediate stage that gets
+# pushed, and a secret in a cache is still a secret you have to rotate.
+.env
+.env.*
+*.key
+*.pem
+keypair*.json
+wallet*.json
+
+# Host installs and host builds. These are the expensive ones: a developer's node_modules is
+# symlinks into a store that does not exist in the image, and dist would let a stale local
+# bundle silently win over the one built here.
+**/node_modules
+**/dist
+**/.next
+**/out
+**/coverage
+**/*.tsbuildinfo
+.git
+.github
+
+# Not part of the API bundle.
+apps/web
+!apps/web/package.json
+apps/worker
+!apps/worker/package.json
+tests
+**/test
+docs
+infra
+logs

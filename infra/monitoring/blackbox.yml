@@ -1,0 +1,25 @@
+# blackbox_exporter modules.
+#
+#   blackbox_exporter --config.file=infra/monitoring/blackbox.yml
+
+modules:
+  mandate_api_reachable:
+    prober: http
+    # 5s. The two probed endpoints are the two that touch no unbounded dependency: /health is
+    # a static handler and /ready is bounded by a 4s per-check deadline plus a 1s verdict cache
+    # (apps/api/src/modules/health/readiness.ts). Anything slower than 5s here is the process
+    # itself failing to schedule, which is what this probe is for.
+    timeout: 5s
+    http:
+      method: GET
+      # 200 AND 503. `GET /ready` answers 503 when PostgreSQL or the Base RPC is unreachable,
+      # and that is the endpoint working correctly -- it exists to shed traffic. Listing only
+      # 200 would make this probe fire alongside every dependency incident and turn the one
+      # signal that means "the process is gone" into a second copy of the readiness alert.
+      valid_status_codes: [200, 503]
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      # This probe must not be the thing that discovers a redirect to a login page and calls
+      # it healthy.
+      no_follow_redirects: true
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false

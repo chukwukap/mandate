@@ -1,0 +1,209 @@
+# Metrics derived from mandate_v2.metrics_*() -- infra/postgres/04-metrics.sql.
+#
+# Every query calls a SECURITY DEFINER function owned by `mandate_metrics_reader` and returns
+# counts, ages and CHECK-constrained enums. Nothing here selects a table, and nothing here can
+# produce an unbounded label: `status`, `stage`, `leg`, `mode` and `outcome` are each fixed by
+# a CHECK constraint in packages/database/src/schema/index.ts.
+#
+# Metrics sharing a `query_ref` are answered by ONE round trip. metrics_schedule() and
+# metrics_permission_authority() each return a single row of several values, and defining a
+# metric per value with its own query would run the same aggregate three and five times per
+# scrape -- and, worse, would let the values in one alert expression come from different
+# instants.
+
+collector_name: mandate_v2
+
+# Floor on how often these queries actually run, independent of how often Prometheus scrapes.
+# Matches the global scrape_interval; if someone points a second Prometheus at this exporter,
+# the database load does not double.
+min_interval: 15s
+
+metrics:
+  # --- Strategy population and schedule -------------------------------------------------
+  - metric_name: mandate_instances
+    type: gauge
+    help: "Strategy instances by lifecycle status and mode."
+    key_labels: [status, mode]
+    values: [instances]
+    query_ref: instances
+
+  - metric_name: mandate_schedule_armed
+    type: gauge
+    help: "Armed instances, the only ones whose rules are being evaluated."
+    values: [armed]
+    query_ref: schedule
+
+  - metric_name: mandate_schedule_overdue
+    type: gauge
+    help: "Armed instances whose next_tick_at is already in the past."
+    values: [overdue]
+    query_ref: schedule
+
+  - metric_name: mandate_schedule_max_lag_seconds
+    type: gauge
+    help: "Worst lateness across armed instances. The maximum, not the mean: one starved strategy is an incident that an average over a thousand healthy ones hides."
+    values: [max_lag_seconds]
+    query_ref: schedule
+
+  # --- Evaluation outcomes ---------------------------------------------------------------
+  - metric_name: mandate_evaluations_recent
+    type: gauge
+    help: "Evaluations written in the last 15 minutes, by outcome. A window, not a lifetime counter: the operator's question is always about now."
+    key_labels: [outcome]
+    values: [evaluations]
+    query_ref: evaluations
+
+  # --- Order pipeline --------------------------------------------------------------------
+  - metric_name: mandate_executions
+    type: gauge
+    help: "Lifetime census of orders by status and stage."
+    key_labels: [status, stage]
+    values: [executions]
+    query_ref: executions
+
+  - metric_name: mandate_executions_recent
+    type: gauge
+    help: "Orders that changed status in the last 15 minutes, by status. This is the submission-failure signal; the lifetime census cannot tell forty reverts over six months from forty in five minutes."
+    key_labels: [status]
+    values: [executions]
+    query_ref: execution_activity
+
+  - metric_name: mandate_executions_open
+    type: gauge
+    help: "Orders in a non-terminal state (admitted or pending), by status and stage."
+    key_labels: [status, stage]
+    values: [executions]
+    query_ref: execution_open
+
+  - metric_name: mandate_executions_open_oldest_age_seconds
+    type: gauge
+    help: "Age of the oldest order in each non-terminal status and stage."
+    key_labels: [status, stage]
+    values: [oldest_age_seconds]
+    query_ref: execution_open
+
+  # --- Signed transaction journal --------------------------------------------------------
+  - metric_name: mandate_transactions
+    type: gauge
+    help: "Journalled transactions by leg and status."
+    key_labels: [leg, status]
+    values: [transactions]
+    query_ref: transactions
+
+  - metric_name: mandate_transactions_pending
+    type: gauge
+    help: "Broadcast transactions with no receipt yet, by leg."
+    key_labels: [leg]
+    values: [pending]
+    query_ref: transaction_pending
+
+  - metric_name: mandate_transactions_pending_oldest_age_seconds
+    type: gauge
+    help: "Age of the oldest unreceipted transaction per leg. A stuck fund leg has pulled nothing; a stuck swap leg has the user's USDC in the spender wallet."
+    key_labels: [leg]
+    values: [oldest_age_seconds]
+    query_ref: transaction_pending
+
+  # --- Spend permissions -----------------------------------------------------------------
+  - metric_name: mandate_permissions
+    type: gauge
+    help: "Spend permissions by stored status."
+    key_labels: [status]
+    values: [permissions]
+    query_ref: permissions
+
+  - metric_name: mandate_permission_authority_armed
+    type: gauge
+    help: "Armed automatic strategies, the denominator for everything below."
+    values: [armed]
+    query_ref: permission_authority
+
+  - metric_name: mandate_permission_authority_stranded
+    type: gauge
+    help: "Armed automatic strategies with no active spend permission at all. Already broken, not approaching: every order they admit is refused at the funding gate."
+    values: [stranded]
+    query_ref: permission_authority
+
+  - metric_name: mandate_permission_authority_expiring_1h
+    type: gauge
+    help: "Armed automatic strategies whose onchain permission expires within the hour."
+    values: [expiring_1h]
+    query_ref: permission_authority
+
+  - metric_name: mandate_permission_authority_expiring_24h
+    type: gauge
+    help: "Armed automatic strategies whose onchain permission expires within a day."
+    values: [expiring_24h]
+    query_ref: permission_authority
+
+  - metric_name: mandate_permission_authority_expiring_72h
+    type: gauge
+    help: "Armed automatic strategies whose onchain permission expires within three days. Lead indicator; no alert fires on it."
+    values: [expiring_72h]
+    query_ref: permission_authority
+
+  # --- Worker leadership -----------------------------------------------------------------
+  - metric_name: mandate_worker_leader
+    type: gauge
+    help: "1 when a worker_state row exists at all. 0 means no worker has ever held leadership on this database."
+    values: [leader]
+    query_ref: worker
+
+  - metric_name: mandate_worker_heartbeat_age_seconds
+    type: gauge
+    help: "Seconds since the leader last beat. Reports 86400 when no worker has ever run, because absent is not fresh."
+    values: [heartbeat_age_seconds]
+    query_ref: worker
+
+  - metric_name: mandate_worker_execution_available
+    type: gauge
+    help: "1 when the leader is execution-enabled and no order is in recovery_required. This is the same bit the API publishes as execution_available."
+    values: [execution_available]
+    query_ref: worker
+
+queries:
+  - query_name: instances
+    query: |
+      SELECT status, mode, instances FROM mandate_v2.metrics_instances();
+
+  - query_name: schedule
+    query: |
+      SELECT armed, overdue, max_lag_seconds FROM mandate_v2.metrics_schedule();
+
+  - query_name: evaluations
+    query: |
+      SELECT outcome, evaluations FROM mandate_v2.metrics_evaluations();
+
+  - query_name: executions
+    query: |
+      SELECT status, stage, executions FROM mandate_v2.metrics_executions();
+
+  - query_name: execution_activity
+    query: |
+      SELECT status, executions FROM mandate_v2.metrics_execution_activity();
+
+  - query_name: execution_open
+    query: |
+      SELECT status, stage, executions, oldest_age_seconds
+      FROM mandate_v2.metrics_execution_open();
+
+  - query_name: transactions
+    query: |
+      SELECT leg, status, transactions FROM mandate_v2.metrics_transactions();
+
+  - query_name: transaction_pending
+    query: |
+      SELECT leg, pending, oldest_age_seconds FROM mandate_v2.metrics_transaction_pending();
+
+  - query_name: permissions
+    query: |
+      SELECT status, permissions FROM mandate_v2.metrics_permissions();
+
+  - query_name: permission_authority
+    query: |
+      SELECT armed, stranded, expiring_1h, expiring_24h, expiring_72h
+      FROM mandate_v2.metrics_permission_authority();
+
+  - query_name: worker
+    query: |
+      SELECT leader, heartbeat_age_seconds, execution_available FROM mandate_v2.metrics_worker();

@@ -1,0 +1,40 @@
+# Build context filter for worker.Dockerfile. BuildKit reads <dockerfile>.dockerignore in
+# preference to a .dockerignore at the context root, which is what lets this live beside the
+# Dockerfile it belongs to instead of adding a repository-root file that both images would have
+# to share. The build is still correct without it -- the `source` stage deletes node_modules
+# itself -- but the context upload goes from megabytes to gigabytes.
+
+# Secrets first, and they matter more here than anywhere else in the repository: this is the
+# image that signs. The worker image copies only dist and node_modules into the final stage, so
+# a stray .env or key file would not reach the published image -- but it would reach the build
+# cache and any intermediate stage that gets pushed, and a private key in a cache is a key that
+# has to be rotated.
+.env
+.env.*
+*.key
+*.pem
+keypair*.json
+wallet*.json
+
+# Host installs and host builds. These are the expensive ones: a developer's node_modules is
+# symlinks into a store that does not exist in the image, and dist would let a stale local
+# bundle silently win over the one built here.
+**/node_modules
+**/dist
+**/.next
+**/out
+**/coverage
+**/*.tsbuildinfo
+.git
+.github
+
+# Not part of the worker bundle.
+apps/web
+!apps/web/package.json
+apps/api
+!apps/api/package.json
+tests
+**/test
+docs
+infra
+logs

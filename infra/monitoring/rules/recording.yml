@@ -1,0 +1,59 @@
+# Recording rules.
+#
+# Three, and no more. A recording rule is a second definition of a number that has to be kept
+# in step with the first; each of these exists because the expression is subtle enough that
+# repeating it in several alerts and on a dashboard would eventually leave the alert and the
+# graph disagreeing about what "failing" means.
+#
+# Naming follows the Prometheus convention `level:metric:operation`.
+
+groups:
+  - name: mandate.recording
+    interval: 15s
+    rules:
+      # Share of evaluations that did not evaluate.
+      #
+      # `deferred`, `late` and `degraded` are excluded from BOTH sides. They are written by the
+      # scheduler about itself (apps/worker/src/scheduler/cadence.ts), not by admission about a
+      # strategy, so counting them as failures would report an incident every time the worker
+      # honestly recorded that it was running behind -- and counting them in the denominator
+      # would dilute a real failure rate with rows that were never evaluations.
+      #
+      # Everything else that is not `evaluated` counts, including outcomes this file has never
+      # heard of. Enumerating known failures means a failure mode added by a future build stays
+      # invisible until someone remembers to update this list.
+      #
+      # `or vector(0)` on the numerator only: with no failures at all the inner sum matches no
+      # series and the whole division would return an EMPTY vector, so the ratio would vanish
+      # exactly when the system is healthy and every `> threshold` comparison against it would
+      # be "no data" rather than "fine". The denominator gets no such fallback on purpose --
+      # when nothing has been evaluated in fifteen minutes there is no ratio to state, and
+      # MandateEvaluationsStopped is the alert for that.
+      - record: mandate:evaluation_failure_ratio:15m
+        expr: |
+          (sum(mandate_evaluations_recent{outcome!~"evaluated|deferred|late|degraded"}) or vector(0))
+          /
+          sum(mandate_evaluations_recent{outcome!~"deferred|late|degraded"})
+
+      # Share of API probes that did not get the answer the route is defined to give.
+      #
+      # `outcome!="ok"` rather than a 5xx filter. The probe set is three fixed, correct
+      # requests to routes the API declares, so a 404 or a 401 is the API failing to serve its
+      # own contract just as much as a 500 is. The one status that would otherwise be
+      # miscounted -- 503 from /ready -- is already scored `ok` by the exporter, because
+      # refusing traffic is that endpoint's job.
+      - record: mandate:api_probe_error_ratio:10m
+        expr: |
+          (sum(rate(mandate_api_probe_responses_total{outcome!="ok"}[10m])) or vector(0))
+          /
+          sum(rate(mandate_api_probe_responses_total[10m]))
+
+      # Oldest Chainlink round backing any listed asset.
+      #
+      # `>= 0` is a NaN filter, not a sanity check. The exporter publishes NaN for a feed it
+      # could not read at all, to keep "unreadable" distinct from "very old" -- and a single
+      # NaN would otherwise propagate through `max()` and make this series useless. Comparison
+      # against NaN is false, so the filter drops exactly those samples; they are alerted on
+      # separately as MandateReferenceFeedUnreadable.
+      - record: mandate:reference_age_seconds:max
+        expr: max(mandate_reference_age_seconds >= 0)

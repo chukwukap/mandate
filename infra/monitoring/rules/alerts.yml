@@ -1,0 +1,740 @@
+# Alert rules for a system that moves other people's money.
+#
+# Rules this file follows, because an alert that nobody can act on is worse than no alert --
+# it occupies the "we have coverage for that" slot in an operator's head while covering
+# nothing:
+#
+#   * Every threshold is derived from a constant in this codebase, a measured figure from Base
+#     mainnet, or a documented operational bound. The `derivation` annotation states which, in
+#     full, including the raw number that appears in the expression. A round number nobody can
+#     defend gets tuned away the first time it is inconvenient.
+#   * Every alert carries an `action`: the first thing to DO, not a restatement of the metric.
+#   * Nothing alerts on `mandate_reference_stale`. That gauge is the API's 26h display bound,
+#     which every symbol crosses for the whole of every weekend by design. See
+#     MandateReferenceFeedUnusable for the bound that actually matters.
+#   * severity: critical wakes someone. severity: warning is a ticket. severity: info is a
+#     dashboard annotation and should never route to a human.
+
+groups:
+  # ==========================================================================================
+  - name: mandate.execution
+    interval: 15s
+    rules:
+      - alert: MandateOrderRecoveryRequired
+        expr: sum(mandate_executions{status="recovery_required"}) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: execution
+        annotations:
+          summary: An order needs operator reconciliation and automatic execution is stopped
+          description: >-
+            At least one order is in `recovery_required`. That state halts its own strategy and
+            blocks new automatic admission for every user on this database, so the whole
+            product is now in observation mode until a human resolves it. It is reached by an
+            ambiguous receipt, a consumed unknown nonce, a settled receipt that changed, an
+            insufficient funded balance, or a failed refund.
+          derivation: >-
+            Threshold 0. There is no tolerable number of these: a single row is a system-wide
+            stop, not a per-user inconvenience (docs/runbooks/worker-local.md). `for: 1m` is
+            four scrapes -- enough to discount one bad scrape and nothing more.
+          action: >-
+            Stop the worker and leave it stopped. Do NOT restart from `spend`, reset a funding
+            leg, reuse a nonce or force a retry; the shipped inspector is read-only precisely
+            because there is no safe blanket retry. Take a database backup, then
+            `bun run worker:inspect USER_UUID EXECUTION_UUID` and verify every journal hash,
+            receipt, canonical block, spender nonce, approval and account transfer on Base. A
+            pending transaction can still mine -- a timeout is not proof of failure.
+          runbook: infra/monitoring/README.md#mandateorderrecoveryrequired
+
+      - alert: MandateOrdersReverting
+        expr: sum(mandate_executions_recent{status="reverted"}) >= 3
+        for: 1m
+        labels:
+          severity: critical
+          component: execution
+        annotations:
+          summary: Orders are reverting onchain despite passing simulation
+          description: >-
+            Three or more orders have reverted in the last fifteen minutes. Every leg is
+            simulated before it is signed, so each of these is a case where the simulation and
+            the mined block disagreed, and each one burned the operator's gas for nothing.
+          derivation: >-
+            Threshold 3 over the 15-minute activity window. One revert can be an honest race --
+            another swap landing in the same block moves the pool between simulation and
+            inclusion. Three cannot: at the volumes this system runs, three lost races inside
+            one window means the disagreement is systematic (a token transfer pause, an oracle
+            pause, a pool that has been drained, a stale approval), not statistical.
+          action: >-
+            Read the `reason` on the affected orders and the revert receipts through
+            `worker:inspect`. Check the B20 token pause and oracle pause state for the symbol
+            before assuming a venue problem. If the cause is a paused token, stop admitting
+            work for that symbol rather than letting each order rediscover it at gas cost.
+          runbook: infra/monitoring/README.md#mandateordersreverting
+
+      - alert: MandateOrderReverted
+        expr: sum(mandate_executions_recent{status="reverted"}) >= 1
+        for: 5m
+        labels:
+          severity: warning
+          component: execution
+        annotations:
+          summary: An order reverted onchain
+          description: >-
+            One order reverted in the last fifteen minutes. Simulation passed and the mined
+            block disagreed.
+          derivation: >-
+            Threshold 1. A revert is never routine here: it costs the operator gas, it is
+            invisible to the user beyond a failed order, and it is the only evidence that
+            pre-broadcast simulation is not describing the chain. `for: 5m` because the
+            underlying window is fifteen minutes wide -- the condition persists on its own, so
+            a shorter `for` would add nothing but earlier noise.
+          action: >-
+            Open a ticket, do not page. Read the receipt and the order's `reason`. If a second
+            and third follow, MandateOrdersReverting takes over and this one is inhibited.
+          runbook: infra/monitoring/README.md#mandateorderreverted
+
+      - alert: MandateOrderRefundsElevated
+        expr: sum(mandate_executions_recent{status="refunded"}) >= 2
+        for: 1m
+        labels:
+          severity: warning
+          component: execution
+        annotations:
+          summary: Funded trades are failing and being refunded
+          description: >-
+            Two or more orders were refunded in the last fifteen minutes. A refund means the
+            user's USDC had already been pulled through the spend permission when the trade
+            failed: the router allowance was cleared and exactly that order's funds were
+            returned, with the operator paying gas in both directions and never charging it
+            back.
+          derivation: >-
+            Threshold 2 over the 15-minute activity window. One refund is the designed response
+            to a single failed funded trade and the system is built to do it correctly. Two
+            inside one window means the cause is the environment rather than the trade -- a
+            paused token, an exhausted pool, an approval that no longer holds -- and every
+            further admission will pay gas to rediscover the same thing.
+          action: >-
+            Confirm each refund actually returned the exact funded amount to the account (a
+            failed refund becomes `recovery_required`, which pages). Then find the shared
+            cause before the next admission cycle: symbol pause state, pool liquidity, and
+            whether the spender's ETH balance still covers three legs plus a refund.
+          runbook: infra/monitoring/README.md#mandateorderrefundselevated
+
+      - alert: MandateOrderStuckAdmitted
+        expr: max(mandate_executions_open_oldest_age_seconds{status="admitted"}) > 900
+        for: 5m
+        labels:
+          severity: warning
+          component: execution
+        annotations:
+          summary: An admitted order has never progressed to a signed leg
+          description: >-
+            An order has been `admitted` -- reserved against the signed envelope, with nothing
+            signed -- for over fifteen minutes. It is holding a period budget reservation that
+            is never credited back, so the user's remaining allowance is being consumed by an
+            order that will not happen.
+          derivation: >-
+            900 seconds is fifteen times the 60-second expiry that new funding gets at intent
+            admission (docs/runbooks/worker-local.md). Past one expiry the order cannot proceed
+            on its original terms; fifteen of them removes any argument that the worker is
+            merely between cycles at WORKER_POLL_MS = 2000.
+          action: >-
+            Check that a worker holds leadership at all (MandateWorkerHeartbeatLost usually
+            fires first if not). If a leader is alive, the order is being skipped -- look at
+            the instance's evaluation history for a repeating admission refusal, and at whether
+            an older order is blocking the queue.
+          runbook: infra/monitoring/README.md#mandateorderstuckadmitted
+
+      - alert: MandateTransactionPendingStalled
+        expr: max by (leg) (mandate_transactions_pending_oldest_age_seconds) > 1800
+        for: 5m
+        labels:
+          severity: critical
+          component: execution
+        annotations:
+          summary: "Signed transaction on the {{ $labels.leg }} leg has no receipt after 30 minutes"
+          description: >-
+            A transaction has been in `signed` -- bytes written to the journal and broadcast,
+            no confirmed or reverted receipt recorded -- for longer than the worker itself will
+            wait. On a `swap` leg that means the user's USDC is sitting in the spender wallet
+            with no position bought; on a `fund` leg nothing has moved yet.
+          derivation: >-
+            1800 seconds is WORKER_RECEIPT_TIMEOUT_MS at its default of 1800000 ms. Past that
+            point the worker has stopped waiting, so a row still in `signed` is one that no
+            process is advancing. Anything below it is a wait the system is designed to do, and
+            alerting there would page on a congested chain doing exactly what it should.
+          action: >-
+            Do NOT resubmit and do NOT reuse the nonce -- a pending transaction can still mine,
+            and a replacement at the same nonce is how one order becomes two. Look the hash up
+            on Base. If it is mined, the reconciliation path needs to run; if it was dropped,
+            the journal is the record of what was signed and recovery is an operator decision,
+            not a retry.
+          runbook: infra/monitoring/README.md#mandatetransactionpendingstalled
+
+      - alert: MandateTransactionPendingSlow
+        expr: max by (leg) (mandate_transactions_pending_oldest_age_seconds) > 300
+        for: 5m
+        labels:
+          severity: warning
+          component: execution
+        annotations:
+          summary: "Signed transaction on the {{ $labels.leg }} leg is waiting far longer than inclusion should take"
+          description: >-
+            A broadcast transaction has been waiting five minutes for a receipt. Not yet the
+            point where the worker gives up, but far past normal inclusion.
+          derivation: >-
+            WORKER_CONFIRMATIONS defaults to 3 and Base produces a block roughly every two
+            seconds, so one leg is confirmed in about six seconds and a whole fund/approve/swap
+            sequence in well under a minute. 300 seconds is fifty confirmation windows: well
+            clear of a slow block or a brief mempool backlog, and well short of the 1800-second
+            point at which the worker stops waiting and this becomes a page.
+          action: >-
+            Check Base for congestion and check the spender's ETH balance -- an underpriced
+            transaction from a signer running low on gas is the common cause, and there is no
+            automatic fee replacement in this build. Do not resubmit.
+          runbook: infra/monitoring/README.md#mandatetransactionpendingslow
+
+  # ==========================================================================================
+  - name: mandate.scheduler
+    interval: 15s
+    rules:
+      - alert: MandateEvaluationsStopped
+        expr: (sum(mandate_evaluations_recent) or vector(0)) == 0 and on() (mandate_schedule_overdue > 0)
+        for: 5m
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: Work is due and nothing is evaluating it
+          description: >-
+            No evaluation of any kind has been written in fifteen minutes while at least one
+            armed instance is already past its due time. Strategies are displayed as armed and
+            their rules are not running against current prices.
+          derivation: >-
+            Both halves are load-bearing, and each is 0. Zero evaluations ALONE is legitimate:
+            `tick_interval_ms` may be set as high as 3600000 (one hour), so one slow strategy
+            can honestly write nothing into a fifteen-minute window. Pairing it with at least
+            one overdue instance removes that case entirely -- work is due, and nothing is
+            doing it. `for: 5m` is twenty scrapes.
+          action: >-
+            Check worker leadership and the worker's logs for a cycle that is failing before it
+            reaches any instance -- a database readiness failure or an RPC outage at startup
+            keeps the process alive and doing nothing. `mandate_worker_heartbeat_age_seconds`
+            distinguishes "no worker" from "worker running and stuck".
+          runbook: infra/monitoring/README.md#mandateevaluationsstopped
+
+      - alert: MandateEvaluationLagCritical
+        expr: mandate_schedule_max_lag_seconds > 600
+        for: 5m
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: An armed strategy is ten minutes behind its own schedule
+          description: >-
+            The worst-lagging armed instance is more than ten minutes past due. Missed
+            evaluations are never replayed -- replaying an hour of them against current prices
+            would fire rules on stale intent -- so this is coverage that is simply gone,
+            including any stop-loss rule the owner is relying on.
+          derivation: >-
+            600 seconds against the default cadence of `tick_interval_ms` = 12000 is fifty
+            consecutive missed evaluations, and against the API's 15-second market snapshot
+            cache it is forty generations of price data that no rule was tested against. Five
+            minutes of persistence rules out a restart catch-up, which the scheduler already
+            bounds separately through its `latenessCapMs`.
+          action: >-
+            Look at what the worker is spending its cycle on: a single instance in exponential
+            backoff cannot cause this (backoff moves its own due time forward), so the cause is
+            throughput -- an RPC that has slowed down, a batch stuck on one owner, or
+            WORKER_MAX_BATCH too small for the armed population.
+          runbook: infra/monitoring/README.md#mandateevaluationlagcritical
+
+      - alert: MandateEvaluationLagHigh
+        expr: mandate_schedule_max_lag_seconds > 120
+        for: 10m
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: An armed strategy is falling behind its schedule
+          description: >-
+            The worst-lagging armed instance has been more than two minutes past due for ten
+            minutes. Rules are still running, just not when they were meant to.
+          derivation: >-
+            The scheduler already writes its own durable `late` record at max(2 ticks, 30s) --
+            `lateAfterTicks` and `lateFloorMs` in apps/worker/src/scheduler/cadence.ts. 120
+            seconds is four times that floor and ten missed evaluations at the 12-second
+            default, so this fires only once the worker has been recording continuous lateness
+            rather than absorbing one slow cycle.
+          action: >-
+            Compare `mandate_schedule_overdue` against `mandate_schedule_armed`. A small
+            constant number of overdue instances is a starvation problem; a growing fraction is
+            a throughput problem and will reach MandateEvaluationLagCritical.
+          runbook: infra/monitoring/README.md#mandateevaluationlaghigh
+
+      - alert: MandateEvaluationFailureRatioHigh
+        expr: mandate:evaluation_failure_ratio:15m > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: A quarter of evaluations are not evaluating
+          description: >-
+            More than 25% of the evaluations written in the last fifteen minutes ended in
+            something other than `evaluated`, excluding the scheduler's own bookkeeping rows.
+            The usual causes are an oracle, DEX or permission read that failed
+            (`observation-or-authority-unavailable`) or a reading that went stale before the
+            write committed (`observation-expired`).
+          derivation: >-
+            0.25. Transient failures against a public RPC are expected, and the scheduler
+            answers them with exponential backoff from a 30-second floor -- which means a
+            persistently failing instance contributes progressively FEWER rows to this window,
+            not more. A sustained quarter of all evaluations therefore cannot be a handful of
+            instances retrying; it can only be a dependency that every instance shares.
+          action: >-
+            Identify the shared dependency before touching any strategy: the Base RPC first
+            (`mandate_api_chain_ready` is an independent read of the same thing), then the
+            oracle, then the SpendPermissionManager read. Public RPCs rate-limit; the runbook
+            is explicit that this workload needs one with real capacity.
+          runbook: infra/monitoring/README.md#mandateevaluationfailureratiohigh
+
+  # ==========================================================================================
+  - name: mandate.reference
+    interval: 15s
+    rules:
+      - alert: MandateReferenceFeedUnusable
+        expr: mandate_reference_age_seconds > 345600
+        for: 15m
+        labels:
+          severity: critical
+          component: reference
+        annotations:
+          summary: "{{ $labels.symbol }} reference is too old to validate any quote"
+          description: >-
+            The Chainlink round backing {{ $labels.symbol }} is older than the validation
+            bound, so it can no longer anchor the 5% deviation check. Nothing can be quoted or
+            traded for this symbol until a new round lands, and the pool keeps trading
+            regardless.
+          derivation: >-
+            345600 seconds is 96 hours: MAX_VALIDATION_AGE in packages/evm/src/clients/base.ts.
+            It is deliberately NOT the 26-hour MAX_REFERENCE_AGE display bound. These Coinbase
+            total-return feeds have no off-hours heartbeat and simply hold the last close;
+            measured on a Sunday, all seven symbols were 37-43 hours old while their Aerodrome
+            pools traded normally, so an alert at 26 hours fires every single weekend and
+            teaches everyone to ignore it. 96 hours spans a weekend plus a holiday Monday.
+            `for: 15m` is sixty consecutive confirmations -- crossing a four-day boundary does
+            not need a fast trigger.
+          action: >-
+            Check the aggregator for this symbol on Base directly; if it is publishing and we
+            are not seeing it, the fault is the RPC, not Chainlink. Expect and accept refused
+            quotes for the symbol in the meantime. Do NOT widen MAX_VALIDATION_AGE to clear
+            this alert -- that silently authorises trading against a price that no longer
+            describes the asset, which is the exact failure the bound exists to prevent.
+          runbook: infra/monitoring/README.md#mandatereferencefeedunusable
+
+      - alert: MandateReferenceFeedApproachingUnusable
+        expr: mandate_reference_age_seconds > 259200
+        for: 30m
+        labels:
+          severity: warning
+          component: reference
+        annotations:
+          summary: "{{ $labels.symbol }} reference is within one heartbeat of unusable"
+          description: >-
+            The round backing {{ $labels.symbol }} is over three days old. It still validates
+            quotes, but there is now very little margin before it stops.
+          derivation: >-
+            259200 seconds is 72 hours. FEED_HEARTBEAT_SECONDS is 24 hours
+            (packages/evm/src/feeds/staleness.ts), so at 72 hours a healthy feed still has
+            exactly one heartbeat left to publish before it crosses the 96-hour validation
+            bound -- this is the last point at which a human can act before quoting stops. It
+            clears an ordinary Friday-close-to-Monday-open gap of roughly 64 hours. A holiday
+            Monday pushes that gap to about 88 hours and will trip this alert; that is correct,
+            not noise -- at 88 hours the symbol is eight hours from being unquotable.
+          action: >-
+            Confirm the market is genuinely closed rather than the feed being abandoned, and
+            check whether a corporate-action pause is in effect for the symbol. No action is
+            required for an ordinary long weekend beyond knowing it is one.
+          runbook: infra/monitoring/README.md#mandatereferencefeedapproachingunusable
+
+      - alert: MandateReferenceFeedUnreadable
+        expr: mandate_reference_available == 0
+        for: 10m
+        labels:
+          severity: critical
+          component: reference
+        annotations:
+          summary: "No Chainlink round could be read for {{ $labels.symbol }}"
+          description: >-
+            The API reported no round at all for {{ $labels.symbol }} -- not an old price, no
+            price. This is a structural fault in the read path: `assessRound` throws outright
+            on a non-positive answer, an unanswered round, a future timestamp or a carried-over
+            answer, so reaching this state means the aggregator, its address, or the RPC.
+          derivation: >-
+            Threshold 0 rounds. This alert has to exist separately because an unreadable feed
+            publishes a NaN age, and NaN fails every comparison -- so it would silently never
+            trip MandateReferenceFeedUnusable no matter how long it lasted. 10 minutes is forty
+            scrapes and comfortably covers an RPC provider failing over.
+          action: >-
+            Check `mandate_api_chain_ready` first: if the chain read is failing generally, this
+            is an RPC incident and every symbol will be showing it. If only one symbol is
+            affected, verify its feed address in packages/evm/src/addresses/index.ts against
+            the aggregator that is actually live on Base.
+          runbook: infra/monitoring/README.md#mandatereferencefeedunreadable
+
+      - alert: MandateCatalogueCoverageDegraded
+        expr: mandate_market_tradable_assets < 5
+        for: 30m
+        labels:
+          severity: warning
+          component: reference
+        annotations:
+          summary: Fewer assets are routable than the measured baseline
+          description: >-
+            The number of catalogue entries with a quote inside the 500 bps reference band has
+            dropped below the measured steady state. Users see a shrinking set of tradable
+            symbols.
+          derivation: >-
+            5, measured on Base mainnet rather than assumed from the seven listed. AAPLc,
+            GOOGLc, METAc, NVDAc and TSLAc route inside the band at the 10 USDC probe size;
+            MSFTc and AMZNc do not, on pools of roughly $150k. So the healthy value of this
+            gauge is 5, and an alert set at 7 would fire permanently on day one. 30 minutes is
+            120 snapshot TTLs, so no cold refresh or single RPC blip reaches it.
+          action: >-
+            Find which symbol dropped out and why with
+            `mandate_asset_blocked{reason=~".+"} == 1`. `no-priced-route` is liquidity;
+            `quote-deviation` is a pool that has drifted from the reference; `chain-unavailable`
+            is an RPC incident and not a market event at all.
+          runbook: infra/monitoring/README.md#mandatecataloguecoveragedegraded
+
+      - alert: MandateQuoteDeviationHigh
+        expr: abs(mandate_asset_deviation_bps) > 250
+        for: 15m
+        labels:
+          severity: warning
+          component: reference
+        annotations:
+          summary: "{{ $labels.symbol }} pool price is halfway to the refusal band"
+          description: >-
+            The probe price for {{ $labels.symbol }} is more than 250 bps from its Chainlink
+            reference. The router refuses at 500, so orders for this symbol are one ordinary
+            move away from being rejected outright.
+          derivation: >-
+            250 bps is half of DEVIATION_LIMIT_BPS = 500, the hard refusal band, and roughly
+            fifty times the measured healthy figure: AAPLc/USDC at tick spacing 10 quoted
+            $320.22 against a $320.08 reference, 4.4 bps. Half the band is the point at which
+            an ordinary intraday move starts producing refusals, reached while there is still
+            room to look at why. `for: 15m` is sixty scrapes -- longer than any single probe
+            can be unlucky for.
+          action: >-
+            Decide which side is wrong before doing anything. Check
+            `mandate_reference_age_seconds` for the symbol -- after a weekend gap-open the
+            close under-reflects the true price and the pool is right. If the reference is
+            fresh, the pool has drifted and the correct outcome is refused orders, not a wider
+            band.
+          runbook: infra/monitoring/README.md#mandatequotedeviationhigh
+
+  # ==========================================================================================
+  - name: mandate.worker
+    interval: 15s
+    rules:
+      - alert: MandateWorkerHeartbeatLost
+        expr: mandate_worker_heartbeat_age_seconds > 30
+        for: 2m
+        labels:
+          severity: critical
+          component: worker
+        annotations:
+          summary: No live worker heartbeat
+          description: >-
+            The leader's heartbeat is stale, so nothing is evaluating strategies or advancing
+            orders. The API is reporting `execution_available: false` to every client right
+            now. A heartbeat age of 86400 means no worker has ever run against this database.
+          derivation: >-
+            30 seconds is inherited, not chosen. The worker beats every 10 seconds
+            (apps/worker/src/main.ts) and packages/database/src/worker.ts declares it
+            unavailable at 30 -- three missed beats -- and that same bound is what the API
+            publishes as `execution_available` on /ready. Any other number here would make the
+            alert disagree with what the product already tells users. `for: 2m` covers a clean
+            handover: a replacement process polls the leadership advisory lock every
+            WORKER_POLL_MS (default 2000 ms), so two minutes is sixty attempts and can no
+            longer be a deploy.
+          action: >-
+            Check whether the process is alive at all before restarting anything. If it is
+            alive and not beating, leadership was lost -- the second process is waiting on the
+            advisory lock, and a transaction-mode pooler in front of PostgreSQL cannot hold
+            that lock, which is the usual cause after an infrastructure change. Durable state
+            is safe across a restart; the journal is what makes that true.
+          runbook: infra/monitoring/README.md#mandateworkerheartbeatlost
+
+      - alert: MandateWorkerCannotExecute
+        expr: >-
+          mandate_worker_leader == 1
+          and mandate_worker_execution_available == 0
+          and on() (sum(mandate_instances{status="armed",mode="auto"}) > 0)
+        for: 15m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: A worker is running but cannot execute while automatic strategies are armed
+          description: >-
+            The leader is alive and heartbeating, and reporting that it cannot execute, while
+            at least one automatic strategy is armed. Two causes: WORKER_EXECUTE=0, or an order
+            in `recovery_required` (which pages separately). Those strategies are evaluating
+            rules and will never fill.
+          derivation: >-
+            The thresholds are booleans -- 1 leader, 0 execution availability -- but the third
+            clause is what makes this alertable at all. WORKER_EXECUTE=0 is the DEFAULT and the
+            correct state of an observation deployment, so alerting on the flag alone would
+            fire forever on every install and be muted within a week. It only means something
+            when someone's automatic strategy is armed and expecting fills. `for: 15m` rides
+            out a rolling restart.
+          action: >-
+            If MandateOrderRecoveryRequired is also firing, that is the cause and this is a
+            symptom. Otherwise this is configuration: live execution needs all of
+            WORKER_EXECUTE=1, a worker-only private key, the matching public SPENDER_ADDRESS,
+            and an ELIGIBLE_COUNTRIES allowlist that matches the API.
+          runbook: infra/monitoring/README.md#mandateworkercannotexecute
+
+  # ==========================================================================================
+  - name: mandate.permissions
+    interval: 15s
+    rules:
+      - alert: MandateSpendPermissionStranded
+        expr: mandate_permission_authority_stranded > 0
+        for: 15m
+        labels:
+          severity: critical
+          component: permissions
+        annotations:
+          summary: An armed automatic strategy has no spend authority at all
+          description: >-
+            An instance is armed and automatic with no `active` spend permission -- revoked
+            onchain, expired, or never signed. It evaluates its rules on schedule and is
+            refused at the funding gate every single time, while the interface shows it alive
+            and working. This is already broken, not approaching broken.
+          derivation: >-
+            Threshold 0. There is no benign steady-state count: an armed automatic strategy
+            without authority is a strategy that cannot do the one thing it exists to do.
+            `for: 15m` exists for the single benign cause -- `permissions.status` is this
+            server's observation of the chain and can lag a grant that has just been signed.
+          action: >-
+            Establish first whether the user revoked deliberately; onchain revocation is the
+            authority stop and is a legitimate thing for them to do. If so, the strategy should
+            be paused rather than left armed. If not, re-read the permission from
+            SpendPermissionManager -- our `status` may simply have missed the transition.
+          runbook: infra/monitoring/README.md#mandatespendpermissionstranded
+
+      - alert: MandateSpendPermissionExpiringImminently
+        expr: mandate_permission_authority_expiring_1h > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: permissions
+        annotations:
+          summary: Spend authority behind an armed strategy expires within the hour
+          description: >-
+            An armed automatic strategy's onchain permission expires in under an hour. When it
+            does, the strategy keeps evaluating and every order it admits is refused at the
+            funding gate.
+          derivation: >-
+            3600 seconds of remaining authority, read from `payload->>'end'` -- the uint48
+            written at prepare time and protected by an immutability trigger, so it is
+            authoritative in a way `status` is not. Warning and not critical because no
+            operator action fixes it: only the account holder can sign a new
+            SpendPermissionManager grant. It is separate from the 24-hour alert because the
+            correct response changes -- at one hour there is no longer time to obtain a
+            signature.
+          action: >-
+            Send the renewal prompt if that has not already happened, and stop expecting fills
+            from these strategies. Consider pausing them rather than leaving them armed and
+            failing, so the user's history does not fill with funding refusals.
+          runbook: infra/monitoring/README.md#mandatespendpermissionexpiringimminently
+
+      - alert: MandateSpendPermissionExpiringSoon
+        expr: mandate_permission_authority_expiring_24h > 0
+        for: 30m
+        labels:
+          severity: warning
+          component: permissions
+        annotations:
+          summary: Spend authority behind an armed strategy expires within a day
+          description: >-
+            An armed automatic strategy's onchain permission expires within 24 hours. It is
+            still working; it needs the account holder to re-sign before it stops.
+          derivation: >-
+            86400 seconds, taken from a window this system already imposes rather than invented
+            for this alert: every eligible arm request records a country attestation valid for
+            24 hours, and an automatic strategy pauses when that lapses. A user whose
+            permission expires inside a day therefore has to return and re-attest inside the
+            same day anyway, so one prompt can cover both. Anything shorter leaves no room for
+            the user to be asleep.
+          action: >-
+            Prompt the account holder to re-grant. Nothing is broken yet, and nothing an
+            operator can do will renew it -- the signature is the user's.
+          runbook: infra/monitoring/README.md#mandatespendpermissionexpiringsoon
+
+  # ==========================================================================================
+  - name: mandate.api
+    interval: 15s
+    rules:
+      - alert: MandateApiUnreachable
+        expr: probe_success{job="mandate-blackbox"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "The API is not answering HTTP at {{ $labels.instance }}"
+          description: >-
+            An external probe could not get an HTTP response from the API. This is measured by
+            blackbox_exporter, which shares no code with the rest of this stack, so it still
+            answers when the market exporter does not.
+          derivation: >-
+            Threshold 0 on probe_success. The probe accepts both 200 and 503, so a 0 means the
+            process did not answer at all -- it explicitly does not mean "unready", which
+            MandateApiUnready covers with the reason attached. `for: 3m` is twelve scrapes and
+            rides out a rolling deploy.
+          action: >-
+            Check the process and the listener before anything else. If the process is up and
+            the probe still fails, look at what is in front of it -- this application sets
+            trustProxy false and binds explicitly, so a proxy answering on its behalf is a
+            misconfiguration, not a fallback.
+          runbook: infra/monitoring/README.md#mandateapiunreachable
+
+      - alert: MandateApiUnready
+        expr: mandate_api_ready == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: The API is refusing traffic
+          description: >-
+            `GET /ready` is answering 503, so a load balancer is taking this instance out of
+            rotation. Either PostgreSQL or the Base RPC is failing its check. Note that a
+            missing worker never causes this -- `execution_available` is reported but is
+            deliberately not part of the verdict.
+          derivation: >-
+            Threshold 0 on the endpoint's own verdict, not a re-derivation from its parts. Each
+            dependency check is bounded at 4 seconds and the verdict is cached for 1 second
+            (apps/api/src/modules/health/readiness.ts), so a single unready answer is a real
+            measurement rather than a timeout artefact. `for: 5m` is twenty consecutive such
+            answers; a Base RPC failover is seconds, not minutes.
+          action: >-
+            Read `mandate_api_database_ready` and `mandate_api_chain_ready` to see which one.
+            A false database check is not always an outage -- `databaseReady()` also refuses
+            when the connection is a superuser or BYPASSRLS role, because that would bypass the
+            row-level security isolating users, so check DATABASE_URL before assuming
+            PostgreSQL is down.
+          runbook: infra/monitoring/README.md#mandateapiunready
+
+      - alert: MandateApiErrorRateHigh
+        expr: mandate:api_probe_error_ratio:10m > 0.1
+        for: 10m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: The API is failing more than a tenth of probe requests
+          description: >-
+            More than 10% of probes across /health, /ready and /v1/market are not returning the
+            answer those routes are defined to give. The API converts every unhandled exception
+            into a 500 through a single error handler, so a sustained non-ok share is a server
+            fault. NOTE: this measures three declared routes from one prober, not user traffic
+            -- the application has no per-route request counter yet (see the README's wiring
+            section).
+          derivation: >-
+            0.1 over a 10-minute rate window. The exporter issues one request to each of three
+            routes every 15 seconds, so the window holds about 120 responses and 10% is a dozen
+            failures rather than one unlucky restart. A client-error contribution is impossible
+            by construction: the probe set is fixed and only calls routes the API declares, so
+            a 4xx is the API failing its own contract. `for: 10m` on top of a 10-minute rate
+            window is deliberate -- this alert is about a sustained condition, and the rate
+            window alone would already have smoothed a transient.
+          action: >-
+            Check `mandate_api_probe_responses_total` by route: /v1/market failing alone is the
+            chain read path (that route composes oracle reads and a quoter probe per asset),
+            while /health failing means the process itself. Then read the API logs for the
+            `code` field -- the error handler logs a problem code and deliberately never the
+            upstream error object.
+          runbook: infra/monitoring/README.md#mandateapierrorratehigh
+
+      - alert: MandateMarketExporterStale
+        expr: mandate_market_last_success_age_seconds > 120
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: Market metrics are being served from an old collection
+          description: >-
+            The exporter has not completed a successful market collection in over two minutes.
+            It is still serving its last values by design -- stale numbers with a stated age
+            beat a blank scrape -- which means every reference-staleness figure above is
+            frozen and no longer tracking.
+          derivation: >-
+            120 seconds is eight poll intervals at EXPORTER_POLL_MS = 15000, and more than ten
+            times the API's own 10-second cold-refresh deadline (SNAPSHOT_DEADLINE_MS), so a
+            single slow cold start cannot reach it.
+          action: >-
+            This is usually the API rather than the exporter; check MandateApiUnready and the
+            /v1/market probe outcome first. Until it clears, treat every per-symbol gauge as
+            unverified rather than as evidence that nothing has changed.
+          runbook: infra/monitoring/README.md#mandatemarketexporterstale
+
+  # ==========================================================================================
+  - name: mandate.monitoring
+    interval: 15s
+    rules:
+      - alert: MandateMonitoringTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: "Scrape target {{ $labels.job }} is down"
+          description: >-
+            Prometheus cannot scrape {{ $labels.job }} at {{ $labels.instance }}. Every rule
+            that reads from that target has stopped evaluating, and silence from a rule is
+            indistinguishable from health.
+          derivation: >-
+            Threshold 0 on `up`, which is the only value it takes when a scrape fails. This is
+            the alert that makes the rest of the file trustworthy: without it, an exporter that
+            dies takes its alerts with it and the dashboard simply goes quiet. `for: 5m` is
+            twenty scrapes and rides out an exporter restart.
+          action: >-
+            Restart the named exporter. If the target is mandate-postgres, check the scrape
+            credential first -- it is supplied through SQLEXPORTER_TARGET_DSN and the
+            placeholder DSN in sql_exporter.yml deliberately cannot authenticate.
+          runbook: infra/monitoring/README.md#mandatemonitoringtargetdown
+
+      - alert: MandateExporterDroppingSymbols
+        expr: mandate_market_symbols_dropped > 0
+        for: 15m
+        labels:
+          severity: info
+          component: monitoring
+        annotations:
+          summary: The market exporter is discarding catalogue entries
+          description: >-
+            The exporter refused one or more entries from GET /v1/market: a symbol that does
+            not match the API's own 24-character bound, a duplicate symbol, or an entry past
+            the cardinality ceiling. Those assets are missing from every per-symbol gauge, so
+            the reference-staleness alerts are silently not covering them.
+          derivation: >-
+            Threshold 0. The catalogue is seven symbols compiled into the API, so a single drop
+            can only mean the exporter is pointed at something that is not this API, or the
+            catalogue has grown past MAX_SYMBOLS = 64. Informational because nothing a user
+            does is affected -- the gap is in observation, not in trading. `for: 15m` because
+            there is nothing urgent about it and no reason to interrupt anyone.
+          action: >-
+            Confirm MANDATE_API_URL points at the intended API. If the catalogue has genuinely
+            grown, raise MAX_SYMBOLS in infra/monitoring/exporter/samples.ts deliberately --
+            the ceiling exists because an unbounded label set degrades the whole Prometheus
+            server, not just this job.
+          runbook: infra/monitoring/README.md#mandateexporterdroppingsymbols

@@ -23,6 +23,7 @@ import {
   feedOf,
   marketRounds,
   NAV_USD,
+  navFor,
   NVDA_SPLIT_MULTIPLIER,
   ORDER,
   plainAsset,
@@ -58,14 +59,11 @@ function admitted(id: string) {
 
 test("the fixture catalogue and the shipped catalogue cannot drift apart", () => {
   const shipped = B20_ASSETS.filter((asset) => asset.shipped).map(plainAsset);
-  // Same four, same addresses, same 8 decimals. If packages/evm adds MSFTc tomorrow this
-  // fails, and it should: the "untradable asset" fixtures below rest on it being absent.
+  // Same seven, same addresses, same 8 decimals. This is a drift alarm, and it has already
+  // earned its place once: packages/evm did add MSFTc, AMZNc and TSLAc, and this failed exactly
+  // as its previous comment predicted it should.
   expect(shipped).toEqual([...ASSETS]);
-  expect(B20_ASSETS.filter((asset) => !asset.shipped).map((asset) => asset.symbol)).toEqual([
-    "MSFTc",
-    "AMZNc",
-    "TSLAc",
-  ]);
+  expect(B20_ASSETS.every((asset) => asset.shipped)).toBe(true);
   for (const asset of B20_ASSETS) expect(asset.decimals).toBe(8);
   // Every token and feed address is distinct: two entries sharing either would make one
   // position spend another's balance, or two symbols read one price.
@@ -346,7 +344,7 @@ test("a degraded RPC degrades the market instead of failing it", async () => {
   const oneBad = new FakeChainClient({ faults: { feeds: ["AAPLc"] } });
   const partial = await oneBad.market();
   expect(partial.find((feed) => feed.uri === "oracle:AAPLc")?.value).toBeNull();
-  expect(partial.find((feed) => feed.uri === "oracle:NVDAc")?.value).toBe(NAV_USD.NVDAc);
+  expect(partial.find((feed) => feed.uri === "oracle:NVDAc")?.value).toBe(navFor("NVDAc"));
 });
 
 test("the fake has no hidden clock: the same fixtures give byte-identical answers", async () => {

@@ -35,9 +35,10 @@ export const FEED_DECIMALS = 8;
 export type FixtureAsset = Asset & {
   /**
    * True when `packages/evm`'s shipped catalogue lists this token. The three that are false
-   * are real, deployed B20 equities that this system does not route today: they exist here so
-   * the "asset the user can name but the venue cannot fill" path has something concrete to
-   * point at, instead of an invented address that would never behave like a real token.
+   * All seven are shipped. MSFTc and AMZNc are still the "asset the user can name but the venue
+   * cannot fill" case — they are listed by packages/evm and quote nothing inside the 5% band on
+   * their ~$150k Aerodrome pools — which is a truer fixture for that path than an unlisted asset
+   * was, because it is what /v1/market actually returns.
    */
   readonly shipped: boolean;
 };
@@ -83,21 +84,21 @@ export const B20_ASSETS: readonly FixtureAsset[] = [
     token: "0xB200000000000000000000Ab99cFa739E253872B",
     feed: "0xeB10A6c9aa7E537aEd766C08c35Dae35B321b18c",
     decimals: 8,
-    shipped: false,
+    shipped: true,
   },
   {
     symbol: "AMZNc",
     token: "0xb200000000000000000000d9192b6B456483C2E8",
     feed: "0x06A8E4b3aBB3B7543d8396FB2B763d22820cB295",
     decimals: 8,
-    shipped: false,
+    shipped: true,
   },
   {
     symbol: "TSLAc",
     token: "0xb2000000000000000000001e800a7f5189430cD0",
     feed: "0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4",
     decimals: 8,
-    shipped: false,
+    shipped: true,
   },
 ];
 

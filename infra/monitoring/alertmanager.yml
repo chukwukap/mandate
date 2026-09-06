@@ -1,0 +1,89 @@
+# Alertmanager routing and suppression.
+#
+#   alertmanager --config.file=infra/monitoring/alertmanager.yml
+#
+# The receivers below are deliberately empty. Wiring them is a per-deployment decision and a
+# webhook URL is a credential, so committing one here would be committing a credential. What
+# IS committed is the part that is a design decision rather than a deployment detail: which
+# severity wakes someone, and which alerts must not be delivered alongside their own cause.
+
+route:
+  receiver: ticket
+  # Grouped by the labels that distinguish one incident from another. Without `symbol`, seven
+  # simultaneously stale reference feeds arrive as one notification naming one of them; without
+  # `leg`, a stuck fund leg and a stuck swap leg -- which need completely different responses,
+  # one having moved the user's money and one not -- collapse into a single line.
+  group_by: [alertname, component, symbol, leg]
+  group_wait: 30s
+  group_interval: 5m
+  # 4h for the default path. Long enough that an open ticket does not re-notify all afternoon,
+  # short enough that a warning left running overnight is still visible in the morning.
+  repeat_interval: 4h
+  routes:
+    - matchers: ['severity="critical"']
+      receiver: page
+      # 10s rather than 30s: for a critical, the extra twenty seconds of batching buys very
+      # little grouping and costs twenty seconds of an incident where money is in flight.
+      group_wait: 10s
+      repeat_interval: 1h
+    - matchers: ['severity="warning"']
+      receiver: ticket
+    - matchers: ['severity="info"']
+      receiver: record
+      # Informational alerts must never re-notify. They exist to annotate a dashboard.
+      repeat_interval: 168h
+
+receivers:
+  # Wire each of these with a webhook_configs / pagerduty_configs / slack_configs block for the
+  # deployment. Left empty they are valid and silently drop, which is a real hazard -- an
+  # unwired `page` receiver looks exactly like a quiet system.
+  - name: page
+  - name: ticket
+  - name: record
+
+inhibit_rules:
+  # A cause suppresses its own symptoms. Every rule here encodes "if A is firing, B tells the
+  # operator nothing they do not already know", and each one was written because the pair
+  # genuinely fires together, not to reduce the count.
+
+  # Tiered pairs: the louder member of a pair always implies the quieter one, since each pair
+  # reads the same series at two thresholds.
+  - source_matchers: ['alertname="MandateOrdersReverting"']
+    target_matchers: ['alertname="MandateOrderReverted"']
+  - source_matchers: ['alertname="MandateTransactionPendingStalled"']
+    target_matchers: ['alertname="MandateTransactionPendingSlow"']
+    equal: [leg]
+  - source_matchers: ['alertname="MandateEvaluationLagCritical"']
+    target_matchers: ['alertname="MandateEvaluationLagHigh"']
+  - source_matchers: ['alertname="MandateSpendPermissionExpiringImminently"']
+    target_matchers: ['alertname="MandateSpendPermissionExpiringSoon"']
+  - source_matchers: ['alertname="MandateReferenceFeedUnusable"']
+    target_matchers: ['alertname="MandateReferenceFeedApproachingUnusable"']
+    # Per symbol: AAPLc being unusable says nothing about GOOGLc approaching it.
+    equal: [symbol]
+
+  # A dead worker is the cause of every scheduling symptom. Delivering "an armed strategy is
+  # ten minutes behind" next to "there is no worker" wastes the first minute of an incident on
+  # deciding which one to read.
+  - source_matchers: ['alertname="MandateWorkerHeartbeatLost"']
+    target_matchers:
+      - 'alertname=~"MandateEvaluationsStopped|MandateEvaluationLagCritical|MandateEvaluationLagHigh|MandateOrderStuckAdmitted|MandateWorkerCannotExecute"'
+
+  # An order in recovery is precisely why execution is unavailable; the worker alert is the
+  # symptom and names the wrong thing to fix.
+  - source_matchers: ['alertname="MandateOrderRecoveryRequired"']
+    target_matchers: ['alertname="MandateWorkerCannotExecute"']
+
+  # An API that answers no HTTP at all cannot be unready, cannot have an error rate, and cannot
+  # be feeding the exporter. Blackbox is the only one of the three that does not depend on our
+  # own exporter, which is exactly why it is the source here.
+  - source_matchers: ['alertname="MandateApiUnreachable"']
+    target_matchers:
+      - 'alertname=~"MandateApiUnready|MandateApiErrorRateHigh|MandateMarketExporterStale"'
+
+  # A feed that could not be read at all is not a feed that is approaching stale, and the
+  # unreadable alert names the right thing to look at.
+  - source_matchers: ['alertname="MandateReferenceFeedUnreadable"']
+    target_matchers:
+      - 'alertname=~"MandateReferenceFeedUnusable|MandateReferenceFeedApproachingUnusable|MandateQuoteDeviationHigh"'
+    equal: [symbol]

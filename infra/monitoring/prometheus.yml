@@ -1,0 +1,80 @@
+# Prometheus scrape configuration for Mandate.
+#
+#   prometheus --config.file=infra/monitoring/prometheus.yml
+#
+# Three sources, deliberately independent of each other:
+#
+#   mandate-postgres  sql_exporter over the SECURITY DEFINER aggregate functions in
+#                     infra/postgres/04-metrics.sql. Everything durable: orders, the signed
+#                     transaction journal, schedule lag, spend permissions, worker heartbeat.
+#   mandate-market    infra/monitoring/exporter. Everything the database cannot know:
+#                     Chainlink round ages, which assets route, API readiness and error rate.
+#   mandate-blackbox  blackbox_exporter. One signal only -- can anything reach the API over
+#                     HTTP -- from a process that shares no code with the other two. When the
+#                     market exporter dies, this is what still answers.
+#
+# No job here holds a credential that can read a user's rows. The scrape role has SELECT on no
+# table in the database, and the exporter reads only the one unauthenticated route.
+
+global:
+  # 15s, matching SNAPSHOT_TTL_MS in the API's market snapshot cache and the exporter's poll
+  # interval. Scraping faster resamples the same cached bytes; slower loses a full generation
+  # of market data between points.
+  scrape_interval: 15s
+  # Under the 15s interval, so a slow target cannot make consecutive scrapes overlap. The
+  # market exporter answers from memory and never blocks on the API, so this is generous.
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    # Stamped on every alert that leaves this server. Base mainnet is the only chain this
+    # application addresses, and an alert arriving from a testnet Prometheus that does not say
+    # so is how an operator ends up inspecting the wrong SpendPermissionManager.
+    chain_id: "8453"
+    deployment: local
+
+rule_files:
+  - rules/recording.yml
+  - rules/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["127.0.0.1:9093"]
+
+scrape_configs:
+  # Self-scrape. Without it, `up == 0` cannot distinguish "the target is down" from "this
+  # Prometheus stopped evaluating rules an hour ago".
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:9090"]
+
+  - job_name: mandate-postgres
+    static_configs:
+      - targets: ["127.0.0.1:9399"]
+
+  - job_name: mandate-market
+    static_configs:
+      - targets: ["127.0.0.1:9109"]
+
+  # Reachability only. The parsed contents of /ready arrive through mandate-market as
+  # mandate_api_ready / _database_ready / _chain_ready; blackbox cannot read a JSON body, and
+  # its value here is precisely that it depends on none of our code.
+  - job_name: mandate-blackbox
+    metrics_path: /probe
+    params:
+      module: [mandate_api_reachable]
+    static_configs:
+      - targets:
+          - http://127.0.0.1:8080/health
+          - http://127.0.0.1:8080/ready
+    relabel_configs:
+      # The standard blackbox indirection: the configured target becomes the ?target= query
+      # parameter and the real scrape address becomes the exporter. Getting the order of these
+      # three wrong scrapes blackbox's own /metrics for every target and reports every probe
+      # as successful.
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115

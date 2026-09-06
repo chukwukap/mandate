@@ -1,0 +1,108 @@
+# Local development database.
+#
+#   docker compose -f infra/docker/compose.yaml up -d
+#
+# This file starts PostgreSQL and nothing else. The API, the worker and the web app run on the
+# host against it (`bun run dev:api`, `bun run dev:worker`), because the thing under development
+# is the Node process and rebuilding an image on every save is not a development loop. The
+# production images are api.Dockerfile and worker.Dockerfile; they are built and run separately.
+#
+# The point of this file is the ROLES. `postgres://postgres:postgres@localhost/mandate` would
+# come up faster and would silently disable every tenant boundary in the system: a superuser (or
+# any BYPASSRLS role) is not subject to the row-level security policies that separate one user's
+# strategies, permissions and executions from another's, so the isolation would look fine in
+# development and exist nowhere. `databaseReady()` in packages/database refuses such a
+# connection outright, which is the API's way of saying the same thing. The roles installed here
+# are the ones from infra/postgres, the same files a real deployment applies.
+
+name: mandate-dev
+
+services:
+  postgres:
+    # Debian, not -alpine: infra/postgres/02-dev-passwords.sh is `#!/bin/bash` and the alpine
+    # variant has no bash. Pinned to the 17 line because that is the server the schema, the
+    # policies and the integration tests were written against; a major upgrade is a migration
+    # with a data directory to convert, not a `docker compose pull`.
+    image: postgres:17
+
+    # 55432, not 5432, so this never shadows a PostgreSQL the developer already runs locally --
+    # and because .env.example already points DATABASE_URL at that port. The explicit
+    # 127.0.0.1 matters: `55432:5432` publishes on every interface, which puts a database whose
+    # application password is the string "mandate" on whatever network the laptop is joined to.
+    ports:
+      - "127.0.0.1:55432:5432"
+
+    environment:
+      # POSTGRES_DB is the database the entrypoint creates AND the one it runs the files in
+      # /docker-entrypoint-initdb.d against, so 01-roles.sql's `current_database()` resolves to
+      # `mandate` and its REVOKE/GRANT statements land on the right database.
+      POSTGRES_DB: mandate
+      POSTGRES_USER: postgres
+      # The bootstrap account, not the application account. It exists to run the init scripts
+      # and to give you a psql session; nothing in this repository ever connects as it. It is
+      # reachable on loopback only (see `ports`), so a fixed default is acceptable here and
+      # nowhere else.
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres}
+
+      # 02-dev-passwords.sh refuses to run without this. It is not a security control -- anyone
+      # who can edit this file can set it -- it is the marker that says "this database is the
+      # disposable local one", so pointing the script at a real cluster fails loudly.
+      MANDATE_LOCAL_DEV: "1"
+
+      # Pass-through overrides, deliberately empty by default. The password defaults live in
+      # 02-dev-passwords.sh (and match .env.example), and that script uses `${VAR:-default}`,
+      # which treats an empty value as unset -- so an unset shell variable lands on the script's
+      # default instead of installing an empty password. Restating the defaults here would give
+      # the same secret two sources of truth that can drift.
+      MANDATE_OWNER_PASSWORD: ${MANDATE_OWNER_PASSWORD:-}
+      MANDATE_APP_PASSWORD: ${MANDATE_APP_PASSWORD:-}
+      MANDATE_WORKER_PASSWORD: ${MANDATE_WORKER_PASSWORD:-}
+      MANDATE_METRICS_PASSWORD: ${MANDATE_METRICS_PASSWORD:-}
+
+    volumes:
+      # Named, not a bind mount: the data directory holds PostgreSQL's own files, and a bind
+      # mount onto a macOS or Windows filesystem gives it locking and fsync semantics it was not
+      # written for. `docker compose down -v` deletes it, which is also the only way to re-run
+      # the init scripts below -- the entrypoint runs them exactly once, when it finds the data
+      # directory empty.
+      - pgdata:/var/lib/postgresql/data
+
+      # The whole directory, read-only, for the files that must NOT run at init time:
+      # 03-grants.sql and 04-metrics.sql grant on tables that only exist after
+      # `bun run db:migrate`, and 03 deliberately RAISEs when one is missing. Run them with
+      # ./apply-grants.sh after migrating.
+      - ../postgres:/opt/mandate/postgres:ro
+
+      # First boot only, in this order: create the roles, then give them development passwords.
+      - ../postgres/01-roles.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
+      - ./initdb/02-dev-passwords.sh:/docker-entrypoint-initdb.d/02-dev-passwords.sh:ro
+
+    # Over TCP on purpose. During initialisation the entrypoint runs a temporary server with
+    # `listen_addresses=''` -- reachable on the unix socket only -- so the default socket-based
+    # `pg_isready` reports healthy while 01-roles.sql and the password script are still running,
+    # and anything waiting on `service_healthy` starts against a database with no `mandate`
+    # role. Answering on 127.0.0.1:5432 means the real server is up and the init files are done.
+    #
+    # pg_isready needs no password: it asks whether the server is accepting connections and
+    # reads the rejection as a healthy answer, so no credential appears in this file.
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "mandate", "-d", "mandate"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      # A cold start has to run initdb, create the roles and set four passwords before TCP
+      # opens. Failures during this window do not count against `retries` and do not mark the
+      # container unhealthy; 30s is well clear of a first boot on a laptop.
+      start_period: 30s
+
+    # SIGINT is PostgreSQL's *fast* shutdown: disconnect clients, roll back their transactions,
+    # checkpoint, exit. The default SIGTERM is *smart* shutdown, which waits for every client to
+    # disconnect on its own -- so a `docker compose down` with dev:api still attached hangs for
+    # the grace period and then takes a SIGKILL, and the next start begins with crash recovery.
+    stop_signal: SIGINT
+    stop_grace_period: 30s
+
+    restart: unless-stopped
+
+volumes:
+  pgdata:

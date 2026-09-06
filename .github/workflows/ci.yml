@@ -1,0 +1,391 @@
+# Lint, types, bundles, unit suites and the PostgreSQL integration suites.
+#
+# Three jobs rather than one, deliberately. They share no state, so they run at the same time,
+# and — more importantly — a red lint does not hide a red test. Each is its own required check,
+# so one push reports every problem the tree has instead of the first one somebody hits.
+#
+# There is deliberately no Node version matrix. Every test in this repository is executed by
+# `bun test`, so a second Node version would re-run byte-identical work; Node appears here only
+# to run `bun run db:migrate` (`node --import tsx`) and is pinned from `.node-version`. A matrix
+# over Bun versions would be a different question, and the answer is also no: `packageManager`
+# pins bun@1.3.9 and `bunfig.toml` sets `exact = true`, so there is one supported toolchain.
+#
+# Commands come from the root package.json wherever one exists. Where a directory has tests and
+# no script names it, the paths are spelled out in the `unit` job and a guard fails the build
+# when a new suite lands outside both lists.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  # Pushes to a branch with an open PR arrive as `pull_request`; limiting `push` to master is
+  # what stops every PR commit from running this twice.
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A newer commit on the same branch makes the older run's answer worthless, so cancel it.
+  # Not on master: there, each commit's result is the record of whether that commit was good,
+  # and a cancelled run leaves a hole in the history somebody will later have to bisect around.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+# This workflow reads the tree and writes nothing back. Nothing here needs a token that can
+# push, comment or publish.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: lint, types and bundles
+    runs-on: ubuntu-latest
+    # Measured on this workspace: lint 0.5s, tsc 3s, both bundles 4s. The rest of the ten
+    # minutes is headroom for a cold install; the number is a hang detector, not a budget.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          # Reads `packageManager` from package.json, so the CI toolchain cannot drift from the
+          # one a developer runs. Pinned to a commit rather than a tag because this is the one
+          # third-party action here: a moved tag on somebody else's repository is an unreviewed
+          # code change running with this workflow's token. The actions/* below are GitHub's own.
+          bun-version-file: package.json
+
+      - name: Restore the bun install cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          # A partial hit still saves most of the download: the lockfile changes one package at
+          # a time, and the other several hundred tarballs are already there.
+          restore-keys: bun-${{ runner.os }}-
+
+      - name: Install
+        id: install
+        # `--frozen-lockfile` so a bun.lock that no longer matches package.json fails here,
+        # loudly, instead of CI silently resolving different versions than a developer has.
+        run: bun install --frozen-lockfile
+
+      # Lint, types and bundles are three independent facts about the tree, so all three are
+      # collected even when an earlier one is already red — `!cancelled()` overrides the default
+      # "only if everything before me passed". The install is still a precondition: without
+      # node_modules these steps fail for a reason that has nothing to do with the code.
+      - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        # `--reporter=github` turns each diagnostic into an annotation on the diff, which is
+        # worth more to a reviewer than the code frames it replaces. `--max-diagnostics` defaults
+        # to 20 and truncates; 200 is comfortably above anything a single change should produce.
+        run: bun run lint --reporter=github --max-diagnostics=200
+
+      - name: Typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run typecheck
+
+      - name: Bundle the API and the worker
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        # These produce the artifacts `start:api` and `start:worker` run, and they fail on
+        # something `tsc --noEmit` cannot see: a module that resolves for the type checker but
+        # is not declared as a dependency of any workspace, so the bundler neither externalises
+        # nor finds it. Four seconds to keep the deploy path honest.
+        run: |
+          bun run build:api
+          bun run build:worker
+
+      - name: Structure audit
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        # `--strict` on apps/web only, because that is the one workspace the script is wired to
+        # gate (`check:structure:web`). A `.gitkeep` there means a directory was scaffolded and
+        # never filled, which AGENTS.md treats as unfinished work rather than a style nit.
+        run: bun run check:structure:web
+
+  unit:
+    name: unit suites
+    runs-on: ubuntu-latest
+    # Measured: test:api 399 tests in 12s, test:worker 134 in 6s, test:web 7 in 0.02s.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - name: Restore the bun install cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - name: Install
+        id: install
+        run: bun install --frozen-lockfile
+
+      # Same reasoning as the check job: one push should report every failing suite, not the
+      # first one. `bun test` already reports every failure inside a suite; this extends that
+      # across the four commands.
+      - name: API and shared packages
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run test:api
+
+      - name: Worker and execution
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run test:worker
+
+      - name: Web
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run test:web
+
+      - name: Contracts, config, observability and fixtures
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        # No root script reaches these: `test:api` and `test:worker` name their directories one
+        # by one and simply do not list them. Everything under packages/contracts, tests/contract
+        # and tests/fixtures was therefore being run by nobody, including the catalogue drift
+        # check that is currently failing. The right fix is a root script, which this file's
+        # author is not permitted to add, so the paths are named here instead.
+        # Empty directories in this list are tolerated by `bun test` (verified), which is what
+        # lets packages/config and packages/observability be listed before they have tests.
+        run: >-
+          bun test
+          packages/contracts/test packages/config/test packages/observability/test
+          tests/contract tests/fixtures
+
+      - name: Every suite is run by something
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        # The failure this catches is a suite that exists and runs nowhere, which looks exactly
+        # like a passing build. It happened once already (see the step above), so it is checked
+        # rather than remembered.
+        run: |
+          run="apps/api/test apps/web/test/unit apps/worker/test
+               packages/auth/test packages/config/test packages/contracts/test
+               packages/database/test packages/evm/test packages/execution/test
+               packages/observability/test packages/strategy/test
+               tests/contract tests/fixtures tests/integration"
+          # tests/e2e holds a one-off dump that asserts nothing and writes to an absolute path
+          # from somebody's laptop; apps/web/test/browser needs a built app, a running API and a
+          # downloaded Chromium. Neither belongs in a per-push job. Move them into `run` above
+          # when they become suites.
+          skipped="apps/web/test/browser tests/e2e"
+          stray=""
+          for file in $(git ls-files '*.test.ts' '*.test.tsx'); do
+            matched=""
+            for prefix in $run $skipped; do
+              case "$file" in "$prefix"/*) matched=1 ;; esac
+            done
+            [ -n "$matched" ] || stray="$stray $file"
+          done
+          if [ -n "$stray" ]; then
+            echo "::error::No CI job runs these suites:$stray"
+            echo "Add the directory to a step in this job, or to the skipped list with a reason."
+            exit 1
+          fi
+          echo "Every tracked suite is run above or listed as deliberately skipped."
+
+  integration:
+    name: integration (PostgreSQL 17)
+    runs-on: ubuntu-latest
+    # The suites themselves take 2s. The budget is the database bootstrap and the install.
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # 17 matches the version these suites make claims about: the 40001 serialization
+        # failures the retry loop is built for, the second session that `FOR UPDATE` blocks, and
+        # `FORCE ROW LEVEL SECURITY`. PGlite, which the package-level tests use, has none of it.
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mandate
+        ports:
+          - 5432:5432
+        # GitHub holds every step until this reports healthy, so no step below needs its own
+        # wait loop. 20 × 5s is ~100 seconds, against an initdb of a few seconds and an
+        # entrypoint that starts the server, stops it and starts it again before it is really up.
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mandate"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # Superuser connection for the bootstrap steps. `127.0.0.1` and not `localhost`: the
+      # service's port is published on IPv4 and `localhost` can resolve to ::1 first.
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: mandate
+
+      # Throwaway passwords for a database that exists for the length of one job and listens
+      # only inside this runner. They are written in plain sight on purpose — nothing real
+      # should ever be wired through here, and a `secrets.` reference would suggest otherwise.
+      #
+      # The names come from infra/postgres/02-dev-passwords.sh. Note the trap in
+      # MANDATE_APP_PASSWORD: there, "app" means the role literally called `mandate`, which is
+      # that file's name for the API. It is NOT the role these suites connect as — see the
+      # "Create the role the suites connect as" step.
+      MANDATE_OWNER_PASSWORD: ci-owner
+      MANDATE_APP_PASSWORD: ci-api
+      MANDATE_WORKER_PASSWORD: ci-worker
+      MANDATE_METRICS_PASSWORD: ci-metrics
+      MANDATE_TEST_PASSWORD: ci-suites
+
+      # The two URLs differ, and that difference is the point. Migrations run as the role that
+      # owns the schema; the suites run as one that does not, because an owner is not filtered
+      # the way an application role is and every tenant-isolation assertion would then pass for
+      # the wrong reason. GitHub does not expand `env` inside `env`, so the passwords above
+      # appear twice; keep them in step.
+      MIGRATION_DATABASE_URL: postgres://mandate_owner:ci-owner@127.0.0.1:5432/mandate
+      DATABASE_URL: postgres://mandate_app:ci-suites@127.0.0.1:5432/mandate
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # `bun run db:migrate` is a Node process (`node --env-file-if-exists --import tsx`).
+          # Everything else in this job runs under Bun.
+          node-version-file: .node-version
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - name: Restore the bun install cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      # From here the steps are a strict sequence — grants after migrations, tests after grants —
+      # so the default "stop at the first failure" is what is wanted, and none of them carry the
+      # `!cancelled()` override the other two jobs use.
+
+      - name: Bootstrap roles (infra/postgres/01, 02)
+        # Running the shipped files rather than an inline copy is the whole value: this is the
+        # only place the production bootstrap is executed against a real PostgreSQL before a
+        # deploy runs it. MANDATE_LOCAL_DEV=1 is what 02 demands before it will install known
+        # passwords, and this container is exactly the throwaway it was written for.
+        run: |
+          psql -v ON_ERROR_STOP=1 --no-psqlrc -f infra/postgres/01-roles.sql
+          MANDATE_LOCAL_DEV=1 POSTGRES_DB=mandate bash infra/postgres/02-dev-passwords.sh
+
+      - name: Migrate
+        # As mandate_owner, via MIGRATION_DATABASE_URL. Note that scripts/database/migrate.ts
+        # swallows the driver error and prints one generic line, so a failure here says only
+        # that it failed; the detail is in the PostgreSQL container's own log.
+        run: bun run db:migrate
+
+      - name: Apply grants and the metrics surface (infra/postgres/03, 04)
+        # 03 is not decoration: it ends in a check that every relation in mandate_v2 is one it
+        # knows about, which is how a migration that adds a table without deciding who may read
+        # it fails at review time instead of as a 500 in production. 04 ends in a check that the
+        # scrape role can reach no table directly. Both only mean something after a migration,
+        # which is why they run here and not in the bootstrap step above.
+        run: |
+          psql -v ON_ERROR_STOP=1 --no-psqlrc -f infra/postgres/03-grants.sql
+          psql -v ON_ERROR_STOP=1 --no-psqlrc -f infra/postgres/04-metrics.sql
+
+      - name: Create the role the suites connect as
+        # `mandate_app`, matching the DATABASE_URL a developer runs locally, and deliberately
+        # not one of the roles 03-grants.sql configures. The suites drive one `Repository` over
+        # one connection, and that object holds both sides of the system: they insert executions
+        # and journal transactions (the worker's writes) as well as drafts and permissions (the
+        # API's). Under 03's split, half of that is `permission denied`. Worse, the append-only
+        # assertion in tests/integration/database/transactions.test.ts expects SQLSTATE 23514
+        # from the trigger on a DELETE that the API role is not granted at all — it would get
+        # 42501 first and pass for a reason the trigger had nothing to do with.
+        #
+        # So the privilege split is a production property this harness cannot model, and forcing
+        # it here would only mean testing the harness's error handling. What is preserved is
+        # everything the suites do depend on: NOSUPERUSER, NOBYPASSRLS, and not owning the
+        # schema, which together are what make RLS a real boundary rather than decoration.
+        #
+        # `\getenv` keeps the password out of argv, and `:'name'` quotes it as a SQL literal, the
+        # same way 02-dev-passwords.sh does it.
+        run: |
+          psql -v ON_ERROR_STOP=1 --no-psqlrc <<'SQL'
+          \getenv test_password MANDATE_TEST_PASSWORD
+          CREATE ROLE mandate_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS
+            NOREPLICATION PASSWORD :'test_password';
+          GRANT CONNECT ON DATABASE mandate TO mandate_app;
+          GRANT USAGE ON SCHEMA mandate_v2 TO mandate_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mandate_v2 TO mandate_app;
+          SQL
+
+      - name: Prove the suites will not skip themselves
+        # `probe()` in tests/integration/database/harness.ts answers three questions before the
+        # first test is collected, and a wrong answer to any of them turns the whole directory
+        # into `describe.skipIf` — which exits 0. This asserts the same three, as the same role,
+        # so a misconfigured database fails here with a sentence instead of passing silently.
+        #
+        # The table check goes through information_schema on purpose, matching the probe exactly:
+        # that view hides relations the connecting role holds no privilege on, so a forgotten
+        # GRANT and a missing migration are the same skip, and both must be caught.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --no-psqlrc -q <<'SQL'
+          DO $$
+          DECLARE
+            missing text;
+            owner text;
+          BEGIN
+            IF EXISTS (
+              SELECT FROM pg_roles
+              WHERE rolname = current_user AND (rolsuper OR rolbypassrls)
+            ) THEN
+              RAISE EXCEPTION
+                'The suites would connect as %, which is SUPERUSER or BYPASSRLS. Every policy is satisfied silently for such a role, so the tenant-isolation properties would pass without being tested.',
+                current_user;
+            END IF;
+
+            SELECT pg_get_userbyid(nspowner) INTO owner
+            FROM pg_namespace WHERE nspname = 'mandate_v2';
+            IF owner IS NULL THEN
+              RAISE EXCEPTION 'mandate_v2 does not exist. The migration step did not do what it reported.';
+            END IF;
+            IF owner = current_user THEN
+              RAISE EXCEPTION
+                'The suites would connect as %, the owner of mandate_v2. Migrations and the application must not share a role.',
+                current_user;
+            END IF;
+
+            SELECT string_agg(t, ', ' ORDER BY t) INTO missing
+            FROM unnest(ARRAY[
+              'users', 'drafts', 'instances', 'permissions',
+              'evaluations', 'executions', 'transactions', 'worker_state'
+            ]) AS t
+            WHERE NOT EXISTS (
+              SELECT FROM information_schema.tables
+              WHERE table_schema = 'mandate_v2' AND table_name = t
+            );
+            IF missing IS NOT NULL THEN
+              RAISE EXCEPTION
+                'mandate_v2 is missing % for this role, so tests/integration would skip itself and report a green build.',
+                missing;
+            END IF;
+          END
+          $$;
+          SQL
+
+      - name: Integration suites
+        shell: bash # `-o pipefail`, so a failing `bun test` survives the pipe into tee.
+        # `bun test tests/integration` and not the database subdirectory: tests/integration/api
+        # already has a harness against the real Fastify app, and whatever lands beside it should
+        # run here the day it does.
+        run: |
+          bun test tests/integration 2>&1 | tee "$RUNNER_TEMP/integration.log"
+          # The skip path exits 0 with every test reported as skipped (verified: 33 skip, exit
+          # 0), which is indistinguishable from success in the summary. The harness does print
+          # one line before it does that, and it is the only thing separating "these ran" from
+          # "these were not run", so it is checked rather than trusted.
+          if grep -q '^\[integration\] skipped:' "$RUNNER_TEMP/integration.log"; then
+            echo "::error::The integration suites skipped themselves; the database above is not the one they need."
+            exit 1
+          fi
