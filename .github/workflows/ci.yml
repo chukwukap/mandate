@@ -151,7 +151,7 @@ jobs:
         run: >-
           bun test
           packages/contracts/test packages/config/test packages/observability/test
-          tests/contract tests/fixtures
+          infra/monitoring/test tests/contract tests/e2e tests/fixtures
 
       - name: Every suite is run by something
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
@@ -163,12 +163,13 @@ jobs:
                packages/auth/test packages/config/test packages/contracts/test
                packages/database/test packages/evm/test packages/execution/test
                packages/observability/test packages/strategy/test
-               tests/contract tests/fixtures tests/integration"
-          # tests/e2e holds a one-off dump that asserts nothing and writes to an absolute path
-          # from somebody's laptop; apps/web/test/browser needs a built app, a running API and a
-          # downloaded Chromium. Neither belongs in a per-push job. Move them into `run` above
-          # when they become suites.
-          skipped="apps/web/test/browser tests/e2e"
+               infra/monitoring/test
+               tests/contract tests/e2e tests/fixtures tests/integration"
+          # apps/web/test/browser needs a built app, a running API and a downloaded Chromium, so
+          # it does not belong in a per-push job. Move it into `run` above when that changes.
+          # tests/e2e used to be excluded for a different reason — it held a dump that asserted
+          # nothing and wrote to an absolute path from one laptop — and is a real suite now.
+          skipped="apps/web/test/browser"
           stray=""
           for file in $(git ls-files '*.test.ts' '*.test.tsx'); do
             matched=""
@@ -240,6 +241,17 @@ jobs:
       # appear twice; keep them in step.
       MIGRATION_DATABASE_URL: postgres://mandate_owner:ci-owner@127.0.0.1:5432/mandate
       DATABASE_URL: postgres://mandate_app:ci-suites@127.0.0.1:5432/mandate
+      # apps/worker/test reads THIS name, not DATABASE_URL, and falls back to in-memory PGlite
+      # when it is unset — silently skipping six tests, among them "two schedulers never
+      # evaluate one instance at the same time" and "an order belonging to another owner is
+      # invisible". Those are the advisory-lock and row-level-security assertions, so without it
+      # the suite is green while the two properties that stop a double-spend and a cross-tenant
+      # read go unverified.
+      #
+      # The non-owner role is not incidental. Run as the owner, those six FAIL — verified
+      # locally — because a superuser bypasses row-level security whatever FORCE says, so the
+      # isolation they assert cannot hold and the test correctly reports that it does not.
+      TEST_DATABASE_URL: postgres://mandate_app:ci-suites@127.0.0.1:5432/mandate
 
     steps:
       - uses: actions/checkout@v7
@@ -373,6 +385,18 @@ jobs:
           END
           $$;
           SQL
+
+      # Runs here rather than in `unit` because these need a real PostgreSQL: advisory locks and
+      # row-level security are the things under test, and PGlite is not where you verify either.
+      #
+      # apps/api/test is deliberately NOT run here even though it reads the same variable. Those
+      # suites were written against a private in-memory database per file and collide on a shared
+      # one — seven fail, among them a keyset-pagination test that never exhausts its cursor
+      # because a neighbouring file's rows are still there. They keep their PGlite isolation in
+      # the `unit` job; making them native-safe is separate work and is not hidden behind a
+      # passing pipeline here.
+      - name: Worker suites against a real database
+        run: bun test apps/worker/test
 
       - name: Integration suites
         shell: bash # `-o pipefail`, so a failing `bun test` survives the pipe into tee.
