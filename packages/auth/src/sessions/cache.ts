@@ -172,6 +172,10 @@ export class CachedAuthenticator implements Authenticator {
         return user;
       })
       .finally(() => {
+        // The in-flight entry must go whatever happened, or it becomes a second cache with no
+        // expiry: a settled promise left here is handed to every later caller forever. On a
+        // rejection that pins a 401 or a 503 permanently — precisely what the note below says
+        // cannot happen — and on success it outlives the TTL the cache is enforcing.
         this.inflight.delete(key);
       });
     // Rejections are never stored. A 401 stays a live decision and a 503 must not outlast the

@@ -16,9 +16,18 @@ export function ActivityView({
     <section className="panel">
       <div className="panel-heading">
         <h2>Recent activity</h2>
+        {/*
+          Disabled in preview, matching StrategyHistory. The list below is a fixture there and
+          fetchOwned has nothing to fetch, so an enabled button reported "Activity refreshed"
+          over data that had not moved — feedback that is worse than none, because it teaches
+          the reader to trust a message that is not true. The title says why rather than
+          leaving a control that simply resists being pressed.
+        */}
         <button
           type="button"
           className="text-button"
+          disabled={preview}
+          title={preview ? "Sample activity does not refresh" : undefined}
           onClick={() => {
             void fetchOwned();
             setToast("Activity refreshed");

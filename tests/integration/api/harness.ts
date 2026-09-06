@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { type ApiDependencies, buildApp } from "../../../apps/api/src/app.js";
 import type { ReceiptReader } from "../../../apps/api/src/modules/executions/index.js";
 import type { AuthenticatedUser, Authenticator } from "../../../packages/auth/src/index.js";
@@ -40,6 +41,25 @@ export type TestIdentity = {
   readonly privyDid: string;
   readonly wallet: Hex;
 };
+
+/**
+ * A signed-in caller nothing else in this run shares.
+ *
+ * The DID is random rather than derived from a label because `resolvePrivyUser` is
+ * insert-or-select on a UNIQUE column: two suites that both built `did:privy:alice` would
+ * silently become the same tenant, and every cross-tenant assertion in these files would
+ * then pass for the wrong reason. The wallet is lowercase because `drafts.account` carries a
+ * `^0x[0-9a-f]{40}$` check constraint and `selectWallet` matches the header case-insensitively
+ * against the stored form.
+ */
+export function newIdentity(): TestIdentity {
+  const suffix = randomBytes(12).toString("hex");
+  return {
+    token: `token-${suffix}`,
+    privyDid: `did:privy:it${suffix}`,
+    wallet: `0x${randomBytes(20).toString("hex")}` as Hex,
+  };
+}
 
 /**
  * The token that makes the authenticator report an outage instead of a rejection.
