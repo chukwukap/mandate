@@ -447,3 +447,52 @@ test.skipIf(!native)(
     }
   },
 );
+
+test("a strategy whose signature does not verify is named as such, not as an outage", async () => {
+  // The reason this test exists. Both of these used to record
+  // "observation-or-authority-unavailable" — a name documented as "prices, the permission or
+  // the venue could not be verified" — so a forged strategy in the table was indistinguishable
+  // from a flaky RPC, and an operator looking at the ledger would go and check their node.
+  // Found by inserting a row directly into a live database with a made-up signature and
+  // watching the worker file it under the outage name, twice a minute, forever.
+  const evaluations = (user: string, id: string) =>
+    tenant(db, user, (tx) =>
+      tx.select().from(schema.evaluations).where(eq(schema.evaluations.instanceId, id)),
+    );
+
+  const forged = await fixture("auto");
+  // Tampered in memory rather than in the table: an `instances.signature` update is refused by
+  // the schema itself ("Instance authority is immutable"), which is the property that makes a
+  // direct INSERT the only way this row shape can exist at all.
+  const reported: string[] = [];
+  await new Admission(store, observation, origin, true, ["NG"], (id) => reported.push(id)).run(
+    { ...forged.instance, signature: `0x${"11".repeat(65)}` },
+    forged.draft,
+  );
+  const refused = await evaluations(forged.instance.userId, forged.instance.id);
+  expect(required(refused[0]).outcome).toBe("invalid-commitment");
+  // The callback is the whole point: this package has no logger, so without it the one
+  // admission failure that is about the system rather than the market goes unreported.
+  expect(reported).toEqual([forged.instance.id]);
+  expect(await orders(forged.instance.userId, forged.instance.id)).toHaveLength(0);
+
+  // The same code path, with a genuine outage, still says outage — and does not call back.
+  const down = await fixture("auto");
+  const silent: string[] = [];
+  await new Admission(
+    store,
+    {
+      ...observation,
+      snapshot: async () => {
+        throw new Error("RPC unavailable");
+      },
+    },
+    origin,
+    true,
+    ["NG"],
+    (id) => silent.push(id),
+  ).run(down.instance, down.draft);
+  const outage = await evaluations(down.instance.userId, down.instance.id);
+  expect(required(outage[0]).outcome).toBe("observation-or-authority-unavailable");
+  expect(silent).toEqual([]);
+});

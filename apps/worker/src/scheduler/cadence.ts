@@ -21,6 +21,13 @@ export const ADMISSION_FAILURE_FLOOR_MS = 30_000;
 export type OutcomeClass =
   | "healthy"
   | "transient"
+  /**
+   * Refused for a reason that will never resolve by waiting, but which does not move the
+   * instance out of `armed` either. Backs off exactly like `transient` — the arithmetic wanted
+   * is the same, climb to the ceiling and stay there — but kept separate because "time may fix
+   * this" is false here, and a reader of `classifyOutcome` should not be told otherwise.
+   */
+  | "unresolvable"
   | "policy"
   | "terminal"
   | "scheduler"
@@ -171,6 +178,11 @@ export function classifyOutcome(outcome: string | undefined): OutcomeClass {
     // execution; a flat retry keeps the recovery bounded.
     case "execution-disabled":
       return "policy";
+    // The stored strategy does not match what the user signed. Every retry re-runs the same
+    // verification against the same row and fails identically, so the plain cadence would mean
+    // 300 identical refusals an hour; back off instead and leave it for an operator.
+    case "invalid-commitment":
+      return "unresolvable";
     // Admission has already moved the instance out of `armed` (ended, halted or
     // paused). Writing a due time for it would resurrect a dead schedule.
     case "expired":
@@ -240,7 +252,7 @@ export function nextDueAt(input: DueInput): Date {
   const random = input.random ?? Math.random;
   const interval = effectiveIntervalMs(input.intervalMs, input.floorMs, policy);
   const delay =
-    input.outcome === "transient"
+    input.outcome === "transient" || input.outcome === "unresolvable"
       ? backoffMs(input.streak, interval, policy, random)
       : input.outcome === "policy"
         ? Math.max(policy.flatBackoffMs, interval)
@@ -248,7 +260,9 @@ export function nextDueAt(input: DueInput): Date {
   // Backoff is a deliberate departure from the grid; re-aligning it would snap a
   // 30-minute wait back onto a 12-second lattice and lose most of the delay.
   const aligned =
-    input.outcome === "transient" || input.outcome === "policy"
+    input.outcome === "transient" ||
+    input.outcome === "unresolvable" ||
+    input.outcome === "policy"
       ? input.from + delay
       : alignTo(input.from + delay, phaseOffset(input.instanceId, interval), interval);
   let at = aligned + Math.floor(random() * policy.spreadMs);

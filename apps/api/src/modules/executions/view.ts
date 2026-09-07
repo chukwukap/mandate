@@ -182,6 +182,14 @@ export const EVALUATION_REASONS: Record<string, { code: string; message: string 
     message:
       "Prices, the spend permission or the venue could not be verified, so the tick was skipped.",
   },
+  "invalid-commitment": {
+    code: "invalid-commitment",
+    // Deliberately not "an error occurred". The user signed something specific; if the stored
+    // strategy no longer matches it, refusing to trade is the correct outcome and they should
+    // be told plainly that nothing ran.
+    message:
+      "This strategy no longer matches the confirmation you signed, so it was not run. Nothing was traded.",
+  },
   "observation-expired": {
     code: "observation-expired",
     message:

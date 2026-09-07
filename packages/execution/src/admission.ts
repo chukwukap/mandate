@@ -64,6 +64,9 @@ export async function verifyCommitment(
   )
     throw new Error("Invalid signed strategy commitment");
 }
+/** Thrown only by the commitment check, so the catch below can tell it from an outage. */
+class InvalidCommitment extends Error {}
+
 export class Admission {
   constructor(
     private readonly store: WorkerStore,
@@ -71,12 +74,27 @@ export class Admission {
     private readonly origin: string,
     private readonly execute: boolean,
     private readonly countries: readonly string[],
+    /**
+     * Called when a stored strategy fails to verify. Injected rather than logged here because
+     * this package holds no logger, and a swallowed security event is the thing being fixed.
+     */
+    private readonly onInvalidCommitment?: (instanceId: string, error: unknown) => void,
   ) {}
   async run(instance: InstanceRow, draft: DraftRow) {
     let snapshot: Snapshot | undefined;
     let failure: string | undefined;
     try {
-      await verifyCommitment(draft, instance, this.origin, this.chain);
+      // Separated from the rest of the try on purpose. A commitment that does not verify means
+      // the row did not come from the API accepting a signature, and reporting that as
+      // "observation-or-authority-unavailable" sends an operator to look at their RPC while a
+      // forged strategy sits in the table. Verified: a direct insert with a bogus signature was
+      // correctly refused here and correctly named nothing at all.
+      try {
+        await verifyCommitment(draft, instance, this.origin, this.chain);
+      } catch (error) {
+        this.onInvalidCommitment?.(instance.id, error);
+        throw new InvalidCommitment();
+      }
       if (instance.mode === "auto" && !this.execute) failure = "execution-disabled";
       else if (
         instance.mode === "auto" &&
@@ -91,8 +109,11 @@ export class Admission {
           await this.chain.authorize(await this.store.context(instance.userId, instance.id));
         snapshot = await this.chain.snapshot(draft);
       }
-    } catch {
-      failure = "observation-or-authority-unavailable";
+    } catch (error) {
+      failure =
+        error instanceof InvalidCommitment
+          ? "invalid-commitment"
+          : "observation-or-authority-unavailable";
     }
     await this.store.write(instance.userId, async (tx) => {
       const current = await this.store.lockInstance(tx, instance.id);

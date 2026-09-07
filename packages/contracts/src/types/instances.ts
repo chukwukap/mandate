@@ -93,6 +93,15 @@ export const EXPIRY_HALT_REASON = "Strategy expired";
  * - `observation-expired`
  *                 the observation was too old by the time the tick committed and was
  *                 discarded rather than acted on.
+ * - `invalid-commitment`
+ *                 the stored strategy failed commitment verification: a malformed envelope, an
+ *                 asset outside the catalogue, an artifact or render hash that did not reproduce,
+ *                 or a signature that did not verify. NOT transient and NOT a market condition: the row
+ *                 reached the database by some path other than the API accepting a signature,
+ *                 so the instance is left where it is and the event is worth an operator's
+ *                 attention. Observed for real when a strategy was inserted directly into the
+ *                 database with a forged signature — the tick refused it, which is the boundary
+ *                 working, but it was filed under a name that reads like an RPC outage.
  *
  * Only the first three describe the strategy itself; the rest are the system declining to act
  * on the user's behalf, which is why none of them halts an instance except `halted` itself.
@@ -105,6 +114,7 @@ export const EVALUATION_OUTCOMES = Object.freeze([
   "eligibility-renewal-required",
   "observation-or-authority-unavailable",
   "observation-expired",
+  "invalid-commitment",
 ] as const);
 
 export type EvaluationOutcome = (typeof EVALUATION_OUTCOMES)[number];

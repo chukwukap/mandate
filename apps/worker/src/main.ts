@@ -20,10 +20,17 @@ async function main() {
     });
   let heartbeat: NodeJS.Timeout | undefined;
   let beating = false;
+  let worker: Worker | undefined;
   try {
     if (!(await databaseReady(database.db))) throw new Error("Database readiness failed");
     const chain = new WorkerChain(config);
-    const worker = new Worker(config, new WorkerStore(database.db, lease), lease, chain);
+    worker = new Worker(config, new WorkerStore(database.db, lease), lease, chain, {
+      log,
+      // The pool doubles as the claim connector: `pg.Pool` satisfies ClaimConnector
+      // structurally, so the scheduler takes its own dedicated session from it for the
+      // per-instance advisory locks and nothing else changes about how the pool is used.
+      connector: database.pool,
+    });
     if (!(await worker.ready())) throw new Error("Worker readiness failed");
     while (!stop.signal.aborted && !(await lease.acquire())) {
       log.info("Another worker holds leadership; waiting");
@@ -63,6 +70,9 @@ async function main() {
     process.exitCode = 1;
   } finally {
     if (heartbeat) clearInterval(heartbeat);
+    // Before the pool closes: the scheduler holds a checked-out session for its advisory locks,
+    // and closing the pool under it would surface as a connection error on the way out.
+    await worker?.close().catch(() => {});
     await lease.close().catch(() => {});
     await database.close();
     log.info("Worker stopped");

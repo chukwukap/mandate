@@ -80,7 +80,18 @@ export function createWorkerJobs(
 ): WorkerJobs {
   const deps: JobDependencies = {
     store,
-    admission: new Admission(store, chain, config.origin, config.execute, config.eligibleCountries),
+    admission: new Admission(
+      store,
+      chain,
+      config.origin,
+      config.execute,
+      config.eligibleCountries,
+      (instanceId, error) =>
+        log.error(
+          { instanceId, reason: error instanceof Error ? error.message : String(error) },
+          "Stored strategy failed commitment verification; refusing to evaluate it",
+        ),
+    ),
     lifecycle: new Lifecycle(store, chain, config.receiptTimeoutMs),
     executeEnabled: config.execute,
     log,
