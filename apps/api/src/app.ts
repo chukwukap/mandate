@@ -3,7 +3,7 @@ import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
 import type { Authenticator } from "@mandate/auth";
 import type { Config } from "@mandate/config";
-import { Problem } from "@mandate/contracts";
+import { type BalanceReader, type ChainReader, Problem } from "@mandate/contracts";
 import { loggerOptions } from "@mandate/observability";
 import Fastify from "fastify";
 import { ZodError } from "zod";
@@ -13,9 +13,23 @@ import { registerExecutions, registerInstanceExecutions } from "./modules/execut
 import { registerHealth } from "./modules/health/index.js";
 import { registerInstanceAliases, registerInstances } from "./modules/instances/index.js";
 import { registerMarket } from "./modules/market/index.js";
+import { MarketSnapshots } from "./modules/market/snapshot.js";
+import { registerPortfolio } from "./modules/portfolio/index.js";
 import { registerPermissions } from "./modules/permissions/index.js";
 import { registerTrading, type TradingDependencies } from "./modules/strategies/routes.js";
 import { PREFLIGHT_HEADERS, PREFLIGHT_METHODS, registerPlugins } from "./plugins/index.js";
+
+/**
+ * Whether this reader can also report balances.
+ *
+ * A guard rather than a cast: BaseReader implements both interfaces, but a ChainReader fake
+ * written before balances existed implements only one, and refusing to boot over a route such a
+ * caller never exercises would be the wrong trade. Narrowing here keeps that decision visible
+ * instead of hiding it in an assertion.
+ */
+function readsBalances(chain: ChainReader): chain is ChainReader & BalanceReader {
+  return typeof (chain as Partial<BalanceReader>).balances === "function";
+}
 
 export interface ApiDependencies {
   trading?: TradingDependencies;
@@ -131,11 +145,28 @@ export async function buildApp(deps: ApiDependencies) {
     // single request cannot fan out into several identical worker_state queries.
     const executionAvailable = async () => (await deps.workerAvailable?.().catch(() => false)) ?? false;
 
+    // Constructed here rather than inside registerMarket so the portfolio shares it. Two caches
+    // would mean the market page and the portfolio can quote the same asset at two prices a
+    // second apart, which reads as a bug in the product rather than in the cache.
+    const snapshots = new MarketSnapshots(trading.chain, trading.assets, { log: app.log });
+
     await registerMarket(app, {
       chain: trading.chain,
       assets: trading.assets,
       executionAvailable,
+      snapshots,
     });
+
+    // Registered only when the reader can actually read balances. BaseReader can; a ChainReader
+    // fake that predates this capability cannot, and refusing to boot over a route it never
+    // exercises would be the wrong trade.
+    if (readsBalances(trading.chain)) {
+      await registerPortfolio(app, {
+        chain: trading.chain,
+        assets: trading.assets,
+        snapshots,
+      });
+    }
 
     const instances = { repository: trading.repository, chain: trading.chain, executionAvailable };
     await registerInstances(app, instances);

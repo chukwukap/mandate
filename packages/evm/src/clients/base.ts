@@ -1,11 +1,14 @@
 import {
   type Asset,
+  type BalanceReader,
   type ChainReader,
   type Hex,
   type MarketFeed,
   type PermissionPayload,
+  type Position,
   Problem,
   type Quote,
+  type WalletBalances,
 } from "@mandate/contracts";
 import { Decimal } from "decimal.js";
 import {
@@ -87,7 +90,7 @@ const MAX_REFERENCE_AGE = 26 * 3600;
  * out of every seven.
  */
 export const MAX_VALIDATION_AGE = 96 * 3600;
-export class BaseReader implements ChainReader {
+export class BaseReader implements ChainReader, BalanceReader {
   private networkCheckedAt = 0;
   private cachedMarket: { at: number; feeds: MarketFeed[] } | undefined;
   private pendingMarket: Promise<MarketFeed[]> | undefined;
@@ -299,6 +302,40 @@ export class BaseReader implements ChainReader {
     )
       throw Problem.unavailable("Reference price is too old to validate a quote against.");
     return this.route(asset, side, amount, slippageBps, reference.value);
+  }
+  /**
+   * What `address` holds: USDC plus one balance per catalogue asset.
+   *
+   * Issued as one flat batch rather than a window, unlike `loadMarket`. The reason the market
+   * refresh is windowed is the quoter probe, which is an expensive routed call; `balanceOf` is a
+   * plain storage read, and the viem transport already coalesces them (batchSize 20) into a
+   * single request. Serialising or windowing them would add round trips for no politeness gain.
+   *
+   * A single asset whose read fails takes the whole call down rather than reporting a zero
+   * balance. Zero and unknown are the same pixel on a portfolio screen and they are not the same
+   * fact: one means the user sold, the other means we could not see. Refusing is the honest
+   * answer, and the caller already handles chain-unavailable.
+   */
+  async balances(address: Hex, assets: readonly Asset[] = this.assets): Promise<WalletBalances> {
+    await this.network();
+    const read = (token: Hex) =>
+      this.client.readContract({
+        address: token,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address],
+      });
+    const [cash, ...raw] = await Promise.all([
+      read(USDC),
+      ...assets.map((asset) => read(asset.token)),
+    ]);
+    const positions: Position[] = assets.map((asset, index) => ({
+      symbol: asset.symbol,
+      token: asset.token,
+      decimals: asset.decimals,
+      quantity: formatUnits(raw[index] ?? 0n, asset.decimals),
+    }));
+    return { at: Date.now(), cash: formatUnits(cash ?? 0n, USDC_DECIMALS), positions };
   }
   async market(): Promise<MarketFeed[]> {
     if (this.cachedMarket && Date.now() - this.cachedMarket.at < 15_000)

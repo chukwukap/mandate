@@ -15,7 +15,7 @@ import {
   outcomeStreak,
   resolvePolicy,
 } from "./cadence.js";
-import { type ClaimConnector, InstanceClaims } from "./claims.js";
+import { type ClaimConnector, type ClaimResult, InstanceClaims } from "./claims.js";
 
 /** Ceiling on every per-instance in-process map, so a long-lived worker cannot grow forever. */
 const MAX_TRACKED = 5_000;
@@ -208,6 +208,29 @@ export class Scheduler {
       return undefined;
     }
     if (!claim.held) this.counters.unclaimed++;
+    // Everything from here on runs with the advisory lock already held, and the caller's
+    // try/finally does not begin until this returns a claim. A throw in between — `backlog.note`
+    // hitting a database error, or a draft whose jsonb envelope has no `caps` key — would leak
+    // the lock for the life of the process, freezing that instance on every worker, and abort
+    // the whole cycle rather than one instance.
+    try {
+      return await this.prepare(instance, draft, claim, now);
+    } catch (error) {
+      await this.claims.release(instance.id, claim.held ? claim.generation : this.claims.epoch);
+      this.log.error(
+        { instance: instance.id, reason: error instanceof Error ? error.message : String(error) },
+        "Claim preparation failed; the lock was released and the instance skipped",
+      );
+      return undefined;
+    }
+  }
+
+  private async prepare(
+    instance: InstanceRow,
+    draft: DraftRow,
+    claim: ClaimResult,
+    now: number,
+  ): Promise<Claim> {
     const interval = this.effectiveInterval(instance.tickIntervalMs);
     const latenessMs = Math.max(0, now - instance.nextTickAt.getTime());
     const missed = missedTicks(instance.nextTickAt.getTime(), now, interval);

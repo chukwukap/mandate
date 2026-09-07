@@ -1,13 +1,16 @@
 import {
   type Asset,
+  type BalanceReader,
   type ChainReader,
   type Hex,
   type Identity,
   type MarketFeed,
   type PermissionCheck,
   type PermissionPayload,
+  type Position,
   Problem,
   type Quote,
+  type WalletBalances,
 } from "../../../packages/contracts/src/index.js";
 import { assessRound } from "../../../packages/evm/src/feeds/staleness.js";
 import { permissionHash } from "../../../packages/evm/src/permissions/index.js";
@@ -21,7 +24,14 @@ import {
   USDC,
   USDC_DECIMALS,
 } from "./catalogue.js";
-import { type BalanceSheet, balanceOf, DEFAULT_BALANCES, tokenOf } from "./erc20.js";
+import {
+  type BalanceSheet,
+  balanceKey,
+  balanceOf,
+  balanceString,
+  DEFAULT_BALANCES,
+  tokenOf,
+} from "./erc20.js";
 import { CLOCKS, marketRounds, type RecordedRound } from "./feeds.js";
 import { probesFor, splitProbes } from "./quotes.js";
 import { RECEIPTS, type ReceiptFixture } from "./receipts.js";
@@ -103,7 +113,7 @@ const AMOUNT_PATTERN = /^\d{1,30}(\.\d{1,18})?$/;
 const MIN_SLIPPAGE_BPS = 1;
 const MAX_SLIPPAGE_BPS = 500;
 
-export class FakeChainClient implements ChainReader {
+export class FakeChainClient implements ChainReader, BalanceReader {
   readonly calls: ChainCalls = {
     ready: 0,
     market: 0,
@@ -115,7 +125,7 @@ export class FakeChainClient implements ChainReader {
   };
   private readonly assets: readonly FixtureAsset[];
   private readonly rounds: Map<string, RecordedRound>;
-  private readonly balances: BalanceSheet;
+  private readonly sheet: BalanceSheet;
   private readonly receipts: readonly ReceiptFixture[];
   private readonly permissions = new Map<string, PermissionState>();
   private readonly signatures: readonly MessageSignature[];
@@ -127,7 +137,7 @@ export class FakeChainClient implements ChainReader {
     this.clock = options.now?.() ?? CLOCKS.tradingHours;
     this.assets = options.assets ?? B20_ASSETS;
     this.rounds = new Map(options.rounds ?? marketRounds({ observedAt: this.clock }));
-    this.balances = options.balances ?? new Map(DEFAULT_BALANCES);
+    this.sheet = options.balances ?? new Map(DEFAULT_BALANCES);
     this.receipts = options.receipts ?? RECEIPTS;
     this.signatures = options.signatures ?? [];
     this.walletKinds = options.walletKinds ?? {};
@@ -177,7 +187,7 @@ export class FakeChainClient implements ChainReader {
   }
 
   balance(token: Hex, holder: Hex): bigint {
-    return balanceOf(this.balances, holder, token);
+    return balanceOf(this.sheet, holder, token);
   }
 
   /** Balance as a decimal string at the token's real scale — 8 for a B20 share, 6 for USDC. */
@@ -189,6 +199,34 @@ export class FakeChainClient implements ChainReader {
     return this.receipts.find((entry) => entry.hash.toLowerCase() === hash.toLowerCase());
   }
 
+  /**
+   * Credit one holding, so a test can give an address a position to read back.
+   *
+   * DEFAULT_BALANCES is keyed to the fixed fixture accounts, but identities in the contract
+   * harness get freshly generated wallets — without this, every portfolio test would be a test
+   * of the empty case.
+   */
+  credit(holder: Hex, token: Hex, amount: string): void {
+    this.sheet.set(balanceKey(holder, token), units(amount, tokenOf(token).decimals));
+  }
+  /**
+   * Balances for an address, from the same sheet `balanceOf` reads.
+   *
+   * Shares the sheet on purpose rather than taking a second fixture: a test that credits an
+   * account through the existing helpers must see the change here too, or the portfolio surface
+   * would be testable only against numbers nothing else in the suite agrees with.
+   */
+  async balances(address: Hex, assets: readonly Asset[]): Promise<WalletBalances> {
+    const positions: Position[] = assets.map((asset) => ({
+      symbol: asset.symbol,
+      token: asset.token,
+      decimals: asset.decimals,
+      // balanceString, not balanceOf: the raw integer is at the token's own scale, and every
+      // B20 equity is 8 decimals. Publishing the integer would overstate a holding by 1e8.
+      quantity: balanceString(this.sheet, address, asset.token),
+    }));
+    return { at: Date.now(), cash: balanceString(this.sheet, address, USDC), positions };
+  }
   async ready(): Promise<boolean> {
     this.calls.ready += 1;
     return !this.faults.network;

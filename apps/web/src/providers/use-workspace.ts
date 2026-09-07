@@ -6,7 +6,6 @@ import { useSession } from "../features/auth/session-provider";
 import { useAuthorizedApi } from "../features/auth/use-authorized-api";
 import { useExecutions } from "../features/executions/use-executions";
 import { companies, stocks } from "../features/market/catalog";
-import { demoPrices } from "../features/market/preview";
 import { useMarket } from "../features/market/use-market";
 import { useStrategies } from "../features/strategies/use-strategies";
 import { workspaceSection } from "../lib/navigation";
@@ -87,16 +86,26 @@ export function useWorkspace() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  // The live reference wherever it is available, in preview as well — the demo simulates
-  // positions, not the market. The fixture is the fallback for the first paint and for when the
-  // endpoint cannot be reached, and only in preview: an empty price in the signed-in workspace
-  // must stay empty rather than quietly showing a number from a file.
-  const price = (symbol: string) => {
-    const live = market?.feeds.find(
-      (feed) => feed.uri === `oracle:${symbol}` && !feed.stale,
-    )?.value;
-    return live ?? (preview ? demoPrices[symbol] : undefined);
-  };
+  /**
+   * The reference price for one symbol, stale or not.
+   *
+   * `stale` used to disqualify a feed here, and that emptied the entire market page for most of
+   * every week. These are Chainlink equity feeds with no off-hours heartbeat: `MAX_REFERENCE_AGE`
+   * is 26 hours, so from Friday's close until Monday's open every one of the seven feeds is
+   * flagged stale and every price on screen rendered as "—". Observed on a Monday holiday with
+   * all seven feeds carrying real values 67 hours old.
+   *
+   * A held last close is not "no price". It is the last price the reference actually recorded,
+   * and the tokens keep trading on Aerodrome the whole time — the same argument that produced
+   * MAX_VALIDATION_AGE in packages/evm/src/clients/base.ts. So the number is shown, and
+   * `priceStale` tells the caller to label it rather than hide it. Suppressing a real number is
+   * not the cautious choice; it is a blank screen that says nothing at all.
+   */
+  const priceFeed = (symbol: string) =>
+    market?.feeds.find((feed) => feed.uri === `oracle:${symbol}`);
+  const price = (symbol: string) => priceFeed(symbol)?.value ?? undefined;
+  /** True when the displayed price is a held close rather than a live reading. */
+  const priceStale = (symbol: string) => priceFeed(symbol)?.stale ?? false;
   const company = companies[selected];
   const visibleStocks = stocks
     .filter(
@@ -177,6 +186,7 @@ export function useWorkspace() {
     call,
     fetchOwned,
     price,
+    priceStale,
     company,
     visibleStocks,
     watching,

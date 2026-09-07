@@ -44,6 +44,7 @@ const PATHS = [
   "/v1/market/quote",
   "/v1/me",
   "/v1/me/wallets",
+  "/v1/portfolio",
   "/v1/permissions",
   "/v1/permissions/prepare",
   "/v1/strategies",

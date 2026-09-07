@@ -49,19 +49,41 @@ const MA_PERIOD = 20;
  * scale makes the chart useless.
  */
 function robustRange(candles: Candle[]) {
-  const lows = candles.map((c) => c.low).sort((a, b) => a - b);
-  const highs = candles.map((c) => c.high).sort((a, b) => a - b);
-  if (!lows.length || !highs.length) return null;
-  // Trim a COUNT, not a fraction. With 21 candles floor(21 * 0.98) is 20, which is the last
-  // index — so a "98th percentile" returned the outlier it was meant to exclude, and the chart
-  // scaled to $495 exactly as before. At least one from each end whenever there are enough
-  // points for that to be meaningful.
-  const trim = lows.length >= 10 ? Math.max(1, Math.floor(lows.length * 0.02)) : 0;
-  const low = lows[trim] as number;
-  const high = highs[highs.length - 1 - trim] as number;
+  const closes = candles.map((c) => c.close).sort((a, b) => a - b);
+  if (!closes.length) return null;
+
+  // Anchored on the MEDIAN CLOSE, not on a trimmed count of highs and lows.
+  //
+  // Trimming a fixed count was the second wrong answer to this. `max(1, floor(n * 0.02))` drops
+  // exactly one point per end for any window from 10 to 99 candles, and nothing at all below 10
+  // — so it survives a single artifact wick and nothing more. Measured across all 7 assets and
+  // 5 intervals: 15 of the 35 charts still autoscaled to between 2x and 56x the traded range,
+  // because these young pools routinely print two or more bad candles in a row. GOOGLc's daily
+  // series has adjacent artifacts at 38,522.82 and 5,021.36, which defeats any single-point
+  // trim, and MSFTc drew Microsoft at $1,978 on an axis running from -$400 to $2,000.
+  //
+  // Closes are the honest centre: a wick is one trade at a price nobody else accepted, but a
+  // close is where the pool actually settled. Everything within a wide band around the median
+  // close sets the scale; anything outside it is still drawn and still reachable by zooming,
+  // but no longer decides how the rest of the series is displayed.
+  const median = closes[Math.floor(closes.length / 2)] as number;
+  if (!(median > 0)) return null;
+  // Deliberately generous. This is an outlier guard, not a volatility model, and a real 3x move
+  // in a young market must never be squashed by it.
+  const ceiling = median * 4;
+  const floor = median / 4;
+  const within = (value: number) => value >= floor && value <= ceiling;
+
+  const lows = candles.map((c) => c.low).filter(within);
+  const highs = candles.map((c) => c.high).filter(within);
+  // If the band excluded everything — a series with no coherent centre — fall back to the
+  // closes, which by construction contain the median and so can never be empty.
+  const low = Math.min(...(lows.length ? lows : closes));
+  const high = Math.max(...(highs.length ? highs : closes));
   if (!(high > low)) return null;
   const pad = (high - low) * 0.08;
-  return { minValue: low - pad, maxValue: high + pad };
+  // Prices are non-negative. Padding a low near zero must not put a negative dollar on the axis.
+  return { minValue: Math.max(0, low - pad), maxValue: high + pad };
 }
 
 function readTheme(element: HTMLElement) {
@@ -185,8 +207,17 @@ export function MarketChart({
     });
 
     instance.subscribeCrosshairMove((param) => {
-      const point = param.seriesData.get(price.current as never) as Candle | undefined;
-      setHovered(param.time && point ? { ...point, time: Number(param.time) } : null);
+      // Resolved against the source data by time rather than read out of the series.
+      //
+      // A line series yields {time, value}, not {open, high, low, close}. Casting that to a
+      // Candle made the legend call `shown.open.toFixed(2)` on undefined, which throws during
+      // render and unmounts the whole page — hovering the line chart was a hard crash, not a
+      // blank legend. Looking the candle up by time fixes the crash and is also better: the
+      // line chart now gets a real OHLC legend instead of the closes it was drawn from.
+      const time = param.time === undefined ? undefined : Number(param.time);
+      setHovered(
+        time === undefined ? null : (latest.current.find((c) => c.time === time) ?? null),
+      );
     });
 
     chart.current = instance;

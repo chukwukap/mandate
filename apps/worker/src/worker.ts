@@ -71,22 +71,40 @@ export class Worker {
     }
     let remaining = this.config.maxBatch;
     for (const user of await this.store.owners(this.config.maxBatch)) {
-      for (const { instance, draft } of await this.store.due(user, remaining)) {
-        if (signal.aborted) return;
-        // No claim means another worker holds this instance, or it is gated in process after a
-        // failed settle. Skipping without spending `remaining` is deliberate: nothing was
-        // evaluated, so the batch budget was not used.
-        const claim = await this.scheduler?.claim(instance, draft);
-        if (this.scheduler && !claim) continue;
-        try {
-          await this.admission.run(instance, draft);
-        } finally {
-          // In `finally` because settle also releases the advisory lock. A throw out of
-          // admission that skipped this would hold the lock for the life of the process and
-          // freeze that instance on every worker.
-          if (claim) await this.scheduler?.settle(claim);
+      // Instances skipped this cycle because their claim was refused. They keep their
+      // `next_tick_at`, and `due` is `order by next_tick_at asc limit n` with no offset, so they
+      // stay at the head of every subsequent window. Widening the request by the number already
+      // skipped is what stops one unclaimable instance from occupying the whole batch forever
+      // and starving every other strategy that owner has.
+      let skipped = 0;
+      while (remaining > 0) {
+        const batch = await this.store.due(user, remaining + skipped);
+        if (batch.length <= skipped) break;
+        let evaluated = false;
+        for (const { instance, draft } of batch.slice(skipped)) {
+          if (signal.aborted) return;
+          // No claim means another worker holds this instance, or it is gated in process after a
+          // failed settle. Skipping does not spend `remaining`: nothing was evaluated, so the
+          // batch budget was not used.
+          const claim = await this.scheduler?.claim(instance, draft);
+          if (this.scheduler && !claim) {
+            skipped++;
+            continue;
+          }
+          evaluated = true;
+          try {
+            await this.admission.run(instance, draft);
+          } finally {
+            // In `finally` because settle also releases the advisory lock. A throw out of
+            // admission that skipped this would hold the lock for the life of the process and
+            // freeze that instance on every worker.
+            if (claim) await this.scheduler?.settle(claim);
+          }
+          if (--remaining === 0 || (await this.store.pending(user, 1)).length) return;
         }
-        if (--remaining === 0 || (await this.store.pending(user, 1)).length) return;
+        // A pass that claimed nothing new will claim nothing next time either — the refusals are
+        // durable for this cycle. Stop rather than widen the window without bound.
+        if (!evaluated) break;
       }
     }
   }

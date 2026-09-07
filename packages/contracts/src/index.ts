@@ -20,6 +20,17 @@ export type InstanceStatus = z.infer<typeof statusSchema>;
 export type Hex = `0x${string}`;
 export type Asset = { symbol: string; token: Hex; feed: Hex; decimals: number };
 export type MarketFeed = { uri: string; value: string | null; updated_at: number; stale: boolean };
+/** One token balance, in whole units. Pricing is deliberately not this type's business. */
+export type Position = { symbol: string; token: Hex; decimals: number; quantity: string };
+/**
+ * What an address actually holds on chain, read directly from the token contracts.
+ *
+ * Quantities only — no prices and no valuation. Holdings and prices come from different sources
+ * with different failure modes and different staleness, and a type that fused them would have to
+ * pick one `stale` flag for both. Callers join this against a market snapshot, so the number a
+ * portfolio shows is the same number the market page shows.
+ */
+export type WalletBalances = { at: number; cash: string; positions: Position[] };
 export type Quote = {
   token_in: Hex;
   token_out: Hex;
@@ -77,6 +88,17 @@ export class Problem extends Error {
   static unavailable(detail: string) {
     return new Problem(503, "unavailable", "Temporarily unavailable", detail);
   }
+}
+
+/**
+ * Reading token balances for an address.
+ *
+ * Kept out of `ChainReader` on purpose. Every fake in the test suites implements ChainReader, so
+ * adding a method there is a breaking change to a dozen files for the benefit of the two callers
+ * that need balances. A narrow interface lets those two ask for exactly the capability they use.
+ */
+export interface BalanceReader {
+  balances(address: Hex, assets: readonly Asset[]): Promise<WalletBalances>;
 }
 
 // Applications depend on capabilities; test implementations never acquire signing keys.
