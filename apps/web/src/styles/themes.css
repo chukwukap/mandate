@@ -65,11 +65,20 @@
   /* Text, strongest to faintest. --text-5 is separator glyphs, never words. */
   --ink: #262e29;
   --ink-2: #4f5a4a;
-  --muted: #82877f;
+  /* Lifted from #82877f: 3.67:1 on a white card, under the 4.5 body text needs. */
+  --muted: #70756d;
   --text-2: #626e59;
   --text-3: #929d88;
   --text-4: #a9b1a0;
   --text-5: #cad0c1;
+
+  /*
+   * Text and icons sitting ON the brand green, which is not the same colour in both themes.
+   * Light --desk-green (#14794f) is dark enough for white; dark --desk-green (#4ec98d) is a
+   * light mint, and white on it measures 2.09:1 — below the 4.5 body text needs and visibly
+   * washed out on the primary button of every page.
+   */
+  --on-accent: #ffffff;
 
   /* Accents. --green-ink is the brand green when it is ink rather than ground. */
   --green-ink: #36765a;
@@ -77,7 +86,8 @@
   --accent: #7f9665;
   --red: #bc7065;
 
-  --warn-ink: #7c7359;
+  /* Lifted from #7c7359: 4.36:1 on the warn ground. */
+  --warn-ink: #766d53;
   --warn-soft: #f7f6f0;
   --warn-line: #edeadf;
   --amber: #b59a66;
@@ -87,6 +97,36 @@
   --danger-mid: #a77460;
   --danger-soft: #fff3ed;
   --danger-line: #efd9cc;
+  /*
+   * Desk editorial accent — the pale sage the feature panels are painted in (the overview's
+   * "what is running" panel, the signals hero, the discover feature) plus every ink, rule and
+   * graphic drawn on that ground. The desk neutrals above run cool; this set is deliberately
+   * warm, and it needs tokens of its own because a sage panel that keeps its light ground
+   * under a dark page is exactly the glare the theme exists to remove.
+   */
+  --desk-accent-surface: #eaf0df;
+  --desk-accent-raised: #f5f8ee;
+  --desk-accent-line: #d8e2c8;
+  --desk-accent-ink: #2b422b;
+  --desk-accent-text: #5f7350;
+
+  /* Accent as a mark rather than a ground: headings, glyphs, bars, dots. */
+  --desk-accent-strong: #60884f;
+  --desk-accent: #779a55;
+  --desk-accent-soft: #8eaa71;
+
+  /* The primary button's pressed-in hover. Darker than the ground in light, lighter in dark. */
+  --desk-green-hover: #286647;
+
+  /* Tone chips: status pills, risk badges, strategy-kind icons. */
+  --desk-positive-soft: #eff5e7;
+  --desk-positive-line: #e2ebd5;
+  --desk-positive-ink: #3c714a;
+  --desk-amber-soft: #f6f0e0;
+  --desk-amber-line: #eee4cf;
+  --desk-amber-ink: #8b6f3c;
+  --desk-info-soft: #e7edf4;
+  --desk-info-ink: #6685a2;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -102,6 +142,7 @@
 
     /* Lifted, not inverted: the light-theme green is unreadable on this ground. */
     --desk-green: #4ec98d;
+    --on-accent: #08150f;
     --desk-green-soft: #102b20;
     --desk-red: #f0796b;
 
@@ -148,6 +189,27 @@
     --danger-mid: #ef9184;
     --danger-soft: #2b1a17;
     --danger-line: #4a2b25;
+    /* Desk editorial accent, dark. The ground sinks below the page, the ink lifts above it. */
+    --desk-accent-surface: #1a2318;
+    --desk-accent-raised: #222d1f;
+    --desk-accent-line: #2f3b2a;
+    --desk-accent-ink: #e3ecd9;
+    --desk-accent-text: #aebfa0;
+
+    --desk-accent-strong: #8fc477;
+    --desk-accent: #9dcd7f;
+    --desk-accent-soft: #82b166;
+
+    --desk-green-hover: #3fb87c;
+
+    --desk-positive-soft: #14251a;
+    --desk-positive-line: #24382a;
+    --desk-positive-ink: #7fd0a0;
+    --desk-amber-soft: #2a2317;
+    --desk-amber-line: #3d3423;
+    --desk-amber-ink: #d5ad70;
+    --desk-info-soft: #16202b;
+    --desk-info-ink: #8fb6d6;
   }
 }
 
@@ -162,6 +224,7 @@
   --desk-chart-grid: #262d37;
 
   --desk-green: #4ec98d;
+  --on-accent: #08150f;
   --desk-green-soft: #102b20;
   --desk-red: #f0796b;
 
@@ -208,6 +271,27 @@
   --danger-mid: #ef9184;
   --danger-soft: #2b1a17;
   --danger-line: #4a2b25;
+  /* Desk editorial accent, dark. The ground sinks below the page, the ink lifts above it. */
+  --desk-accent-surface: #1a2318;
+  --desk-accent-raised: #222d1f;
+  --desk-accent-line: #2f3b2a;
+  --desk-accent-ink: #e3ecd9;
+  --desk-accent-text: #aebfa0;
+
+  --desk-accent-strong: #8fc477;
+  --desk-accent: #9dcd7f;
+  --desk-accent-soft: #82b166;
+
+  --desk-green-hover: #3fb87c;
+
+  --desk-positive-soft: #14251a;
+  --desk-positive-line: #24382a;
+  --desk-positive-ink: #7fd0a0;
+  --desk-amber-soft: #2a2317;
+  --desk-amber-line: #3d3423;
+  --desk-amber-ink: #d5ad70;
+  --desk-info-soft: #16202b;
+  --desk-info-ink: #8fb6d6;
 }
 
 /* The viewer's chrome paints behind the page, so the ground is set explicitly. */

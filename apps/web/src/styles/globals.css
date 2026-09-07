@@ -284,7 +284,8 @@ button:active:not(:disabled) {
 }
 .account-button small {
   display: block;
-  color: #86948b;
+  /* Lifted from #86948b: 4.39:1 on the fixed dark sidebar, just under the threshold. */
+  color: #8c9a91;
   font-size: 10px;
   margin-top: 5px;
 }
@@ -454,6 +455,15 @@ h1 {
   align-items: center;
   gap: 10px;
 }
+/*
+ * The "open this" arrow in the card corner. It inherited --text-3 and measured 2.84:1 on the
+ * card — the same faint tier that made the watchlist stars invisible. It is the only cue that
+ * the card is a control, so it should be findable even though the label beside it is not.
+ */
+.market-card-head > svg:last-child {
+  color: var(--text-2);
+  margin-left: auto;
+}
 .market-card-head strong {
   font-weight: 550;
   font-size: 11px;
@@ -611,7 +621,13 @@ h1 {
   justify-content: center;
   width: 32px;
   height: 32px;
-  color: var(--text-3);
+  /*
+   * --text-2, not --text-3. The faint tier is for words you are not meant to read first; this is
+   * a control you are meant to be able to FIND. Measured on the markets page in light mode, the
+   * watchlist stars rendered #929d88 on white — 2.84:1, under the 3:1 an icon needs, and in
+   * practice all but invisible against the card.
+   */
+  color: var(--text-2);
   border-radius: 6px;
   flex-shrink: 0;
 }
@@ -1927,7 +1943,12 @@ h1 {
   align-items: center;
   justify-content: center;
   gap: 20px;
-  color: var(--text-3);
+  /*
+   * --text-2, not --text-3. This is the only body text on screen while the app boots, and the
+   * faint tier measured 2.57:1 on the light canvas — a loading message you cannot read is
+   * indistinguishable from a blank page.
+   */
+  color: var(--text-2);
 }
 .brand-mark {
   font-size: 36px;
@@ -2672,7 +2693,7 @@ fieldset.periods {
   margin: 10px 0;
 }
 .permission-card dt {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .permission-card dd {
   margin: 0;

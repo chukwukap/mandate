@@ -551,3 +551,29 @@
   line-height: 1.68;
   opacity: 0.82;
 }
+
+/*
+ * Themed inks are not allowed on this page's fixed grounds.
+ *
+ * `.onboarding` commits to a light/dark split and hardcodes both backgrounds, so any descendant
+ * that inherits a THEMED colour lands on a ground that did not move with it. `.text-button` in
+ * globals.css uses var(--accent-ink), which flips to a pale mint in dark mode: measured 1.68:1
+ * for "Skip for now" on the #fafbf7 panel and 1.75:1 for "Change" on the white summary card.
+ * Both are pinned to the light-mode accent, which is what the fixed ground was designed for.
+ */
+.onboarding .text-button {
+  color: #4f6c3e;
+}
+.onboarding .text-button:hover {
+  color: #3c5730;
+}
+
+/*
+ * Asset logos sit on fixed grounds here — the dark story illustration and the white picker
+ * cards — but globals.css paints their chip with var(--surface), which in dark mode turns every
+ * tile near-black. The logo art is drawn for a light chip, so the chip stays light.
+ */
+.onboarding .asset-logo,
+.onboarding .asset-logo.has-image {
+  background: #ffffff;
+}
