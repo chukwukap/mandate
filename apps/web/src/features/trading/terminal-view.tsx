@@ -553,13 +553,13 @@ export function TerminalView({ model }: { model: WorkspaceModel }) {
               <span className="desk-empty-icon">
                 <Wallet size={20} />
               </span>
-              <h3>Connect a wallet to price a route</h3>
+              <h3>Log in to price a route</h3>
               <p>
                 The chart and the reference price above are public. A routed quote is priced for
                 your own wallet, so it needs one connected.
               </p>
               <button type="button" className="desk-button primary" onClick={login}>
-                Connect wallet
+                Log in
               </button>
             </div>
           )}

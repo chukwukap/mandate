@@ -75,7 +75,7 @@ export function SettingsView({
                 Sign out
               </>
             ) : (
-              "Connect wallet"
+              "Log in"
             )}
           </button>
         </div>

@@ -246,7 +246,7 @@ export function Workspace() {
             </span>
             <span>
               {session.wallet ? shortAddress(session.wallet) : "Your wallet"}
-              <small>{session.authenticated ? "Connected" : "Connect to get started"}</small>
+              <small>{session.authenticated ? "Connected" : "Log in to get started"}</small>
             </span>
             <ChevronRight size={16} />
           </button>
@@ -287,7 +287,7 @@ export function Workspace() {
               disabled={!session.ready}
             >
               <Wallet size={16} />
-              <span>{session.wallet ? shortAddress(session.wallet) : "Connect wallet"}</span>
+              <span>{session.wallet ? shortAddress(session.wallet) : "Log in"}</span>
             </button>
           </div>
         </header>
@@ -348,9 +348,7 @@ export function Workspace() {
           {model.detailPage && <StrategyDetails model={model} />}
           {model.detailPage && !detail && !error && (
             <p className="helper">
-              {session.authenticated
-                ? "Loading strategy…"
-                : "Connect your wallet to view this strategy."}
+              {session.authenticated ? "Loading strategy…" : "Log in to view this strategy."}
             </p>
           )}
           {section === "activity" && <ActivityView model={model} empty={empty} />}

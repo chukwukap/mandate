@@ -514,3 +514,16 @@
     transition: none;
   }
 }
+
+/*
+ * The one paragraph that says what the product is, under the headline in the story panel.
+ * Sized between the headline and the footer note so it reads as the explanation rather than
+ * as another caption.
+ */
+.onboarding-lede {
+  margin: 16px 0 0;
+  max-width: 46ch;
+  font-size: 13.5px;
+  line-height: 1.68;
+  opacity: 0.82;
+}

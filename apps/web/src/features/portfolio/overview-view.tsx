@@ -55,6 +55,14 @@ export function OverviewView({ model }: { model: WorkspaceModel }) {
   const [period, setPeriod] = useState("1W");
 
   const connected = session.authenticated && Boolean(session.wallet);
+  // The newest tick across every strategy. `last_tick_at` is null until a strategy has been
+  // evaluated once, so a fresh account correctly reports that nothing has looked yet.
+  const newestTick = strategies
+    .map((strategy) => strategy.last_tick_at)
+    .filter((at): at is string => Boolean(at))
+    .sort()
+    .at(-1);
+  const lastLooked = newestTick ? new Date(newestTick).toLocaleTimeString() : "not yet";
   const priced = portfolio?.holdings.filter((holding) => holding.value !== null) ?? [];
   // The largest position is the only holding whose chart says something about this portfolio, so
   // it is the one the hero draws. Before a wallet is connected the chart still runs — candles are
@@ -116,7 +124,7 @@ export function OverviewView({ model }: { model: WorkspaceModel }) {
               <>
                 <button type="button" className="desk-button primary" onClick={login}>
                   <Wallet size={15} />
-                  Connect wallet
+                  Log in
                 </button>
                 <span>Markets, prices and charts below are public.</span>
               </>
@@ -146,39 +154,67 @@ export function OverviewView({ model }: { model: WorkspaceModel }) {
             </div>
           </div>
         </section>
+        {/*
+          What is running, not what the product is.
+          //
+          This slot held the marketing explainer — "A rule you sign. A market you stop watching."
+          — which is landing-page copy. It has a landing page: /welcome, which every first-time
+          visitor passes through via OnboardingGate. Repeating the pitch inside the workspace
+          spends the most valuable panel on screen telling a signed-in user what they already
+          bought, next to the one number they came to see.
+          //
+          So this reports the state of their automation instead: how many rules are watching,
+          whether the executor is actually able to act, and when it last looked.
+        */}
         <section className="next-move-panel">
           <div className="next-move-top">
-            <span className="desk-overline">WHAT MANDATE IS</span>
+            <span className="desk-overline">WHAT IS RUNNING</span>
             <ArrowUpRight size={19} />
           </div>
           <h2>
-            A rule you sign.
-            <br />A market you stop watching.
+            {watching.length === 0
+              ? "Nothing is watching yet."
+              : `${watching.length} ${watching.length === 1 ? "rule is" : "rules are"} watching.`}
           </h2>
           <p>
-            Say what you want in plain terms — a stock, a price, a budget — and sign it once.
-            Mandate keeps watch on Base and only ever acts inside the limits you signed. Pause or
-            stop it whenever you like.
+            {watching.length === 0
+              ? "A strategy watches the market on your behalf and only ever acts inside the limits you signed."
+              : `${strategies.length} total · last looked ${lastLooked}`}
           </p>
-          <div className="studio-art">
-            <div className="studio-art-orbit orbit-one" />
-            <div className="studio-art-orbit orbit-two" />
-            <div className="studio-art-tile tile-a">
-              <StockLogo symbol="NVDAc" />
+
+          <dl className="overview-runtime">
+            <div>
+              <dt>Executor</dt>
+              {/*
+                The worker's own heartbeat, not a guess. False here is the honest answer that an
+                armed automatic strategy will record its decisions and not place an order.
+              */}
+              <dd>
+                <span className={`desk-status ${market?.execution_available ? "armed" : "paused"}`}>
+                  <i />
+                  {market?.execution_available ? "Available" : "Observation only"}
+                </span>
+              </dd>
             </div>
-            <div className="studio-art-tile tile-b">
-              <Layers3 size={26} />
+            <div>
+              <dt>Armed</dt>
+              <dd>
+                {watching.length}
+                <small> / {strategies.length}</small>
+              </dd>
             </div>
-            <div className="studio-art-tile tile-c">
-              <StockLogo symbol="AAPLc" />
+            <div>
+              <dt>Decisions recorded</dt>
+              <dd>{strategies.reduce((total, strategy) => total + strategy.orders, 0)}</dd>
             </div>
-            <div className="studio-art-label">
-              <i />
-              Your limits, signed.
-            </div>
-          </div>
-          <button type="button" className="desk-button dark" onClick={() => openEditor()}>
-            Author a strategy
+          </dl>
+
+          <button
+            type="button"
+            className="desk-button dark"
+            onClick={() => (connected ? openEditor() : login())}
+          >
+            {connected ? "Author a strategy" : "Log in to start"}
             <ArrowRight size={16} />
           </button>
           <div className="studio-footnote">Your keys · your caps · your kill switch</div>
@@ -341,14 +377,14 @@ export function OverviewView({ model }: { model: WorkspaceModel }) {
               <p>
                 {connected
                   ? "Pick a stock, a price, and a budget. The rule does the waiting."
-                  : "Connect a wallet to author one and to see the strategies you already have."}
+                  : "Log in to author one and to see the strategies you already have."}
               </p>
               <button
                 type="button"
                 className="desk-button secondary"
                 onClick={() => (connected ? openEditor() : login())}
               >
-                {connected ? "Author a strategy" : "Connect wallet"}
+                {connected ? "Author a strategy" : "Log in"}
                 <ArrowRight size={15} />
               </button>
             </div>

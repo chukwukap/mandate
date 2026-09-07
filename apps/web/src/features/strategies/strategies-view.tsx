@@ -113,7 +113,7 @@ export function StrategiesView({
             session.authenticated ? "Your first rule starts here." : "Your strategies belong here.",
             session.authenticated
               ? "Pick a price. We'll keep watch."
-              : "Connect your wallet to see your strategies.",
+              : "Log in to see your strategies.",
           )
         )}
         {nextPage && (

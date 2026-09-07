@@ -4,7 +4,8 @@ import {
   ArrowRight,
   Bell,
   Check,
-  CheckCheck,
+  KeyRound,
+  PauseCircle,
   ShieldCheck,
   Wallet,
   Zap,
@@ -32,7 +33,9 @@ export function OnboardingView() {
   }, [step]);
   const leave = () => {
     finish({ status: "skipped", symbol, mode });
-    router.push("/");
+    // Not "/" — that is this page until you log in, so pushing there would loop. Markets is the
+    // public surface, and browsing it without an account is a real answer to "skip for now".
+    router.push("/markets");
   };
   const create = () => {
     finish({ status: "completed", symbol, mode });
@@ -45,12 +48,15 @@ export function OnboardingView() {
           m<span>mandate.</span>
         </Link>
         <div className="onboarding-story-body">
-          <span className="onboarding-kicker">LESS WATCHING. MORE LIVING.</span>
+          <span className="onboarding-kicker">TOKENISED EQUITIES ON BASE</span>
           <h2>
-            A plan for the market.
-            <br />
-            Room for everything else.
+            A rule you sign.
+            <br />A market you stop watching.
           </h2>
+          <p className="onboarding-lede">
+            Say what you want in plain terms — a stock, a price, a budget — and sign it once.
+            Mandate watches Base on your behalf and only ever acts inside the limits you signed.
+          </p>
           <div
             className="onboarding-illustration"
             role="img"
@@ -95,7 +101,7 @@ export function OnboardingView() {
         </div>
         <div className="onboarding-story-footer">
           <span className="base-dot" />
-          Built for tokenized stocks on Base
+          Your keys stay yours. Nothing moves without a signature and a cap you set.
         </div>
       </aside>
       <section className="onboarding-main" aria-label="Set up your workspace">
@@ -127,42 +133,51 @@ export function OnboardingView() {
             <h1 ref={heading} tabIndex={-1}>
               {
                 [
-                  "A good trade starts with a plan.",
+                  "Say it in plain terms.",
                   "What are you keeping an eye on?",
-                  "Your first rule is one step away.",
+                  "Read it back, then sign once.",
                 ][step]
               }
             </h1>
             <p className="onboarding-intro">
               {
                 [
-                  "Pick your moment. Set your limits. Let Mandate watch your conditions while you get on with your day.",
+                  "“Buy $50 of Apple if it trades under $200, at most twice a week.” A stock, a price, a budget — that is the whole of it.",
                   "Choose a stock and how you’d like to act. You can change both when you write your strategy.",
-                  "Connect your wallet to write and sign your strategy. You’ll review the full rule and budget before saving.",
+                  "Log in to write and sign your strategy. Mandate renders your rule as plain English with every limit spelled out, and your wallet signs that exact text — not a hash you cannot read.",
                 ][step]
               }
             </p>
             {step === 0 && (
               <div className="onboarding-benefits">
                 <div>
-                  <Bell size={20} />
+                  <KeyRound size={20} />
                   <span>
-                    <strong>Turn a price into a plan</strong>
-                    <small>Get signals when your trading conditions are met.</small>
+                    <strong>Your keys, throughout</strong>
+                    <small>
+                      Mandate never holds your funds. Automatic execution runs on a spend permission
+                      you grant and can revoke on chain at any time.
+                    </small>
                   </span>
                 </div>
                 <div>
                   <ShieldCheck size={20} />
                   <span>
-                    <strong>Decide what can happen</strong>
-                    <small>Set a budget and expiry. Approve automatic spending separately.</small>
+                    <strong>Caps you set, enforced</strong>
+                    <small>
+                      Per order, per period, and over the strategy&apos;s lifetime. The limits are
+                      part of what you signed, so they cannot be widened without you signing again.
+                    </small>
                   </span>
                 </div>
                 <div>
-                  <CheckCheck size={20} />
+                  <PauseCircle size={20} />
                   <span>
-                    <strong>See what happened</strong>
-                    <small>Keep your strategies and recorded activity together.</small>
+                    <strong>A kill switch that works</strong>
+                    <small>
+                      Every evaluation is recorded, including the ones that decided to do nothing.
+                      Pause stops new orders immediately; stop ends the strategy for good.
+                    </small>
                   </span>
                 </div>
               </div>
@@ -302,7 +317,7 @@ export function OnboardingView() {
                     }
                   }}
                 >
-                  Connect wallet
+                  Log in
                   <Wallet size={17} />
                 </button>
               )}

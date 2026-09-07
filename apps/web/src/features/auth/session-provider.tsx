@@ -22,7 +22,7 @@ type Session = {
   sendPermission(call: Call): Promise<Hex>;
 };
 const unavailable = async (): Promise<never> => {
-  throw new Error("Connect a wallet to continue.");
+  throw new Error("Log in to continue.");
 };
 const baseChain = {
   id: base.id,

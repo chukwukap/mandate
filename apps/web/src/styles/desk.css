@@ -565,6 +565,46 @@
   line-height: 1.7;
   margin-top: 12px;
 }
+/*
+ * The runtime readout that replaced the studio artwork in this panel.
+ *
+ * `margin-top: auto` on the button below still pins the call to action to the bottom, so this
+ * list simply fills the space the decorative orbit used to occupy — with three facts that change
+ * rather than an illustration that does not.
+ */
+.overview-runtime {
+  margin: 18px 0 0;
+  display: grid;
+  gap: 10px;
+}
+.overview-runtime > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #d8e2c8;
+}
+.overview-runtime > div:last-child {
+  border-bottom: none;
+}
+.overview-runtime dt {
+  font-size: 11px;
+  color: #5a6d4c;
+  letter-spacing: 0.02em;
+}
+.overview-runtime dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 560;
+  color: #2f3d26;
+  font-variant-numeric: tabular-nums;
+}
+.overview-runtime dd small {
+  font-size: 11px;
+  font-weight: 450;
+  color: #6d7f5c;
+}
 .next-move-panel > .desk-button {
   margin-top: auto;
   width: 100%;

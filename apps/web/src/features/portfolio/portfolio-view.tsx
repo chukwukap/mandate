@@ -79,7 +79,7 @@ export function PortfolioView({ model }: { model: WorkspaceModel }) {
           </p>
           <button type="button" className="button primary" onClick={() => login()}>
             <Wallet size={15} />
-            Connect wallet
+            Log in
           </button>
         </div>
       </section>

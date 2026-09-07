@@ -99,7 +99,7 @@ export function DiscoverView({ model }: { model: WorkspaceModel }) {
             <strong>Prices and charts are public</strong>
           </div>
           <button type="button" className="desk-button primary" onClick={login}>
-            Connect a wallet
+            Log in
             <ArrowUpRight size={15} />
           </button>
         </div>

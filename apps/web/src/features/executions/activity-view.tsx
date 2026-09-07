@@ -27,7 +27,7 @@ export function ActivityView({
           type="button"
           className="text-button"
           disabled={!session.authenticated}
-          title={session.authenticated ? undefined : "Connect a wallet to load your activity"}
+          title={session.authenticated ? undefined : "Log in to load your activity"}
           onClick={() => {
             void fetchOwned();
             setToast("Activity refreshed");
