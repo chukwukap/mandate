@@ -9,8 +9,8 @@ import { CHAIN_ID } from "@mandate/evm";
 import { Decimal } from "decimal.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { MarketSnapshots } from "../market/snapshot.js";
 import { principal } from "../auth/principal.js";
+import type { MarketSnapshots } from "../market/snapshot.js";
 
 /**
  * What the caller's wallet actually holds, valued at the prices the market page is showing.

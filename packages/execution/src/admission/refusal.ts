@@ -130,11 +130,6 @@ export function describeRefusals(refusals: readonly Refusal[]): string {
 export function refusalProblem(refusals: readonly Refusal[]): Problem {
   const first = refusals[0];
   if (!first)
-    return new Problem(
-      409,
-      "order-refused",
-      "Order refused",
-      "This order cannot run right now.",
-    );
+    return new Problem(409, "order-refused", "Order refused", "This order cannot run right now.");
   return new Problem(409, `refused:${first.limit}`, first.title, describeRefusals(refusals));
 }

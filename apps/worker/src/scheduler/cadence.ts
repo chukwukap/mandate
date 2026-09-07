@@ -260,9 +260,7 @@ export function nextDueAt(input: DueInput): Date {
   // Backoff is a deliberate departure from the grid; re-aligning it would snap a
   // 30-minute wait back onto a 12-second lattice and lose most of the delay.
   const aligned =
-    input.outcome === "transient" ||
-    input.outcome === "unresolvable" ||
-    input.outcome === "policy"
+    input.outcome === "transient" || input.outcome === "unresolvable" || input.outcome === "policy"
       ? input.from + delay
       : alignTo(input.from + delay, phaseOffset(input.instanceId, interval), interval);
   let at = aligned + Math.floor(random() * policy.spreadMs);

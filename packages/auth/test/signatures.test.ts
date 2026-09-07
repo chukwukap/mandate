@@ -14,16 +14,16 @@ import {
   assertSameAuthorization,
   authorizationDifferences,
   authorizeExecution,
-  erc1271Abi,
   ERC1271_MAGIC,
+  erc1271Abi,
   isErc6492,
   isMagicValue,
   isRevert,
   parseAuthorization,
   type SignatureReader,
+  type StrategyAuthorization,
   signatureReader,
   signingDeadlinePassed,
-  type StrategyAuthorization,
   strategyAuthorizationHash,
   strategyAuthorizationJson,
   strategyAuthorizationTypedData,
@@ -62,7 +62,9 @@ function change(patch: Partial<StrategyAuthorization>): StrategyAuthorization {
  * the three things that silently invalidate every stored signature if they move.
  */
 function eip712ByHand(input: StrategyAuthorization): Hex {
-  const domainType = keccak256(stringToHex("EIP712Domain(string name,string version,uint256 chainId)"));
+  const domainType = keccak256(
+    stringToHex("EIP712Domain(string name,string version,uint256 chainId)"),
+  );
   const domainSeparator = keccak256(
     encodeAbiParameters(
       [{ type: "bytes32" }, { type: "bytes32" }, { type: "bytes32" }, { type: "uint256" }],
@@ -256,7 +258,10 @@ describe("the consent comparison", () => {
 
   test("account casing is not a difference", () => {
     expect(
-      authorizationDifferences(card, change({ account: alice.address.toUpperCase().replace("0X", "0x") })),
+      authorizationDifferences(
+        card,
+        change({ account: alice.address.toUpperCase().replace("0X", "0x") }),
+      ),
     ).toEqual([]);
   });
 
@@ -283,12 +288,14 @@ describe("EOA signatures", () => {
   test("a real wallet signature verifies as an EOA, with no chain read at all", async () => {
     const signature = await alice.signTypedData(typed);
     const { reader: r, seen } = reader({ code: "0xdeadbeef" });
-    expect(await verifyDigest({
-      account: alice.address,
-      digest: strategyAuthorizationHash(card),
-      signature,
-      reader: r,
-    })).toBe("eoa");
+    expect(
+      await verifyDigest({
+        account: alice.address,
+        digest: strategyAuthorizationHash(card),
+        signature,
+        reader: r,
+      }),
+    ).toBe("eoa");
     // ecrecover succeeded, so nothing was asked of the chain.
     expect(seen).toHaveLength(0);
   });
@@ -366,9 +373,9 @@ describe("ERC-1271 contract wallets", () => {
       code: "0x60806040",
       answer: pad(ERC1271_MAGIC, { dir: "right", size: 32 }),
     });
-    expect(
-      await verifyDigest({ account: walletAddress, digest, signature, reader: r }),
-    ).toBe("erc1271");
+    expect(await verifyDigest({ account: walletAddress, digest, signature, reader: r })).toBe(
+      "erc1271",
+    );
     expect(seen).toEqual([{ address: walletAddress, digest, signature }]);
   });
 
@@ -447,7 +454,12 @@ describe("ERC-6492 counterfactual wallets", () => {
   test("an undeployed wallet uses the predeploy capability when it exists", async () => {
     const yes = reader({ code: "0x", predeploy: true });
     expect(
-      await verifyDigest({ account: walletAddress, digest, signature: wrapped, reader: yes.reader }),
+      await verifyDigest({
+        account: walletAddress,
+        digest,
+        signature: wrapped,
+        reader: yes.reader,
+      }),
     ).toBe("erc6492");
     expect(yes.predeployCalls()).toBe(1);
 
@@ -553,9 +565,9 @@ describe("the viem adapter", () => {
       cause: Object.assign(new Error("ECONNREFUSED"), { code: "ECONNREFUSED" }),
     });
     const offlineReader = signatureReader(client({ call: () => Promise.reject(offline) }).client);
-    await expect(
-      offlineReader.isValidSignature(walletAddress, digest, "0xabcd"),
-    ).rejects.toThrow(Problem);
+    await expect(offlineReader.isValidSignature(walletAddress, digest, "0xabcd")).rejects.toThrow(
+      Problem,
+    );
   });
 
   test("isRevert reads geth's JSON-RPC code and ignores ambiguous ones", () => {

@@ -14,8 +14,8 @@ import { registerHealth } from "./modules/health/index.js";
 import { registerInstanceAliases, registerInstances } from "./modules/instances/index.js";
 import { registerMarket } from "./modules/market/index.js";
 import { MarketSnapshots } from "./modules/market/snapshot.js";
-import { registerPortfolio } from "./modules/portfolio/index.js";
 import { registerPermissions } from "./modules/permissions/index.js";
+import { registerPortfolio } from "./modules/portfolio/index.js";
 import { registerTrading, type TradingDependencies } from "./modules/strategies/routes.js";
 import { PREFLIGHT_HEADERS, PREFLIGHT_METHODS, registerPlugins } from "./plugins/index.js";
 
@@ -143,7 +143,8 @@ export async function buildApp(deps: ApiDependencies) {
     const trading = deps.trading;
     // One heartbeat reader shared by every module that reports execution availability, so a
     // single request cannot fan out into several identical worker_state queries.
-    const executionAvailable = async () => (await deps.workerAvailable?.().catch(() => false)) ?? false;
+    const executionAvailable = async () =>
+      (await deps.workerAvailable?.().catch(() => false)) ?? false;
 
     // Constructed here rather than inside registerMarket so the portfolio shares it. Two caches
     // would mean the market page and the portfolio can quote the same asset at two prices a

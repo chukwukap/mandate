@@ -24,14 +24,14 @@ export type {
   StrategyAuthorization,
 } from "./authorization.js";
 export {
-  assertSameAuthorization,
   AUTHORIZATION_FIELDS,
+  assertSameAuthorization,
   authorizationDifferences,
   DOMAIN_NAME,
   DOMAIN_VERSION,
   EIP712_DOMAIN_TYPE,
-  parseAuthorization,
   PRIMARY_TYPE,
+  parseAuthorization,
   signingDeadlinePassed,
   strategyAuthorizationHash,
   strategyAuthorizationJson,
@@ -40,9 +40,9 @@ export {
 } from "./authorization.js";
 export type { SignatureClient, SignatureReader } from "./erc1271.js";
 export {
-  erc1271Abi,
   ERC1271_MAGIC,
   ERC6492_MAGIC,
+  erc1271Abi,
   isErc6492,
   isMagicValue,
   isRevert,

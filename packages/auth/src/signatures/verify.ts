@@ -54,7 +54,9 @@ export type DigestVerification = {
  * signature. Callers that genuinely have no chain access should say so by calling
  * `verifyEoaDigest`.
  */
-export async function verifyDigest(input: DigestVerification): Promise<SignatureMethod | undefined> {
+export async function verifyDigest(
+  input: DigestVerification,
+): Promise<SignatureMethod | undefined> {
   const account = requireAddress(input.account);
   const signature = asSignature(input.signature);
   // A malformed signature is not an error condition, it is an invalid signature. Anything that

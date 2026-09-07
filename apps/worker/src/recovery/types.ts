@@ -69,7 +69,12 @@ export type KnownCall =
       readonly token: Hex;
       readonly value: string;
     }
-  | { readonly kind: "erc20-approve"; readonly token: Hex; readonly spender: Hex; readonly amount: string }
+  | {
+      readonly kind: "erc20-approve";
+      readonly token: Hex;
+      readonly spender: Hex;
+      readonly amount: string;
+    }
   | {
       readonly kind: "erc20-transfer";
       readonly token: Hex;
@@ -126,7 +131,13 @@ export type LocatedTransaction =
  * reproduce out-of-gas, so this string must never be an input to an automatic action.
  */
 export type RevertVerdict = {
-  readonly kind: "error-string" | "panic" | "custom-selector" | "out-of-gas" | "state-dependent" | "unknown";
+  readonly kind:
+    | "error-string"
+    | "panic"
+    | "custom-selector"
+    | "out-of-gas"
+    | "state-dependent"
+    | "unknown";
   readonly detail: string;
   readonly indicative: true;
 };
@@ -188,7 +199,10 @@ export type Diagnosis = {
   readonly nonce: number | null;
   readonly observed: Observation | "unavailable" | null;
   /** The one journal mutation migration 0005 permits: `signed` to its settled status. */
-  readonly settle: { readonly transactionId: string; readonly status: "confirmed" | "reverted" } | null;
+  readonly settle: {
+    readonly transactionId: string;
+    readonly status: "confirmed" | "reverted";
+  } | null;
   /** True only when, after `settle` is applied, the order may leave `recovery_required`. */
   readonly clearable: boolean;
   readonly detail: string;

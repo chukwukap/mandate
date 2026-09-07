@@ -1,4 +1,4 @@
-import { type Database, schema, tenant, type Transaction } from "@mandate/database";
+import { type Database, schema, type Transaction, tenant } from "@mandate/database";
 import { asc, gt } from "drizzle-orm";
 
 /** Owners read per round trip. Matches WorkerStore.activeExecution's page size. */

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { selectWallet } from "@mandate/auth";
 import type { Config } from "@mandate/config";
 import {
@@ -8,7 +8,6 @@ import {
   idSchema,
   modeSchema,
   Problem,
-  pageSchema,
   signatureSchema,
 } from "@mandate/contracts";
 import {
@@ -18,15 +17,9 @@ import {
   type Repository,
   workerAvailable,
 } from "@mandate/database";
+import { approvalCall, CHAIN_ID, permissionJson, USDC } from "@mandate/evm";
 import {
-  approvalCall,
-  CHAIN_ID,
-  permissionHash,
-  permissionJson,
-  revocationCall,
-  USDC,
-} from "@mandate/evm";
-import {
+  authorizationMessage,
   ClarificationRequired,
   type Compiler,
   capsSchema,
@@ -34,7 +27,6 @@ import {
   type Envelope,
   planSchema,
   review,
-  units,
   validatePlan,
 } from "@mandate/strategy";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -56,15 +48,15 @@ const draftInput = z
     mode: modeSchema.default("manual"),
   })
   .refine((v) => Boolean(v.prompt) !== Boolean(v.plan), "Provide either prompt or plan");
-const createInput = z.strictObject({
+const _createInput = z.strictObject({
   artifact_id: z.string().regex(/^[0-9a-f]{64}$/),
   signature: signatureSchema,
 });
 const instanceInput = z.strictObject({ instance: idSchema });
-const grantInput = instanceInput.extend({ signature: signatureSchema });
-const activateInput = z.strictObject({ enable_auto: z.boolean().default(false) });
-const idParams = z.strictObject({ id: idSchema });
-const quoteInput = z.strictObject({
+const _grantInput = instanceInput.extend({ signature: signatureSchema });
+const _activateInput = z.strictObject({ enable_auto: z.boolean().default(false) });
+const _idParams = z.strictObject({ id: idSchema });
+const _quoteInput = z.strictObject({
   symbol: z.string().max(24),
   side: z.enum(["buy", "sell"]),
   amount: z.string().regex(/^\d{1,30}(\.\d{1,18})?$/),
@@ -99,7 +91,7 @@ function requireEligible(request: FastifyRequest) {
       "Trading is unavailable for your verified jurisdiction.",
     );
 }
-function requireAccount(request: FastifyRequest, draft: DraftRow) {
+function _requireAccount(request: FastifyRequest, draft: DraftRow) {
   if (wallet(request) !== draft.account)
     throw new Problem(
       403,
@@ -108,7 +100,7 @@ function requireAccount(request: FastifyRequest, draft: DraftRow) {
       "Select the linked wallet used to sign this strategy.",
     );
 }
-function instanceView(instance: InstanceRow, draft: DraftRow) {
+function _instanceView(instance: InstanceRow, draft: DraftRow) {
   return {
     id: instance.id,
     strategy: draft.id,
@@ -126,7 +118,7 @@ function instanceView(instance: InstanceRow, draft: DraftRow) {
     execution_available: false,
   };
 }
-function permissionView(row: PermissionRow) {
+function _permissionView(row: PermissionRow) {
   return {
     id: row.id,
     instance: row.instanceId,
@@ -150,7 +142,7 @@ export async function registerTrading(
   config: Config,
   deps: TradingDependencies,
 ) {
-  const { repository: repo, chain } = deps;
+  const { repository: repo } = deps;
   const available = () => workerAvailable(repo.db);
 
   // Only the authoring route lives here now. Market, instances, permissions and executions
@@ -263,7 +255,19 @@ export async function registerTrading(
         render: rendered.render_text,
         expires: expiresAt.toISOString(),
       });
-      const confirmMessage = `Mandate strategy authorization\nOrigin: ${config.origin}\nChain: ${CHAIN_ID}\nAccount: ${account}\nArtifact: ${artifactId}\nName: ${name}\nRequested mode: ${input.mode}\nSign before: ${expiresAt.toISOString()}\n\n${rendered.render_text}`;
+      // Built by @mandate/strategy, not by hand. Signature verification compares this string
+      // byte for byte against the one the worker reconstructs, so a single space added on one
+      // side would make every strategy fail admission. One definition makes that impossible.
+      const confirmMessage = authorizationMessage({
+        origin: config.origin,
+        chainId: CHAIN_ID,
+        account,
+        artifact: artifactId,
+        name,
+        mode: input.mode,
+        expires: expiresAt.toISOString(),
+        render: rendered.render_text,
+      });
       await repo.saveDraft({
         id,
         userId: user.user,

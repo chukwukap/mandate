@@ -57,8 +57,7 @@ export class Worker {
         ),
     );
     this.lifecycle = new Lifecycle(store, chain, config.receiptTimeoutMs);
-    this.scheduler =
-      connector && log ? new Scheduler({ store, connector, log }) : undefined;
+    this.scheduler = connector && log ? new Scheduler({ store, connector, log }) : undefined;
   }
   async cycle(signal: AbortSignal) {
     const active = await this.store.activeExecution();

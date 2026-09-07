@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { B20_ASSETS, USDC } from "../fixtures/chain/index.js";
 import {
-  call,
   type ContractApi,
+  call,
   newIdentity,
   startContractApi,
   type TestIdentity,

@@ -273,7 +273,8 @@ export async function seedPermission(
   const signature =
     options.signature === null
       ? null
-      : (options.signature ?? (["signed", "active"].includes(status) ? `0x${"ab".repeat(65)}` : null));
+      : (options.signature ??
+        (["signed", "active"].includes(status) ? `0x${"ab".repeat(65)}` : null));
   await asTenant(pg, userId, (query) =>
     query(
       `insert into mandate_v2.permissions

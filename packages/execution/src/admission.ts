@@ -3,6 +3,7 @@ import type { ChainReader, Hex } from "@mandate/contracts";
 import { type DraftRow, type InstanceRow, schema, type WorkerStore } from "@mandate/database";
 import { ASSETS, CHAIN_ID, USDC } from "@mandate/evm";
 import {
+  authorizationMessage,
   canonical,
   capsSchema,
   digest,
@@ -52,7 +53,19 @@ export async function verifyCommitment(
     render: rendered.render_text,
     expires: draft.expiresAt.toISOString(),
   });
-  const message = `Mandate strategy authorization\nOrigin: ${origin}\nChain: ${CHAIN_ID}\nAccount: ${draft.account}\nArtifact: ${artifact}\nName: ${draft.name}\nRequested mode: ${draft.mode}\nSign before: ${draft.expiresAt.toISOString()}\n\n${rendered.render_text}`;
+  // The other half of the pair. This string is compared byte for byte against the one the API
+  // stored when the user signed, so the two must be built by the same function or a single
+  // character of drift silently fails every admission.
+  const message = authorizationMessage({
+    origin,
+    chainId: CHAIN_ID,
+    account: draft.account,
+    artifact,
+    name: draft.name,
+    mode: draft.mode,
+    expires: draft.expiresAt.toISOString(),
+    render: rendered.render_text,
+  });
   if (
     artifact !== draft.artifactId ||
     rendered.render_sha256 !== draft.renderHash ||

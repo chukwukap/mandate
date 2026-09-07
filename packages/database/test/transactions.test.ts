@@ -14,9 +14,9 @@ import {
   recordPermissionGrant,
   sqlState,
   UNIT_OPTIONS,
+  WriteConflict,
   withTenant,
   withTransaction,
-  WriteConflict,
   writeExecutionLeg,
   writePermissionGrant,
 } from "../src/transactions/index.js";
@@ -114,10 +114,7 @@ describe("withTransaction retry budget", () => {
     expect(result).toBe("committed");
   });
   test("the second attempt is told why the first was abandoned", async () => {
-    const { db } = fakeDatabase([
-      () => Promise.reject(driverError("40P01")),
-      async () => "ok",
-    ]);
+    const { db } = fakeDatabase([() => Promise.reject(driverError("40P01")), async () => "ok"]);
     const failures: Array<string | undefined> = [];
     await withTransaction(db, { backoffMs: NEVER_SLEEP }, async (_tx, attempt) => {
       failures.push(attempt.previousFailure);
@@ -173,8 +170,10 @@ describe("withTransaction retry budget", () => {
   });
   test("the requested isolation level reaches the driver", async () => {
     const { db, configs } = fakeDatabase([async () => "ok"]);
-    await withTransaction(db, { isolationLevel: "serializable", accessMode: "read only" }, async () =>
-      undefined,
+    await withTransaction(
+      db,
+      { isolationLevel: "serializable", accessMode: "read only" },
+      async () => undefined,
     );
     expect(configs[0]).toEqual({ isolationLevel: "serializable", accessMode: "read only" });
   });

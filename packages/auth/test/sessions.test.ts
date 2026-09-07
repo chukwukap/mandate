@@ -4,8 +4,8 @@ import type { AuthenticatedUser, Authenticator } from "../src/privy/index.js";
 import {
   CachedAuthenticator,
   CLOCK_SKEW_MS,
-  readAccessTokenClaims,
   REFRESH_LEAD_MS,
+  readAccessTokenClaims,
   refreshAt,
   remainingMs,
   SessionCache,

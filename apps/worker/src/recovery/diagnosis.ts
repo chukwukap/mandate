@@ -76,8 +76,7 @@ export function classifyStuck(input: {
   if (observed === "ambiguous") return "escalate";
   if (nonce.latest > txNonce) return "escalate";
   if (nonce.latest < txNonce) return "escalate";
-  if (nonce.pending <= txNonce)
-    return ageMs >= policy.rebroadcastAfterMs ? "rebroadcast" : "wait";
+  if (nonce.pending <= txNonce) return ageMs >= policy.rebroadcastAfterMs ? "rebroadcast" : "wait";
   return ageMs >= policy.receiptTimeoutMs ? "escalate" : "wait";
 }
 
@@ -180,8 +179,7 @@ export function diagnose(
       // never lost; what a crash between broadcast and the status write loses is the
       // RECORD of its receipt. Writing it is the one journal mutation migration 0005 allows.
       const settledClean =
-        signed.observed === "confirmed" ||
-        !["reset", "refund"].includes(signed.transaction.leg);
+        signed.observed === "confirmed" || !["reset", "refund"].includes(signed.transaction.leg);
       return {
         ...at(signed),
         code: signed.observed === "confirmed" ? "settled-confirmed" : "settled-reverted",
@@ -198,7 +196,8 @@ export function diagnose(
     if (signed.observed === "ambiguous") {
       const located = facts.located;
       const displaced =
-        located?.found === true && located.hash.toLowerCase() !== signed.transaction.hash.toLowerCase();
+        located?.found === true &&
+        located.hash.toLowerCase() !== signed.transaction.hash.toLowerCase();
       return {
         ...at(signed),
         code: displaced ? "displaced-by-foreign-transaction" : "unattributable",

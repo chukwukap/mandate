@@ -58,9 +58,10 @@ const pools = new Map<string, string>();
 const CANDLE_TTL_MS = 60_000;
 const cache = new Map<string, { at: number; candles: Candle[] }>();
 
-interface Fetcher {
-  (url: string, init?: { signal?: AbortSignal }): Promise<{ ok: boolean; json(): Promise<unknown> }>;
-}
+type Fetcher = (
+  url: string,
+  init?: { signal?: AbortSignal },
+) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
 
 async function withTimeout<T>(work: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
   const controller = new AbortController();
@@ -83,17 +84,28 @@ async function resolvePool(asset: Asset, fetcher: Fetcher): Promise<string> {
   const known = pools.get(asset.symbol);
   if (known) return known;
 
-  const body = (await withTimeout(
-    (signal) => fetcher(`${DEX}/${asset.token}`, { signal }).then((r) => r.json()),
-    8_000,
-  )) as { pairs?: { chainId?: string; dexId?: string; pairAddress?: string; liquidity?: { usd?: number } }[] };
+  const body = (await paced(() =>
+    withTimeout(
+      (signal) => fetcher(`${DEX}/${asset.token}`, { signal }).then((r) => r.json()),
+      8_000,
+    ),
+  )) as {
+    pairs?: {
+      chainId?: string;
+      dexId?: string;
+      pairAddress?: string;
+      liquidity?: { usd?: number };
+    }[];
+  };
 
   const best = (body.pairs ?? [])
     .filter((p) => p.chainId === "base" && p.pairAddress)
     .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
 
   if (!best?.pairAddress) {
-    throw Problem.unavailable(`No indexed Base pool for ${asset.symbol}, so there is no price history to draw.`);
+    throw Problem.unavailable(
+      `No indexed Base pool for ${asset.symbol}, so there is no price history to draw.`,
+    );
   }
   pools.set(asset.symbol, best.pairAddress);
   return best.pairAddress;
@@ -101,7 +113,8 @@ async function resolvePool(asset: Asset, fetcher: Fetcher): Promise<string> {
 
 /** GeckoTerminal returns newest-first tuples; lightweight-charts needs oldest-first objects. */
 function toCandles(raw: unknown): Candle[] {
-  const list = (raw as { data?: { attributes?: { ohlcv_list?: unknown[] } } })?.data?.attributes?.ohlcv_list;
+  const list = (raw as { data?: { attributes?: { ohlcv_list?: unknown[] } } })?.data?.attributes
+    ?.ohlcv_list;
   if (!Array.isArray(list)) return [];
   return list
     .flatMap((entry): Candle[] => {
@@ -127,6 +140,71 @@ function toCandles(raw: unknown): Candle[] {
     .sort((a, b) => a.time - b.time);
 }
 
+/**
+ * Upstream calls are spaced, not merely capped, so one page load cannot burst GeckoTerminal.
+ *
+ * The market page renders a sparkline per row, so a cold load asks for seven distinct
+ * (symbol, interval) pairs at once — none cached, all misses. Concurrency alone was not enough:
+ * with a three-at-a-time gate, two of the seven still came back 429 and reached the browser as
+ * 503s with two blank sparklines. The free tier limits by RATE, so the fix is a minimum gap
+ * between calls rather than a cap on how many overlap.
+ *
+ * 220ms is ~4.5 calls a second. Seven cold sparklines therefore take about 1.5s to fill, against
+ * a per-call latency of several hundred milliseconds anyway, and the 60s cache means this is
+ * paid once per interval rather than per viewer.
+ */
+const SPACING_MS = 220;
+let nextSlotAt = 0;
+
+async function paced<T>(work: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const at = Math.max(now, nextSlotAt);
+  nextSlotAt = at + SPACING_MS;
+  if (at > now) await new Promise((resolve) => setTimeout(resolve, at - now));
+  return work();
+}
+
+/**
+ * One retry on a rate limit, because the first 429 is the one that is recoverable.
+ *
+ * A rate limit is not the same failure as a dead upstream: it says "later", and later is a
+ * second away. Retrying once converts the common case — a burst that briefly outran the
+ * spacing — into a slightly slower success instead of a blank chart. Anything past one retry is
+ * queueing behind a limit that is genuinely exhausted, which the cache and the stale fallback
+ * already handle better.
+ */
+const RATE_LIMITED = 429;
+async function fetchCandles(
+  url: string,
+  fetcher: Fetcher,
+): Promise<{ ok: boolean; status?: number; json(): Promise<unknown> }> {
+  const attempt = () =>
+    paced(() =>
+      withTimeout(
+        (signal) =>
+          fetcher(url, { signal }) as Promise<{
+            ok: boolean;
+            status?: number;
+            json(): Promise<unknown>;
+          }>,
+        10_000,
+      ),
+    );
+  const first = await attempt();
+  if (first.ok || first.status !== RATE_LIMITED) return first;
+  await new Promise((resolve) => setTimeout(resolve, 1_200));
+  return attempt();
+}
+
+/**
+ * One in-flight request per (symbol, interval).
+ *
+ * Seven sparklines for the same symbol at the same interval — which the overview and the market
+ * page between them can produce — would otherwise be seven identical upstream calls racing to
+ * fill one cache entry.
+ */
+const inflight = new Map<string, Promise<Candle[]>>();
+
 export async function candlesFor(
   asset: Asset,
   interval: Interval,
@@ -136,11 +214,25 @@ export async function candlesFor(
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CANDLE_TTL_MS) return hit.candles;
 
+  const running = inflight.get(key);
+  if (running) return running;
+  const request = load(asset, interval, key, fetcher).finally(() => inflight.delete(key));
+  inflight.set(key, request);
+  return request;
+}
+
+async function load(
+  asset: Asset,
+  interval: Interval,
+  key: string,
+  fetcher: Fetcher,
+): Promise<Candle[]> {
+  const hit = cache.get(key);
   const pool = await resolvePool(asset, fetcher);
   const { timeframe, aggregate, limit } = INTERVALS[interval];
   const url = `${GECKO}/pools/${pool}/ohlcv/${timeframe}?aggregate=${aggregate}&limit=${limit}`;
 
-  const response = await withTimeout((signal) => fetcher(url, { signal }), 10_000);
+  const response = await fetchCandles(url, fetcher);
   if (!response.ok) {
     // Serve a stale window rather than an empty chart: a minute-old candle is a better answer
     // than a blank panel, and the alternative is the reader assuming the market stopped.

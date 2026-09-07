@@ -26,8 +26,7 @@ import { ASSETS, USDC } from "@mandate/evm";
 import { initialRuntime, review } from "@mandate/strategy";
 import { sql } from "drizzle-orm";
 
-const url =
-  process.env.DATABASE_URL ?? "postgresql://mandate:mandate@127.0.0.1:5432/mandate_probe";
+const url = process.env.DATABASE_URL ?? "postgresql://mandate:mandate@127.0.0.1:5432/mandate_probe";
 const { db, close } = connectDatabase(url);
 
 const asset = ASSETS.find((a) => a.symbol === "AAPLc");

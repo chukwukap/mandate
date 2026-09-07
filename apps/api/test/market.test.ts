@@ -26,8 +26,7 @@ const probe = { side: "buy" as const, amount: "10", slippageBps: 50 };
 const TEN_USDC = "10000000";
 const HEALTHY_OUT = "3122852";
 const NAV = "320.08";
-const HEALTHY_PRICE =
-  "320.220106";
+const HEALTHY_PRICE = "320.220106";
 
 function oracle(symbol: string, value: string | null, overrides: Partial<MarketFeed> = {}) {
   return {

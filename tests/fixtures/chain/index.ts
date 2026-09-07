@@ -55,8 +55,8 @@ export {
   feedOf,
   marketRounds,
   NAV_USD,
-  navFor,
   NVDA_SPLIT_MULTIPLIER,
+  navFor,
   readingOf,
   roundAt,
 } from "./feeds.js";

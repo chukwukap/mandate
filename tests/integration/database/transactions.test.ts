@@ -15,8 +15,8 @@ import {
   discardTenants,
   newTenant,
   openPostgres,
-  type Postgres,
   POSTGRES,
+  type Postgres,
 } from "./harness.js";
 import { type InstanceSeed, seedExecution, seedInstance, seedPermission, txHash } from "./seed.js";
 
@@ -203,7 +203,9 @@ suite("units compose into the caller's transaction", () => {
       // committed is a lost update that only appears under load.
       await expect(
         withTransaction(tx, { isolationLevel: "serializable" }, async () => "unreachable"),
-      ).rejects.toThrow(/requires serializable isolation but the open transaction is read committed/);
+      ).rejects.toThrow(
+        /requires serializable isolation but the open transaction is read committed/,
+      );
     });
   });
 
@@ -370,10 +372,11 @@ suite("the journal is append-only", () => {
     // The intent the user's rules produced is not editable by anything downstream of admission.
     await expect(attempt).rejects.toMatchObject({ code: "23514" });
     const rows = await asTenant(pg, alice, (query) =>
-      countOf(query, "select count(*) from mandate_v2.executions where id = $1 and amount_in = $2", [
-        order.id,
-        "10000000",
-      ]),
+      countOf(
+        query,
+        "select count(*) from mandate_v2.executions where id = $1 and amount_in = $2",
+        [order.id, "10000000"],
+      ),
     );
     expect(rows).toBe(1);
   });

@@ -9,6 +9,5 @@ export type {
   TransactionRow,
 } from "./schema/index.js";
 export * as schema from "./schema/index.js";
-export { LeadershipLost, WorkerLease, WorkerStore, workerAvailable } from "./worker.js";
-
 export * from "./transactions/index.js";
+export { LeadershipLost, WorkerLease, WorkerStore, workerAvailable } from "./worker.js";

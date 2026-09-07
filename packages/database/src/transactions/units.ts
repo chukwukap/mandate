@@ -12,8 +12,8 @@ import {
   transactions,
 } from "../schema/index.js";
 import { isUniqueViolation } from "./errors.js";
-import type { Executor, TransactionOptions } from "./unit.js";
 import { withTenant } from "./tenant.js";
+import type { Executor, TransactionOptions } from "./unit.js";
 
 /**
  * The two writes that must never be half-applied.

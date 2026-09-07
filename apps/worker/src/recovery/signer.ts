@@ -5,8 +5,8 @@ import {
   decodeFunctionData,
   erc20Abi,
   numberToHex,
-  parseAbi,
   type PublicClient,
+  parseAbi,
   type Transport,
 } from "viem";
 import type { base } from "viem/chains";
@@ -199,7 +199,8 @@ export class SignerHistory {
       const head = await this.client.getBlockNumber({ cacheTime: 0 });
       probes += 1;
       if ((await count(head)) <= nonce) return { found: false, reason: "not-consumed", probes };
-      const floor = head > BigInt(this.maxLookbackBlocks) ? head - BigInt(this.maxLookbackBlocks) : 0n;
+      const floor =
+        head > BigInt(this.maxLookbackBlocks) ? head - BigInt(this.maxLookbackBlocks) : 0n;
 
       // Invariant to establish: count(lo) <= nonce < count(hi).
       let hi = head;
@@ -225,7 +226,8 @@ export class SignerHistory {
       const match = block.transactions.find(
         (t) => typeof t !== "string" && same(t.from, signer) && t.nonce === nonce,
       );
-      if (!match || typeof match === "string") return { found: false, reason: "not-in-block", probes };
+      if (!match || typeof match === "string")
+        return { found: false, reason: "not-in-block", probes };
       return {
         found: true,
         hash: match.hash,
@@ -326,9 +328,19 @@ export class SignerHistory {
     try {
       const call = decodeFunctionData({ abi: erc20Abi, data });
       if (call.functionName === "approve")
-        return { kind: "erc20-approve", token: to, spender: call.args[0], amount: call.args[1].toString() };
+        return {
+          kind: "erc20-approve",
+          token: to,
+          spender: call.args[0],
+          amount: call.args[1].toString(),
+        };
       if (call.functionName === "transfer")
-        return { kind: "erc20-transfer", token: to, recipient: call.args[0], amount: call.args[1].toString() };
+        return {
+          kind: "erc20-transfer",
+          token: to,
+          recipient: call.args[0],
+          amount: call.args[1].toString(),
+        };
     } catch {
       /* Not an ERC-20 write. */
     }
@@ -367,7 +379,11 @@ export class SignerHistory {
         indicative: true,
       };
     if (args.blockNumber === 0n)
-      return { kind: "unknown", detail: "No parent block to re-simulate against.", indicative: true };
+      return {
+        kind: "unknown",
+        detail: "No parent block to re-simulate against.",
+        indicative: true,
+      };
     try {
       await this.client.call({
         account: args.from,
@@ -383,11 +399,16 @@ export class SignerHistory {
       };
     } catch (error) {
       const data = revertData(error);
-      if (!data) return { kind: "unknown", detail: "Revert produced no returndata.", indicative: true };
+      if (!data)
+        return { kind: "unknown", detail: "Revert produced no returndata.", indicative: true };
       try {
         const decoded = decodeErrorResult({ abi: standardErrors, data });
         if (decoded.errorName === "Error")
-          return { kind: "error-string", detail: sanitize(String(decoded.args[0])), indicative: true };
+          return {
+            kind: "error-string",
+            detail: sanitize(String(decoded.args[0])),
+            indicative: true,
+          };
         const code = String(decoded.args[0]);
         return {
           kind: "panic",

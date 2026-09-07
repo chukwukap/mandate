@@ -200,7 +200,10 @@ export async function asTenant<T>(
 }
 
 /** Raw SQL with no tenant context. For `worker_state` and for proving RLS hides a row. */
-export async function withoutTenant<T>(pg: Postgres, run: (query: Query) => Promise<T>): Promise<T> {
+export async function withoutTenant<T>(
+  pg: Postgres,
+  run: (query: Query) => Promise<T>,
+): Promise<T> {
   const client = await pg.pool.connect();
   const query: Query = async <T extends Row = Row>(text: string, values?: readonly unknown[]) => {
     const result = await client.query(text, values ? [...values] : undefined);

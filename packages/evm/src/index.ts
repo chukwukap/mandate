@@ -1,5 +1,5 @@
 export { ASSETS } from "./addresses/index.js";
-export { MAX_VALIDATION_AGE, BaseReader } from "./clients/base.js";
+export { BaseReader, MAX_VALIDATION_AGE } from "./clients/base.js";
 export {
   approvalCall,
   CHAIN_ID,

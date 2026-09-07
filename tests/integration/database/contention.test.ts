@@ -11,9 +11,9 @@ import {
   discardTenants,
   newTenant,
   openPostgres,
-  pause,
-  type Postgres,
   POSTGRES,
+  type Postgres,
+  pause,
   sqlStateOf,
 } from "./harness.js";
 import { forceInstance, type InstanceSeed, seedInstance, seedPermission } from "./seed.js";

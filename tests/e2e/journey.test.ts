@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
+  type ContractApi,
   call,
   commitStrategy,
-  type ContractApi,
   newIdentity,
   startContractApi,
   type TestIdentity,
@@ -51,7 +51,11 @@ test("a strategy becomes an armed instance, and only its owner can see or move i
   expect(committed.instance).toBeTruthy();
 
   // 3. The instance exists, belongs to Alice, and is not armed until she arms it.
-  const listed = await call(api, { url: "/v1/instances", token: alice.token, wallet: alice.wallet });
+  const listed = await call(api, {
+    url: "/v1/instances",
+    token: alice.token,
+    wallet: alice.wallet,
+  });
   expect(listed.statusCode).toBe(200);
   const rows = listed.json<{ items: { id: string; status: string }[] }>().items;
   const mine = rows.find((row) => row.id === committed.instance);

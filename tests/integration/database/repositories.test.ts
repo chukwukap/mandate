@@ -6,8 +6,8 @@ import {
   discardTenants,
   newTenant,
   openPostgres,
-  type Postgres,
   POSTGRES,
+  type Postgres,
   withoutTenant,
 } from "./harness.js";
 import { caps, forceInstance, seedDraft, seedInstance, seedPermission } from "./seed.js";
@@ -214,9 +214,9 @@ suite("lifecycle transitions", () => {
     const seed = await seedInstance(pg, alice);
     await expect(pg.repo.detail(bob, seed.instance.id)).rejects.toMatchObject({ status: 404 });
     await expect(pg.repo.permission(bob, seed.instance.id)).rejects.toMatchObject({ status: 404 });
-    await expect(
-      pg.repo.history(bob, seed.instance.id, "executions", 10),
-    ).rejects.toMatchObject({ status: 404 });
+    await expect(pg.repo.history(bob, seed.instance.id, "executions", 10)).rejects.toMatchObject({
+      status: 404,
+    });
     await expect(
       pg.repo.transition(bob, seed.instance.id, "kill", new Date()),
     ).rejects.toMatchObject({ status: 404 });
@@ -263,9 +263,10 @@ suite("authority immutability", () => {
     await expect(attempt).rejects.toMatchObject({ code: "23514" });
     // Status still moves: that is the one field the grant lifecycle is allowed to change.
     await asTenant(pg, alice, (query) =>
-      query("update mandate_v2.permissions set status = 'active', updated_at = now() where id = $1", [
-        permission.id,
-      ]),
+      query(
+        "update mandate_v2.permissions set status = 'active', updated_at = now() where id = $1",
+        [permission.id],
+      ),
     );
   });
 });

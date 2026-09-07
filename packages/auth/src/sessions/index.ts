@@ -8,6 +8,12 @@
  * process may reuse a verification it has already paid for.
  */
 
+export {
+  CachedAuthenticator,
+  DEFAULT_MAX_AGE_MS,
+  DEFAULT_MAX_ENTRIES,
+  SessionCache,
+} from "./cache.js";
 export type { SessionAdvice, SessionOptions, SessionState } from "./session.js";
 export {
   CLOCK_SKEW_MS,
@@ -19,9 +25,3 @@ export {
 } from "./session.js";
 export type { AccessTokenClaims } from "./token.js";
 export { readAccessTokenClaims, tokenFingerprint } from "./token.js";
-export {
-  CachedAuthenticator,
-  DEFAULT_MAX_AGE_MS,
-  DEFAULT_MAX_ENTRIES,
-  SessionCache,
-} from "./cache.js";

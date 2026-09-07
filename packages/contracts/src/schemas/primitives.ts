@@ -125,7 +125,10 @@ export const rawUnitsSchema = z.string().regex(/^(?:0|[1-9]\d{0,77})$/);
  * The upper bound is uint48, which is what SpendPermissionManager packs `period`, `start` and
  * `end` into. A value above it encodes fine in JSON and reverts onchain.
  */
-export const unixSecondsSchema = z.int().min(0).max(2 ** 48 - 1);
+export const unixSecondsSchema = z
+  .int()
+  .min(0)
+  .max(2 ** 48 - 1);
 
 /**
  * An instant, accepted as either a Date or an offset ISO string, always emitted as ISO.
