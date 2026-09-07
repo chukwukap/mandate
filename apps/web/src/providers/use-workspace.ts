@@ -16,10 +16,9 @@ export function useWorkspace() {
   const detailId = path.match(/^\/strategies\/([^/]+)$/)?.[1];
   const detailPage = Boolean(detailId);
   const params = useSearchParams();
-  const preview = params.get("preview") === "1";
   const session = useSession();
   const section = workspaceSection(path);
-  const { market, marketError } = useMarket(preview);
+  const { market, marketError } = useMarket();
   const prefs = useWorkspaceState();
   const initialSymbol = params.get("symbol");
   const [selected, setSelected] = useState(
@@ -35,15 +34,15 @@ export function useWorkspace() {
   const createRequested = params.get("create") === "1";
   const initialMode: "manual" | "auto" = params.get("mode") === "auto" ? "auto" : "manual";
   useEffect(() => {
-    if (createRequested && (preview || (session.authenticated && session.wallet))) setEditor(true);
-  }, [createRequested, preview, session.authenticated, session.wallet]);
+    if (createRequested && session.authenticated && session.wallet) setEditor(true);
+  }, [createRequested, session.authenticated, session.wallet]);
   const [connect, setConnect] = useState(false);
   const [help, setHelp] = useState(false);
   const [search, setSearch] = useState(false);
   const [toast, setToast] = useState("");
   const [sort, setSort] = useState(false);
 
-  const auth = useAuthorizedApi(session, preview);
+  const auth = useAuthorizedApi(session);
   const { call } = auth;
   const {
     strategies,
@@ -60,16 +59,14 @@ export function useWorkspace() {
     fetchOwned,
     changeStatus,
     openDetail,
-  } = useStrategies(preview, session, prefs, auth, setToast, detailId);
+  } = useStrategies(session, auth, setToast, detailId);
   const { executions, setExecutions } = useExecutions(
     section,
-    preview,
     session.authenticated,
     strategies,
     call,
     setError,
   );
-  const href = (target: string) => `${target}${preview ? "?preview=1" : ""}`;
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 3500);
@@ -118,7 +115,7 @@ export function useWorkspace() {
   const openEditor = (symbol = selected) => {
     setSelected(symbol);
     setError("");
-    if (!preview && (!session.authenticated || !session.wallet)) {
+    if (!session.authenticated || !session.wallet) {
       if (session.configured) session.login();
       else setConnect(true);
       return;
@@ -136,7 +133,6 @@ export function useWorkspace() {
     path,
     detailPage,
     router,
-    preview,
     session,
     section,
     market,
@@ -182,7 +178,6 @@ export function useWorkspace() {
     setSort,
     nextPage,
     setNextPage,
-    href,
     call,
     fetchOwned,
     price,

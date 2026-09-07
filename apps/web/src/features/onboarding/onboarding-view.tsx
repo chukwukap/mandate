@@ -30,9 +30,9 @@ export function OnboardingView() {
   useEffect(() => {
     if (step > 0) heading.current?.focus();
   }, [step]);
-  const leave = (preview: boolean) => {
+  const leave = () => {
     finish({ status: "skipped", symbol, mode });
-    router.push(preview ? "/?preview=1" : "/");
+    router.push("/");
   };
   const create = () => {
     finish({ status: "completed", symbol, mode });
@@ -101,7 +101,7 @@ export function OnboardingView() {
       <section className="onboarding-main" aria-label="Set up your workspace">
         <header className="onboarding-top">
           <span>YOUR WORKSPACE, YOUR WAY</span>
-          <button type="button" className="text-button" onClick={() => leave(false)}>
+          <button type="button" className="text-button" onClick={() => leave()}>
             Skip for now
             <ArrowRight size={14} />
           </button>
@@ -310,9 +310,12 @@ export function OnboardingView() {
             <button
               type="button"
               className="onboarding-preview text-button"
-              onClick={() => leave(true)}
+              onClick={() => {
+                finish({ status: "skipped", symbol, mode });
+                router.push("/markets");
+              }}
             >
-              Explore the sample workspace
+              Browse the market first
               <ArrowRight size={14} />
             </button>
           </div>

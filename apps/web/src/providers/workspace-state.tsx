@@ -8,12 +8,8 @@ import {
   useContext,
   useState,
 } from "react";
-import { demoStrategies } from "../features/strategies/preview";
-import type { Strategy } from "../features/strategies/types";
 
 type State = {
-  previewStrategies: Strategy[];
-  setPreviewStrategies: Dispatch<SetStateAction<Strategy[]>>;
   favorites: string[];
   setFavorites: Dispatch<SetStateAction<string[]>>;
   compact: boolean;
@@ -21,14 +17,12 @@ type State = {
 };
 const Context = createContext<State | null>(null);
 export function WorkspaceStateProvider({ children }: { children: ReactNode }) {
-  const [previewStrategies, setPreviewStrategies] = useState(demoStrategies);
-  const [favorites, setFavorites] = useState(["NVDAc", "AAPLc"]);
+  // Empty, not seeded. Two symbols nobody chose is a fabricated preference.
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [compact, setCompact] = useState(false);
   return (
     <Context.Provider
       value={{
-        previewStrategies,
-        setPreviewStrategies,
         favorites,
         setFavorites,
         compact,

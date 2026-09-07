@@ -2,8 +2,8 @@
 import { useCallback, useRef } from "react";
 import { request } from "../../lib/api";
 import type { useSession } from "./session-provider";
-export function useAuthorizedApi(session: ReturnType<typeof useSession>, preview: boolean) {
-  const identity = `${session.userId ?? ""}:${session.wallet ?? ""}:${preview}`;
+export function useAuthorizedApi(session: ReturnType<typeof useSession>) {
+  const identity = `${session.userId ?? ""}:${session.wallet ?? ""}`;
   const currentIdentity = useRef(identity);
   currentIdentity.current = identity;
   const sessionRef = useRef(session);

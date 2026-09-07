@@ -1,8 +1,8 @@
 "use client";
 import {
   CandlestickSeries,
-  createChart,
   CrosshairMode,
+  createChart,
   HistogramSeries,
   type IChartApi,
   type ISeriesApi,
@@ -35,7 +35,7 @@ import { type Candle, type CandleInterval, useCandles } from "./use-candles";
 const MA_PERIOD = 20;
 
 /**
- * A price range that ignores lone artifact wicks without deleting them.
+ * A price range that ignores artifact prints without deleting them.
  *
  * These pools print the occasional trade at a price no market made. Measured on NVDAc's daily
  * candles: 2026-08-18 opens at 224.16 and closes at 221.06 with a high of 495.47 — one trade
@@ -43,9 +43,9 @@ const MA_PERIOD = 20;
  * $37,861 a share. Autoscaling to it puts a $230 stock on a $500 axis and squashes three weeks
  * of real movement into a band a few pixels tall.
  *
- * So the DEFAULT view is scaled to the 2nd-98th percentile of the window. The outlier is still
- * drawn and still there when you zoom or pan — nothing is filtered out of the data — but it no
- * longer decides how everything else is displayed. Hiding it would be a lie; letting it set the
+ * So the DEFAULT view is scaled to a band around the median close. Outliers are still drawn and
+ * still there when you zoom or pan — nothing is filtered out of the data — but they no longer
+ * decide how everything else is displayed. Hiding them would be a lie; letting them set the
  * scale makes the chart useless.
  */
 function robustRange(candles: Candle[]) {
@@ -88,8 +88,7 @@ function robustRange(candles: Candle[]) {
 
 function readTheme(element: HTMLElement) {
   const style = getComputedStyle(element);
-  const token = (name: string, fallback: string) =>
-    style.getPropertyValue(name).trim() || fallback;
+  const token = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
   return {
     background: token("--desk-surface", "#ffffff"),
     text: token("--desk-muted", "#5c6472"),
@@ -160,8 +159,18 @@ export function MarketChart({
       timeScale: { borderColor: theme.border, timeVisible: true, secondsVisible: false },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: theme.text, width: 1, style: LineStyle.Dashed, labelBackgroundColor: theme.text },
-        horzLine: { color: theme.text, width: 1, style: LineStyle.Dashed, labelBackgroundColor: theme.text },
+        vertLine: {
+          color: theme.text,
+          width: 1,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: theme.text,
+        },
+        horzLine: {
+          color: theme.text,
+          width: 1,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: theme.text,
+        },
       },
       localization: { priceFormatter: (value: number) => `$${value.toFixed(2)}` },
       autoSize: false,
@@ -215,9 +224,7 @@ export function MarketChart({
       // blank legend. Looking the candle up by time fixes the crash and is also better: the
       // line chart now gets a real OHLC legend instead of the closes it was drawn from.
       const time = param.time === undefined ? undefined : Number(param.time);
-      setHovered(
-        time === undefined ? null : (latest.current.find((c) => c.time === time) ?? null),
-      );
+      setHovered(time === undefined ? null : (latest.current.find((c) => c.time === time) ?? null));
     });
 
     chart.current = instance;
@@ -277,10 +284,18 @@ export function MarketChart({
       <div className="market-chart-legend" aria-live="polite">
         {shown ? (
           <>
-            <span>O <b>{shown.open.toFixed(2)}</b></span>
-            <span>H <b>{shown.high.toFixed(2)}</b></span>
-            <span>L <b>{shown.low.toFixed(2)}</b></span>
-            <span>C <b>{shown.close.toFixed(2)}</b></span>
+            <span>
+              O <b>{shown.open.toFixed(2)}</b>
+            </span>
+            <span>
+              H <b>{shown.high.toFixed(2)}</b>
+            </span>
+            <span>
+              L <b>{shown.low.toFixed(2)}</b>
+            </span>
+            <span>
+              C <b>{shown.close.toFixed(2)}</b>
+            </span>
             <span className={change >= 0 ? "desk-positive" : "desk-negative"}>
               {change >= 0 ? "+" : ""}
               {change.toFixed(2)}%

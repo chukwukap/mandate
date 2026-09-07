@@ -1,11 +1,10 @@
 "use client";
-import { useTheme } from "../../providers/theme-provider";
-
 
 import type { Call, Hex } from "@mandate/contracts";
 import { PrivyProvider, usePrivy, useWallets } from "@privy-io/react-auth";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { base } from "viem/chains";
+import { useTheme } from "../../providers/theme-provider";
 
 type Session = {
   configured: boolean;

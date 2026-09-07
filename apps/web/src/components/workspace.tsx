@@ -1,32 +1,17 @@
 "use client";
-import { useDesk } from "../providers/desk-provider";
-import { sectionTitles, type WorkspaceSection } from "../lib/navigation";
-import { DemoBoundary } from "./demo-boundary";
-import { OverviewView } from "../features/portfolio/overview-view";
-import { PortfolioView } from "../features/portfolio/portfolio-view";
-import { MarketExplorer } from "../features/market/market-explorer";
-import { TerminalView } from "../features/trading/terminal-view";
-import { AutomationsView } from "../features/strategies/automations-view";
-import { SignalsView } from "../features/signals/signals-view";
-import { DiscoverView } from "../features/discovery/discover-view";
-import { ThemeControl } from "../features/settings/theme-control";
-import { WorkspaceUpdates } from "../features/signals/workspace-updates";
-
 
 import {
   Activity,
-  Compass,
-  ChartNoAxesCombined,
-  Radar,
-  Layers3,
-  PieChart,
   ArrowRight,
   ArrowUpRight,
+  ChartNoAxesCombined,
   Check,
   ChevronRight,
   CircleHelp,
+  Compass,
   LayoutGrid,
   Menu,
+  PieChart,
   Plus,
   Search,
   Settings2,
@@ -36,17 +21,23 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
+import { DiscoverView } from "../features/discovery/discover-view";
 import { ActivityView } from "../features/executions/activity-view";
 import { companies, stocks } from "../features/market/catalog";
 import { MarketsView } from "../features/market/markets-view";
 import { StockLogo } from "../features/market/stock-logo";
+import { OverviewView } from "../features/portfolio/overview-view";
+import { PortfolioView } from "../features/portfolio/portfolio-view";
 import { SettingsView } from "../features/settings/settings-view";
+import { ThemeControl } from "../features/settings/theme-control";
 import { StrategiesView } from "../features/strategies/strategies-view";
 import { StrategyDetails } from "../features/strategies/strategy-details";
 import { StrategyEditor } from "../features/strategies/strategy-editor";
 import { StrategyRow } from "../features/strategies/strategy-row";
 import type { Strategy } from "../features/strategies/types";
+import { TerminalView } from "../features/trading/terminal-view";
 import { currency, shortAddress } from "../lib/format";
+import { sectionTitles, type WorkspaceSection } from "../lib/navigation";
 import { useWorkspace } from "../providers/use-workspace";
 import { Dialog } from "./dialog";
 
@@ -54,24 +45,28 @@ const sectionSubtitles: Record<WorkspaceSection, string> = {
   overview: "Your workspace at a glance.",
   markets: "A familiar market. A different way to trade.",
   portfolio: "Everything you hold, in one view.",
-  trade: "Place an order. Keep the receipt.",
-  automations: "Rules that work while you do not.",
-  signals: "What the market is doing right now.",
+  trade: "Price a trade. Turn it into a rule.",
   discover: "Find your next position.",
   strategies: "Good decisions start with a plan.",
   activity: "Every move, in one place.",
   settings: "Make yourself at home.",
 };
 
+/**
+ * One entry per section, and every one of them reads from an endpoint the API serves.
+ *
+ * "Automations" and "Signals" used to sit here. Automations was a second name for the same
+ * /v1/instances object Strategies already shows, and Signals had no endpoint at all — it was
+ * rendered entirely from a fixtures file.
+ */
 const navigation = [
   { href: "/", section: "overview", label: "Overview", icon: LayoutGrid },
   { href: "/markets", section: "markets", label: "Markets", icon: ChartNoAxesCombined },
   { href: "/portfolio", section: "portfolio", label: "Portfolio", icon: PieChart },
   { href: "/trade", section: "trade", label: "Trade", icon: Activity },
-  { href: "/automations", section: "automations", label: "Automations", icon: Layers3 },
-  { href: "/signals", section: "signals", label: "Signals", icon: Radar },
-  { href: "/discover", section: "discover", label: "Discover", icon: Compass },
+  { href: "/strategies", section: "strategies", label: "Strategies", icon: SlidersHorizontal },
   { href: "/activity", section: "activity", label: "Activity", icon: Activity },
+  { href: "/discover", section: "discover", label: "Discover", icon: Compass },
 ];
 
 function Mark() {
@@ -90,12 +85,11 @@ function Mark() {
 
 export function Workspace() {
   const model = useWorkspace();
-  const desk = useDesk();
-  const showLegacyHeading = ["strategies", "activity", "settings"].includes(model.section) || (!model.preview && model.section === "markets");
+  // Every section gets the heading. It used to be limited to four, which is why the Overview had
+  // no "New strategy" button at all: the only control that reached the real editor was inside a
+  // block that section never rendered.
   const {
-    path,
     router,
-    preview,
     session,
     section,
     strategies,
@@ -120,7 +114,6 @@ export function Workspace() {
     detail,
     toast,
     setToast,
-    href,
     call,
     fetchOwned,
     price,
@@ -186,7 +179,7 @@ export function Workspace() {
         />
       )}
       <aside className={`sidebar ${mobile ? "is-open" : ""}`}>
-        <Link href={href("/")} className="brand">
+        <Link href={"/"} className="brand">
           <span>
             <Mark />
           </span>
@@ -195,7 +188,7 @@ export function Workspace() {
         <div className="workspace-switch">
           <span className="workspace-avatar">P</span>
           <span>
-            {preview ? "Demo workspace" : "Personal workspace"}<small>{preview ? "Your ideas. Zero risk to funds." : "Base network"}</small>
+            Personal workspace<small>Base network</small>
           </span>
           <span className="network-dot" />
         </div>
@@ -204,10 +197,10 @@ export function Workspace() {
           {navigation.map((item) => (
             <Link
               key={item.href}
-              href={href(item.href)}
+              href={item.href}
               onClick={() => setMobile(false)}
-              className={(section === item.section || (section === "strategies" && item.section === "automations")) ? "nav-item active" : "nav-item"}
-              aria-current={(section === item.section || (section === "strategies" && item.section === "automations")) ? "page" : undefined}
+              className={section === item.section ? "nav-item active" : "nav-item"}
+              aria-current={section === item.section ? "page" : undefined}
             >
               <item.icon size={18} />
               {item.label}
@@ -222,19 +215,20 @@ export function Workspace() {
           className="sidebar-new"
           onClick={() => {
             setMobile(false);
-            router.push(href("/automations") + (preview ? "&new=dca" : ""));
+            openEditor();
           }}
         >
           <Plus size={17} />
-          Create automation<span>↗</span>
+          New strategy<span>↗</span>
         </button>
         <div className="sidebar-bottom">
           <button type="button" className="nav-item" onClick={() => setHelp(true)}>
-            <CircleHelp size={18} />Help & shortcuts
+            <CircleHelp size={18} />
+            Help & shortcuts
             <ArrowUpRight size={14} className="trailing" />
           </button>
           <Link
-            href={href("/settings")}
+            href={"/settings"}
             className={`nav-item ${section === "settings" ? "active" : ""}`}
             onClick={() => setMobile(false)}
           >
@@ -245,7 +239,7 @@ export function Workspace() {
           <button
             type="button"
             className="account-button"
-            onClick={session.authenticated ? () => router.push(href("/settings")) : login}
+            onClick={session.authenticated ? () => router.push("/settings") : login}
           >
             <span className="account-avatar">
               <Wallet size={18} />
@@ -274,12 +268,6 @@ export function Workspace() {
             <strong>{section.charAt(0).toUpperCase() + section.slice(1)}</strong>
           </div>
           <div className="topbar-actions">
-            {preview && (
-              <span className="preview-badge">
-                <i />
-                Demo workspace
-              </span>
-            )}
             <button
               className="search-trigger"
               type="button"
@@ -291,12 +279,11 @@ export function Workspace() {
               <kbd>⌘ K</kbd>
             </button>
             <ThemeControl />
-            {preview && <WorkspaceUpdates />}
             <span className="topbar-divider" />
             <button
               className={`button wallet-button ${session.authenticated ? "connected" : ""}`}
               type="button"
-              onClick={session.authenticated ? () => router.push(href("/settings")) : login}
+              onClick={session.authenticated ? () => router.push("/settings") : login}
               disabled={!session.ready}
             >
               <Wallet size={16} />
@@ -305,20 +292,18 @@ export function Workspace() {
           </div>
         </header>
         <main id="main">
-          {showLegacyHeading && (
           <div className="page-heading">
             <div>
               <div className="eyebrow">
-                {section === "markets" ? "ONCHAIN EQUITIES" : "YOUR WORKSPACE"}
+                {section === "markets" || section === "discover"
+                  ? "ONCHAIN EQUITIES"
+                  : "YOUR WORKSPACE"}
               </div>
               <h1>
                 {
                   {
                     ...sectionTitles,
-                    markets: "Markets",
                     strategies: model.detailPage ? (detail?.name ?? "Strategy") : "Your strategies",
-                    activity: "Activity",
-                    settings: "Settings",
                   }[section]
                 }
               </h1>
@@ -342,7 +327,6 @@ export function Workspace() {
               </button>
             )}
           </div>
-          )}
           {error && !detail && (
             <div role="alert" className="error-banner">
               {error}
@@ -351,47 +335,20 @@ export function Workspace() {
               </button>
             </div>
           )}
-          {section === "overview" && (
-            <DemoBoundary preview={preview} path="/">
-              <OverviewView />
-            </DemoBoundary>
-          )}
-          {section === "markets" && preview && <MarketExplorer />}
-          {section === "trade" && (
-            <DemoBoundary preview={preview} path="/trade">
-              <TerminalView />
-            </DemoBoundary>
-          )}
-          {section === "automations" && (
-            <DemoBoundary preview={preview} path="/automations">
-              <AutomationsView />
-            </DemoBoundary>
-          )}
-          {section === "signals" && (
-            <DemoBoundary preview={preview} path="/signals">
-              <SignalsView />
-            </DemoBoundary>
-          )}
-          {section === "discover" && (
-            <DemoBoundary preview={preview} path="/discover">
-              <DiscoverView />
-            </DemoBoundary>
-          )}
-          {section === "portfolio" && (
-            <DemoBoundary preview={preview} path="/portfolio">
-              <PortfolioView />
-            </DemoBoundary>
-          )}
-          {section === "markets" && !preview && (
+          {section === "overview" && <OverviewView model={model} />}
+          {section === "markets" && (
             <MarketsView model={model} strategyRow={strategyRow} empty={empty} />
           )}
+          {section === "trade" && <TerminalView model={model} />}
+          {section === "portfolio" && <PortfolioView model={model} />}
+          {section === "discover" && <DiscoverView model={model} />}
           {section === "strategies" && !model.detailPage && (
             <StrategiesView model={model} strategyRow={strategyRow} empty={empty} />
           )}
           {model.detailPage && <StrategyDetails model={model} />}
           {model.detailPage && !detail && !error && (
             <p className="helper">
-              {session.authenticated || preview
+              {session.authenticated
                 ? "Loading strategy…"
                 : "Connect your wallet to view this strategy."}
             </p>
@@ -403,32 +360,22 @@ export function Workspace() {
               <i className="base-dot" />
               On Base. On your terms.
             </span>
-            <span>
-              {preview ? (
-                <button type="button" onClick={() => router.push(path)}>
-                  Exit preview
-                  <ArrowRight size={12} />
-                </button>
-              ) : (
-                "Your wallet. Your rules."
-              )}
-            </span>
+            <span>Your wallet. Your rules.</span>
           </footer>
         </main>
       </div>
-      {(toast || desk.notice) && (
+      {toast && (
         <div className="toast" role="status">
           <span>
             <Check size={15} />
           </span>
-          {toast || desk.notice}
+          {toast}
         </div>
       )}
       {editor && (
         <StrategyEditor
           symbol={selected}
           initialMode={model.initialMode}
-          preview={preview}
           onClose={() => setEditor(false)}
           call={call}
           sign={session.sign}
@@ -436,9 +383,7 @@ export function Workspace() {
             setEditor(false);
             if (strategy) setStrategies((current) => [strategy, ...current]);
             else void fetchOwned();
-            setToast(
-              preview ? "Saved to your preview workspace" : "Strategy saved. Ready when you are.",
-            );
+            setToast("Strategy saved. Ready when you are.");
           }}
         />
       )}
@@ -456,18 +401,19 @@ export function Workspace() {
               </span>
             </span>
             <p>
-              Wallet connection isn't configured in this environment. You can still explore the
-              workspace.
+              Wallet sign-in is not configured in this environment, so there is no way to
+              authenticate right now. Markets, prices and charts are public and work without a
+              wallet; anything that holds or moves funds needs one.
             </p>
             <button
               type="button"
               className="button primary"
               onClick={() => {
                 setConnect(false);
-                router.push("/?preview=1");
+                router.push("/markets");
               }}
             >
-              Explore a preview
+              Browse the market
               <ArrowRight size={16} />
             </button>
           </div>
@@ -539,7 +485,7 @@ export function Workspace() {
                     setSelected(symbol);
                     setSearch(false);
                     setQuery("");
-                    router.push(href("/trade") + (preview ? "&" : "?") + `symbol=${symbol}`);
+                    router.push(`/trade?symbol=${symbol}`);
                   }}
                 >
                   <StockLogo symbol={symbol} />

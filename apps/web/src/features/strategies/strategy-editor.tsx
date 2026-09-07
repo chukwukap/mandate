@@ -2,7 +2,6 @@
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "../../components/dialog";
-import { currency } from "../../lib/format";
 import { companies, stocks } from "../market/catalog";
 import { draftInput, type StrategyForm } from "./authoring";
 import type { Draft, Strategy } from "./types";
@@ -10,7 +9,6 @@ import type { Draft, Strategy } from "./types";
 export function StrategyEditor({
   symbol,
   initialMode = "manual",
-  preview,
   onClose,
   onCreate,
   call,
@@ -18,7 +16,6 @@ export function StrategyEditor({
 }: {
   symbol: string;
   initialMode?: "manual" | "auto";
-  preview: boolean;
   onClose(): void;
   onCreate(strategy?: Strategy): void;
   call<T>(path: string, body?: unknown): Promise<T>;
@@ -52,20 +49,7 @@ export function StrategyEditor({
     setBusy(true);
     try {
       const input = draftInput({ ...form, name });
-      const expires = input.caps.expires_at;
-      if (preview && form.authoring === "text")
-        throw new Error(
-          "Text authoring needs the live strategy compiler. Use a price rule in the sample workspace.",
-        );
-      if (preview)
-        setDraft({
-          artifact_id: "preview",
-          name,
-          confirm_message: "",
-          expires_at: expires,
-          render_text: `Buy ${currency(form.amount)} of ${form.symbol} when its reference price moves ${form.direction === "lt" ? "below" : "above"} ${currency(form.threshold)}.\n\nMaximum ${currency(form.budget)} total and ${currency(input.caps.per_period)} per day. At most ${form.maxOrders} orders per day, with a ${form.cooldownMinutes}-minute cooldown. Expires in ${form.days} days. Slippage limit: ${Number(form.slippageBps) / 100}%.\n\n${form.mode === "manual" ? "Signal only. No transactions are submitted." : "Automatic execution requires a separate spending permission. Funds temporarily pass through the spender wallet."}`,
-        });
-      else setDraft(await call<Draft>("/v1/strategies/draft", input));
+      setDraft(await call<Draft>("/v1/strategies/draft", input));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't prepare the review.");
     } finally {
@@ -77,26 +61,9 @@ export function StrategyEditor({
     setBusy(true);
     setError("");
     try {
-      if (preview)
-        onCreate({
-          id: `preview-${Date.now()}`,
-          name,
-          mode: "manual",
-          status: "paused",
-          symbol: form.symbol,
-          rule: `Buy ${currency(form.amount)} when ${form.symbol} moves ${form.direction === "lt" ? "below" : "above"} ${currency(form.threshold)}`,
-          spent: "0",
-          lifetime: form.budget,
-          orders: 0,
-          created_at: new Date().toISOString(),
-          last_tick_at: null,
-          execution_available: false,
-        });
-      else {
-        const signature = await sign(draft.confirm_message);
-        await call("/v1/strategies", { artifact_id: draft.artifact_id, signature });
-        onCreate();
-      }
+      const signature = await sign(draft.confirm_message);
+      await call("/v1/strategies", { artifact_id: draft.artifact_id, signature });
+      onCreate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save your strategy.");
     } finally {
@@ -124,7 +91,7 @@ export function StrategyEditor({
             <ShieldCheck size={24} />
             <div>
               <h3>{draft.name}</h3>
-              <p>{preview ? "Preview strategy" : "Your wallet signs this exact review."}</p>
+              <p>Your wallet signs this exact review.</p>
             </div>
           </div>
           <pre className="signed-review">{draft.render_text}</pre>
@@ -148,8 +115,7 @@ export function StrategyEditor({
               Edit
             </button>
             <button type="button" className="button primary" disabled={busy} onClick={save}>
-              {busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />}{" "}
-              {preview ? "Save preview" : "Sign & save"}
+              {busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} {"Sign & save"}
             </button>
           </div>
         </div>

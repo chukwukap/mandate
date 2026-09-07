@@ -1,30 +1,428 @@
 "use client";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Eye, EyeOff, Layers3, Plus } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowRight,
+  ArrowUpRight,
+  Layers3,
+  Loader2,
+  ShieldCheck,
+  SlidersHorizontal,
+  Wallet,
+} from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { useDesk } from "../../providers/desk-provider";
-import { DeskChart } from "../market/desk-chart";
+import { currency, shortAddress } from "../../lib/format";
+import type { WorkspaceModel } from "../../providers/use-workspace";
 import { companies, stocks } from "../market/catalog";
-import { demoChanges } from "../market/preview";
+import { DeskChart } from "../market/desk-chart";
 import { StockLogo } from "../market/stock-logo";
-import { automationPresets, kindName } from "../strategies/automation-catalog";
-import { StrategyGlyph } from "../strategies/strategy-glyph";
-import { accountValue, availableCash } from "../trading/ledger";
-import { demoQuote, usd } from "../trading/market-data";
-export function OverviewView(){
-  const {state,toggleBalance}=useDesk();const [period,setPeriod]=useState("1D");
-  const bots=state.automations.filter(a=>a.status!=="archived");
-  const invested=state.holdings.reduce((n,h)=>n+h.costCents,0);
-  const gain=accountValue(state)-state.cashCents-invested;
-  return <div className="desk-overview">
-    <div className="desk-page-title"><div><span className="desk-overline">A CLEARER VIEW</span><h1>Your capital. In motion<span>.</span></h1><p>A place for every position. A plan for your next move.</p></div><Link className="desk-button primary" href="/automations?preview=1&new=dca"><Plus size={16}/>Create automation</Link></div>
-    <div className="overview-hero-grid">
-      <section className="capital-panel"><div className="capital-top"><span>Demo portfolio value<button type="button" onClick={toggleBalance} aria-label={state.hideBalance?"Show balance":"Hide balance"}>{state.hideBalance?<EyeOff size={15}/>:<Eye size={15}/>}</button></span><span className="capital-badge"><i/>PAPER WORKSPACE</span></div><div className="capital-value">{state.hideBalance?"••,•••.••":usd(accountValue(state))}<span>USD</span></div><div className="capital-performance"><span><ArrowUpRight size={14}/>{state.hideBalance?"•••":usd(gain)}</span><span>unrealized · sample holdings</span></div><div className="capital-chart"><DeskChart dark symbol="NVDAc" period={period}/></div><div className="capital-foot"><span><i/>Illustrative trend</span><div className="desk-periods">{["1D","1W","1M","1Y"].map(p=><button type="button" key={p} aria-pressed={p===period} className={p===period?"active":""} onClick={()=>setPeriod(p)}>{p}</button>)}</div></div></section>
-      <section className="next-move-panel"><div className="next-move-top"><span className="desk-overline">THE STRATEGY STUDIO</span><ArrowUpRight size={19}/></div><h2>A little less watching.<br/>A little more intention.</h2><p>Give your next trade a set of rules.</p><div className="studio-art"><div className="studio-art-orbit orbit-one"/><div className="studio-art-orbit orbit-two"/><div className="studio-art-tile tile-a"><StockLogo symbol="NVDAc"/></div><div className="studio-art-tile tile-b"><Layers3 size={26}/></div><div className="studio-art-tile tile-c"><StockLogo symbol="AAPLc"/></div><div className="studio-art-label"><i/>Your rules, connected.</div></div><Link className="desk-button dark" href="/automations?preview=1">Find your strategy<ArrowRight size={16}/></Link><div className="studio-footnote">DCA · Grid · Signals · Trailing exits</div></section>
+import type { Strategy } from "../strategies/types";
+import { money } from "../trading/market-data";
+import { type Holding, usePortfolio } from "./use-portfolio";
+
+/**
+ * The landing page: what Mandate is, and where this account stands right now.
+ *
+ * Every figure below is served. Equity, cash and holdings come from `GET /v1/portfolio` through
+ * `usePortfolio`; prices and the tradability notice from `GET /v1/market` through the workspace
+ * model; the sparklines from `GET /v1/market/candles`; strategy counts from `GET /v1/instances`.
+ *
+ * The version this replaced opened with a portfolio value, an unrealised gain and four strategy
+ * "presets" that were all fixtures — the first screen of the product was also the least true one.
+ * Nothing here is computed from a number the API did not send, which is why there is no P&L: the
+ * API reports what a wallet holds and what it is worth, never what it cost, and a cost basis
+ * cannot be inferred from a balance.
+ */
+export function OverviewView({ model }: { model: WorkspaceModel }) {
+  const {
+    session,
+    call,
+    market,
+    marketError,
+    strategies,
+    executions,
+    watching,
+    loading,
+    price,
+    priceStale,
+    login,
+    openEditor,
+    selected,
+  } = model;
+  const { portfolio, error, loading: balancesLoading } = usePortfolio(session, call);
+  // Local to this page rather than `model.period`: the range chosen for the hero sparkline is a
+  // glance, and it should not follow the reader over to the range they set on the market page.
+  const [period, setPeriod] = useState("1W");
+
+  const connected = session.authenticated && Boolean(session.wallet);
+  const priced = portfolio?.holdings.filter((holding) => holding.value !== null) ?? [];
+  // The largest position is the only holding whose chart says something about this portfolio, so
+  // it is the one the hero draws. Before a wallet is connected the chart still runs — candles are
+  // public — on whichever symbol the workspace has selected.
+  const largest = priced.reduce<Holding | null>(
+    (best, holding) => (!best || Number(holding.value) > Number(best.value) ? holding : best),
+    null,
+  );
+  const chartSymbol = largest?.symbol ?? selected;
+  const staleHoldings = portfolio?.holdings.filter((holding) => holding.stale) ?? [];
+
+  return (
+    <div>
+      <div className="overview-hero-grid">
+        <section className="capital-panel">
+          <div className="capital-top">
+            <span>
+              <Wallet size={14} />
+              {connected ? "Portfolio value" : "Your portfolio"}
+              {connected && balancesLoading && !portfolio && <Loader2 size={13} className="spin" />}
+            </span>
+            <span className="capital-badge">
+              <i />
+              {portfolio
+                ? `BASE · ${new Date(portfolio.as_of).toLocaleTimeString()}`
+                : "BASE · USDC"}
+            </span>
+          </div>
+          <div className="capital-value">
+            {connected ? (
+              <>
+                {portfolio ? money(portfolio.equity) : balancesLoading ? "Reading…" : "—"}
+                <span>USD</span>
+              </>
+            ) : (
+              <>
+                Not connected
+                <span>balances need a wallet</span>
+              </>
+            )}
+          </div>
+          <div className="capital-performance">
+            {connected ? (
+              <>
+                <span>{portfolio ? `${money(portfolio.cash)} in USDC` : "Reading balances"}</span>
+                {/*
+                  An em dash, not 0. `portfolio` is null both during the first read and
+                  permanently after a failed one, and "0 positions" under a banner that says
+                  balances are unavailable is a statement about the wallet that this page has no
+                  basis for. Zero and unknown are the same pixel and not the same fact.
+                */}
+                <span>
+                  {portfolio
+                    ? `${portfolio.holdings.length} position${portfolio.holdings.length === 1 ? "" : "s"} · ${shortAddress(portfolio.wallet)}`
+                    : "— positions"}
+                </span>
+              </>
+            ) : (
+              <>
+                <button type="button" className="desk-button primary" onClick={login}>
+                  <Wallet size={15} />
+                  Connect wallet
+                </button>
+                <span>Markets, prices and charts below are public.</span>
+              </>
+            )}
+          </div>
+          <div className="capital-chart">
+            <DeskChart dark symbol={chartSymbol} period={period} />
+          </div>
+          <div className="capital-foot">
+            <span>
+              <i />
+              {chartSymbol}
+              {largest ? " · your largest holding" : " · observed on Base"}
+            </span>
+            <div className="desk-periods">
+              {["1D", "1W", "1M", "1Y"].map((value) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={period === value ? "active" : ""}
+                  aria-pressed={period === value}
+                  onClick={() => setPeriod(value)}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section className="next-move-panel">
+          <div className="next-move-top">
+            <span className="desk-overline">WHAT MANDATE IS</span>
+            <ArrowUpRight size={19} />
+          </div>
+          <h2>
+            A rule you sign.
+            <br />A market you stop watching.
+          </h2>
+          <p>
+            Say what you want in plain terms — a stock, a price, a budget — and sign it once.
+            Mandate keeps watch on Base and only ever acts inside the limits you signed. Pause or
+            stop it whenever you like.
+          </p>
+          <div className="studio-art">
+            <div className="studio-art-orbit orbit-one" />
+            <div className="studio-art-orbit orbit-two" />
+            <div className="studio-art-tile tile-a">
+              <StockLogo symbol="NVDAc" />
+            </div>
+            <div className="studio-art-tile tile-b">
+              <Layers3 size={26} />
+            </div>
+            <div className="studio-art-tile tile-c">
+              <StockLogo symbol="AAPLc" />
+            </div>
+            <div className="studio-art-label">
+              <i />
+              Your limits, signed.
+            </div>
+          </div>
+          <button type="button" className="desk-button dark" onClick={() => openEditor()}>
+            Author a strategy
+            <ArrowRight size={16} />
+          </button>
+          <div className="studio-footnote">Your keys · your caps · your kill switch</div>
+        </section>
+      </div>
+
+      {error && (
+        <div className="desk-error" role="alert">
+          {error}
+        </div>
+      )}
+
+      {/*
+        Zeros before a wallet is connected would read as "you hold nothing", which is a claim this
+        page cannot make about an address it has never seen. Nothing is served until then, so
+        nothing is stated — the hero above carries the connect prompt instead.
+      */}
+      {connected && (
+        <section className="desk-quick-stats" aria-label="Account summary">
+          <div>
+            <span>Available cash</span>
+            <strong>{portfolio ? money(portfolio.cash) : "—"}</strong>
+            <small>USDC on Base</small>
+          </div>
+          <div>
+            <span>Positions</span>
+            <strong>{portfolio ? portfolio.holdings.length : "—"}</strong>
+            <small>
+              {portfolio?.unpriced.length
+                ? `${portfolio.unpriced.length} without a reference price`
+                : "tokenized stocks held"}
+            </small>
+          </div>
+          <div>
+            <span>Watching the market</span>
+            <strong>
+              {watching.length}
+              <small> / {strategies.length}</small>
+            </strong>
+            <small>armed of your strategies</small>
+          </div>
+          <div>
+            <span>Orders recorded</span>
+            <strong>
+              {strategies.reduce((total: number, strategy: Strategy) => total + strategy.orders, 0)}
+            </strong>
+            <small>across your strategies</small>
+          </div>
+        </section>
+      )}
+
+      <section className="desk-section">
+        <div className="desk-section-heading">
+          <div>
+            <span className="desk-overline">ONCHAIN EQUITIES</span>
+            <h2>The market, right now.</h2>
+          </div>
+          <Link className="desk-text-link" href={"/markets"}>
+            All markets
+            <ArrowUpRight size={15} />
+          </Link>
+        </div>
+        <div className="desk-market-strip">
+          {stocks.map((symbol) => (
+            <Link key={symbol} href={`/trade?symbol=${symbol}`} className="desk-market-tile">
+              <div>
+                <StockLogo symbol={symbol} />
+                <span>
+                  <strong>{companies[symbol]?.name ?? symbol}</strong>
+                  <small>{symbol} / USDC</small>
+                </span>
+                <ArrowUpRight size={14} />
+              </div>
+              <div className="desk-market-tile-bottom">
+                <strong>{currency(price(symbol))}</strong>
+                {/*
+                  A held close is labelled, never withheld. These are equity feeds with no
+                  weekend heartbeat, so hiding stale readings blanks the whole strip from Friday
+                  to Monday — the number is real, and saying how old it is costs one word.
+                */}
+                <span className="desk-muted">
+                  {price(symbol) === undefined
+                    ? "No reference"
+                    : priceStale(symbol)
+                      ? "Last close"
+                      : "Reference"}
+                </span>
+              </div>
+              <DeskChart compact symbol={symbol} />
+            </Link>
+          ))}
+        </div>
+        <span className="desk-bottom-note">
+          {marketError
+            ? "Reference prices are unavailable right now — reconnecting."
+            : market
+              ? market.execution_available
+                ? "Reference prices from the onchain feeds. Routing is live, so a signed strategy can fill."
+                : "Reference prices from the onchain feeds. Routed execution is unavailable right now, so strategies will record signals rather than fill."
+              : "Loading reference prices…"}
+        </span>
+      </section>
+
+      <div className="overview-lower-grid">
+        <section className="desk-surface">
+          <div className="desk-section-heading inset">
+            <div>
+              <span className="desk-overline">WORKING FOR YOU</span>
+              <h2>Your strategies</h2>
+            </div>
+            <Link className="desk-text-link" href={"/strategies"}>
+              All strategies
+              <ArrowUpRight size={15} />
+            </Link>
+          </div>
+          {strategies.length ? (
+            strategies.slice(0, 4).map((strategy: Strategy) => (
+              <Link
+                key={strategy.id}
+                className="overview-bot-row"
+                href={`/strategies/${strategy.id}`}
+              >
+                <span className="mini-strategy-icon">
+                  <SlidersHorizontal size={17} />
+                </span>
+                <div>
+                  <strong>{strategy.name}</strong>
+                  <small>
+                    {strategy.symbol ? `${strategy.symbol} · ` : ""}
+                    {strategy.mode === "auto" ? "Automatic" : "Manual"}
+                    {strategy.last_tick_at
+                      ? ` · checked ${new Date(strategy.last_tick_at).toLocaleString()}`
+                      : " · not checked yet"}
+                  </small>
+                </div>
+                <span>
+                  {money(strategy.spent)}
+                  <small>of {money(strategy.lifetime)} spent</small>
+                </span>
+                {/* `armed` has no tone of its own in the stylesheet; `running` is its green. */}
+                <span
+                  className={`desk-status ${strategy.status === "armed" ? "running" : strategy.status}`}
+                >
+                  <i />
+                  {strategy.status}
+                </span>
+              </Link>
+            ))
+          ) : loading ? (
+            <div className="desk-empty">
+              <Loader2 className="spin" />
+              <p>Loading your strategies…</p>
+            </div>
+          ) : (
+            <div className="desk-empty">
+              <span className="desk-empty-icon">
+                <ShieldCheck size={22} />
+              </span>
+              <h3>{connected ? "Nothing is watching yet." : "Your strategies live here."}</h3>
+              <p>
+                {connected
+                  ? "Pick a stock, a price, and a budget. The rule does the waiting."
+                  : "Connect a wallet to author one and to see the strategies you already have."}
+              </p>
+              <button
+                type="button"
+                className="desk-button secondary"
+                onClick={() => (connected ? openEditor() : login())}
+              >
+                {connected ? "Author a strategy" : "Connect wallet"}
+                <ArrowRight size={15} />
+              </button>
+            </div>
+          )}
+        </section>
+        <section className="desk-surface">
+          <div className="desk-section-heading inset">
+            <div>
+              <span className="desk-overline">WHAT HAPPENED</span>
+              <h2>Recent activity</h2>
+            </div>
+            <Link className="desk-text-link" href={"/activity"}>
+              All activity
+              <ArrowUpRight size={15} />
+            </Link>
+          </div>
+          {executions.length ? (
+            executions.slice(0, 4).map((execution) => (
+              <Link key={execution.id} className="overview-bot-row" href={"/activity"}>
+                <span className="mini-strategy-icon tone-signal">
+                  <ArrowDownLeft size={17} />
+                </span>
+                <div>
+                  <strong>{execution.name ?? "Execution"}</strong>
+                  <small>{new Date(execution.createdAt).toLocaleString()}</small>
+                </div>
+                <span>
+                  {execution.intent?.amount ?? execution.amountIn}
+                  <small>
+                    {execution.intent
+                      ? execution.intent.side === "buy"
+                        ? "USDC"
+                        : "tokens"
+                      : "raw units"}
+                  </small>
+                </span>
+                <span className={`desk-status ${execution.status}`}>
+                  <i />
+                  {execution.status}
+                </span>
+              </Link>
+            ))
+          ) : (
+            /*
+              Deliberately not "you have no activity". `useExecutions` only fetches for the
+              activity section, so an empty list here means "not loaded", and this page has no
+              standing to say a wallet has never traded. It points at the page that does know.
+            */
+            <div className="desk-empty">
+              <span className="desk-empty-icon">
+                <ArrowDownLeft size={22} />
+              </span>
+              <h3>Every fill, in one place.</h3>
+              <p>Signals and orders your strategies record are listed on the Activity page.</p>
+              <Link className="desk-text-link" href={"/activity"}>
+                Open activity
+                <ArrowRight size={15} />
+              </Link>
+            </div>
+          )}
+        </section>
+      </div>
+
+      {portfolio && (
+        <span className="desk-bottom-note">
+          {portfolio.notice}
+          {portfolio.unpriced.length
+            ? ` Not priced, so excluded from equity: ${portfolio.unpriced.join(", ")}.`
+            : ""}
+          {staleHoldings.length
+            ? ` Priced from a held last close: ${staleHoldings.map((holding) => holding.symbol).join(", ")}.`
+            : ""}
+        </span>
+      )}
     </div>
-    <section className="desk-quick-stats" aria-label="Demo account summary"><div><span>Available cash</span><strong>{state.hideBalance?"••••":usd(availableCash(state))}</strong><small>USDC, ready for your next move</small></div><div><span>Invested in stocks</span><strong>{state.hideBalance?"••••":usd(accountValue(state)-state.cashCents)}</strong><small>{state.holdings.length} positions on Base</small></div><div><span>Active automations</span><strong>{bots.filter(a=>a.status==="running").length}<small> / {bots.length}</small></strong><small>Demo configurations</small></div><div><span>Open orders</span><strong>{state.orders.filter(o=>o.status==="open").length.toString().padStart(2,"0")}</strong><small>Paper orders awaiting a demo tick</small></div></section>
-    <section className="desk-section"><div className="desk-section-heading"><div><span className="desk-overline">ON YOUR RADAR</span><h2>The names you know.</h2></div><Link className="desk-text-link" href="/markets?preview=1">All markets<ArrowUpRight size={15}/></Link></div><div className="desk-market-strip">{stocks.map(symbol=><Link key={symbol} href={`/trade?preview=1&symbol=${symbol}`} className="desk-market-tile"><div><StockLogo symbol={symbol}/><span><strong>{companies[symbol]?.name}</strong><small>{symbol} / USDC</small></span><ArrowUpRight size={14}/></div><div className="desk-market-tile-bottom"><strong>{usd(demoQuote(symbol,state.tick))}</strong><span className={(demoChanges[symbol]??0)>0?"desk-positive":"desk-negative"}>{(demoChanges[symbol]??0)>0?<ArrowUpRight size={12}/>:<ArrowDownRight size={12}/>} {Math.abs(demoChanges[symbol]??0)}%</span></div><DeskChart compact symbol={symbol}/></Link>)}</div></section>
-    <div className="overview-lower-grid"><section className="desk-surface"><div className="desk-section-heading inset"><div><span className="desk-overline">WORKING FOR YOU</span><h2>Your automations</h2></div><Link className="desk-text-link" href="/automations?preview=1">Manage<ArrowUpRight size={15}/></Link></div>{bots.slice(0,3).map(bot=><Link key={bot.id} className="overview-bot-row" href={`/automations?preview=1&inspect=${bot.id}`}><span className={`mini-strategy-icon tone-${bot.kind}`}><Layers3 size={17}/></span><div><strong>{bot.name}</strong><small>{kindName[bot.kind]} · {bot.symbol}</small></div><span>{usd(bot.budgetCents)}<small>budget limit</small></span><span className={`desk-status ${bot.status}`}><i/>{bot.status==="running"?"Demo enabled":"Paused"}</span></Link>)}{bots.length===0&&<div className="desk-empty">A fresh start. Create your first automation.</div>}</section><section className="desk-signal-feature"><span className="desk-overline">LESS NOISE. MORE CONTEXT.</span><div className="signal-feature-graphic"><StrategyGlyph kind="signal"/></div><h2>Find the moment.<br/>Keep the context.</h2><p>Explore sample signals with an entry, an exit, and room to decide.</p><Link className="desk-text-link" href="/signals?preview=1">Explore signals<ArrowRight size={16}/></Link></section></div>
-    <section className="desk-section"><div className="desk-section-heading"><div><span className="desk-overline">START WITH A FRAMEWORK</span><h2>Four ways to make it yours.</h2></div><span className="desk-muted">Your limits. Every time.</span></div><div className="desk-preset-strip">{automationPresets.map(preset=><Link key={preset.kind} className={`desk-preset-card tone-${preset.color}`} href={`/automations?preview=1&new=${preset.kind}`}><div><span>{preset.label}</span><ArrowUpRight size={16}/></div><StrategyGlyph kind={preset.kind}/><h3>{preset.name}</h3><p>{preset.description}</p></Link>)}</div></section>
-  </div>;
+  );
 }

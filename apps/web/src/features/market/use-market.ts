@@ -1,49 +1,34 @@
 "use client";
 import { useEffect, useState } from "react";
 import { request } from "../../lib/api";
-import { publishLivePrices } from "../trading/market-data";
 import type { Market } from "./types";
 
 /**
- * "oracle:AAPLc" -> ["AAPLc", 320.08]. Unparseable readings are dropped; STALE ONES ARE NOT.
+ * The public catalogue and its reference feeds, refreshed every 30 seconds.
  *
- * Staleness gates trading, not display. These are total-return equity feeds with no heartbeat
- * while the underlying market is shut, so every symbol crosses the 26h bound over a weekend —
- * measured here on a Saturday, GOOGLc was 26.97h old and therefore "stale" while AAPLc, updated
- * an hour later on Friday, was not. Dropping it left the demo showing a fabricated 201.36
- * against a real last close of 338.71.
- *
- * A held last close is the true most-recent price of the asset. Substituting a fixture for it
- * replaces real information with invented information, which is strictly worse than showing a
- * real number that is a day old. Whether an asset can be TRADED against that reference is a
- * separate decision, made from `feed.stale` where the trading paths already read it.
+ * Stale feeds are kept, not dropped. These are total-return equity feeds with no heartbeat while
+ * the underlying market is shut, so every symbol crosses the 26h bound over a weekend — measured
+ * on a Saturday, GOOGLc was 26.97h old and therefore "stale" while AAPLc, updated an hour later
+ * on Friday, was not. A held last close is the asset's true most-recent price; whether it can be
+ * TRADED against is a separate decision the trading paths make from `feed.stale` directly.
  */
-function referencePrices(market: Market): [string, number][] {
-  return market.feeds.flatMap((feed) => {
-    if (!feed.value || !feed.uri.startsWith("oracle:")) return [];
-    const symbol = feed.uri.slice("oracle:".length);
-    const value = Number(feed.value);
-    return Number.isFinite(value) && value > 0 ? [[symbol, value] as [string, number]] : [];
-  });
-}
-export function useMarket(preview: boolean) {
+export function useMarket() {
   const [market, setMarket] = useState<Market | null>(null);
   const [marketError, setMarketError] = useState(false);
   useEffect(() => {
-    // Fetched in preview as well. /v1/market is public, so the demo workspace can show the real
-    // market it is demonstrating; only positions and cash are simulated. A failure here is not
-    // an error in preview — the fixtures still render a coherent demo — so the error banner is
-    // reserved for the signed-in workspace, where a missing market IS a fault the user must see.
+    // Public, so this runs before any wallet is connected: the catalogue and its prices are the
+    // first thing a visitor should see, and asking for a signature to show a price list is
+    // backwards. A failure here is a real fault and surfaces as one — there is no fixture behind
+    // it any more to paper over the gap.
     const controller = new AbortController();
     const refresh = () =>
       request<Market>("/v1/market", { signal: controller.signal })
         .then((value) => {
           setMarket(value);
-          publishLivePrices(referencePrices(value));
           setMarketError(false);
         })
         .catch(() => {
-          if (!controller.signal.aborted && !preview) setMarketError(true);
+          if (!controller.signal.aborted) setMarketError(true);
         });
     void refresh();
     const timer = setInterval(refresh, 30000);
@@ -51,6 +36,6 @@ export function useMarket(preview: boolean) {
       controller.abort();
       clearInterval(timer);
     };
-  }, [preview]);
+  }, []);
   return { market, marketError };
 }

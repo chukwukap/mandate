@@ -4,17 +4,9 @@ import { useState } from "react";
 import { Status } from "../../components/status";
 import type { ApiCall } from "../../lib/api";
 import { useHistory } from "./use-history";
-export function StrategyHistory({
-  instance,
-  preview,
-  call,
-}: {
-  instance: string;
-  preview: boolean;
-  call: ApiCall;
-}) {
+export function StrategyHistory({ instance, call }: { instance: string; call: ApiCall }) {
   const [kind, setKind] = useState<"evaluations" | "executions">("executions");
-  const { page, loading, error, load } = useHistory(instance, kind, preview, call);
+  const { page, loading, error, load } = useHistory(instance, kind, call);
   return (
     <section className="strategy-history" aria-label="Strategy history">
       <div className="panel-heading">
@@ -34,7 +26,7 @@ export function StrategyHistory({
         <button
           type="button"
           className="text-button"
-          disabled={preview || loading}
+          disabled={loading}
           onClick={() => void load()}
         >
           Refresh
@@ -45,13 +37,7 @@ export function StrategyHistory({
           {error}
         </p>
       )}
-      {!page.items.length && !loading && (
-        <p className="helper">
-          {preview
-            ? "Live history is unavailable for sample strategies."
-            : `No ${kind} recorded yet.`}
-        </p>
-      )}
+      {!page.items.length && !loading && <p className="helper">{`No ${kind} recorded yet.`}</p>}
       {page.items.map((item) => (
         <div key={item.id} className="history-entry">
           <div>

@@ -2,12 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiCall, Page } from "../../lib/api";
 import type { Evaluation, Execution } from "./types";
-export function useHistory(
-  instance: string,
-  kind: "evaluations" | "executions",
-  preview: boolean,
-  call: ApiCall,
-) {
+export function useHistory(instance: string, kind: "evaluations" | "executions", call: ApiCall) {
   const [page, setPage] = useState<Page<Evaluation | Execution>>({ items: [], next_page: null });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -45,10 +40,10 @@ export function useHistory(
     setPage({ items: [], next_page: null });
     setError("");
     setLoading(false);
-    if (!preview) void load();
+    void load();
     return () => {
       generation.current += 1;
     };
-  }, [preview, load]);
+  }, [load]);
   return { page, loading, error, load };
 }

@@ -1,7 +1,0 @@
-export type DeskSignal={id:string;symbol:string;title:string;condition:"price-above"|"price-below";entry:number;target:number;stop:number;timeframe:string;category:"Momentum"|"Pullback"|"Range";note:string;strength:"Developing"|"Watching"};
-export const sampleSignals:DeskSignal[]=[
-{id:"nvda-break",symbol:"NVDAc",title:"A level worth watching",condition:"price-above",entry:232,target:242,stop:227,timeframe:"4H",category:"Momentum",note:"A move through the upper range would confirm this sample breakout setup. Wait for the condition, not the anticipation.",strength:"Watching"},
-{id:"apple-pullback",symbol:"AAPLc",title:"Room for a measured entry",condition:"price-below",entry:232,target:244,stop:227,timeframe:"1D",category:"Pullback",note:"The illustrative setup looks for a return to the lower support area, with a defined exit if that level does not hold.",strength:"Developing"},
-{id:"meta-range",symbol:"METAc",title:"The space between two levels",condition:"price-below",entry:725,target:755,stop:710,timeframe:"4H",category:"Range",note:"A sample range setup with a lower entry zone and an exit near the upper boundary. Range assumptions can fail.",strength:"Watching"},
-{id:"alphabet-move",symbol:"GOOGLc",title:"Let the price come to you",condition:"price-above",entry:205,target:213,stop:201,timeframe:"1H",category:"Momentum",note:"This sample scenario waits for a price above the recent range. The entry is conditional, not a recommendation to buy now.",strength:"Developing"},
-];

@@ -1,11 +1,10 @@
 "use client";
-import { ThemeChoices } from "./theme-control";
-import { useDesk } from "../../providers/desk-provider";
 
 import { ArrowUpRight, Check, LogOut, Settings2, Wallet } from "lucide-react";
 import { Status } from "../../components/status";
 import { shortAddress } from "../../lib/format";
 import type { WorkspaceModel } from "../../providers/use-workspace";
+import { ThemeChoices } from "./theme-control";
 
 export function SettingsView({
   model,
@@ -13,7 +12,6 @@ export function SettingsView({
   model: Pick<
     WorkspaceModel,
     | "router"
-    | "preview"
     | "session"
     | "market"
     | "setStrategies"
@@ -26,7 +24,6 @@ export function SettingsView({
 }) {
   const {
     router,
-    preview,
     session,
     market,
     setStrategies,
@@ -36,10 +33,18 @@ export function SettingsView({
     setToast,
     login,
   } = model;
-  const desk = useDesk();
   return (
     <div className="settings-grid">
-      <section className="panel settings-panel appearance-panel"><div className="panel-heading"><h2>Appearance</h2></div><div className="appearance-content"><p>Make room for the way you work.</p><ThemeChoices /><small>System follows your device. Your choice is remembered.</small></div></section>
+      <section className="panel settings-panel appearance-panel">
+        <div className="panel-heading">
+          <h2>Appearance</h2>
+        </div>
+        <div className="appearance-content">
+          <p>Make room for the way you work.</p>
+          <ThemeChoices />
+          <small>System follows your device. Your choice is remembered.</small>
+        </div>
+      </section>
       <section className="panel settings-panel">
         <div className="panel-heading">
           <h2>Account</h2>
@@ -103,12 +108,12 @@ export function SettingsView({
           <div>
             <strong>Automatic execution</strong>
             <p>
-              {market?.execution_available && !preview
+              {market?.execution_available
                 ? "Worker available. Each strategy needs its own approval."
                 : "Currently unavailable. Signal strategies can still run."}
             </p>
           </div>
-          <Status status={market?.execution_available && !preview ? "armed" : "paused"} />
+          <Status status={market?.execution_available ? "armed" : "paused"} />
         </div>
       </section>
       <section className="panel settings-panel">
@@ -130,20 +135,6 @@ export function SettingsView({
             onClick={() => setCompact(!compact)}
           >
             <span />
-          </button>
-        </div>
-        <div className="setting-row">
-          <div>
-            <strong>Preview workspace</strong>
-            <p>Explore with sample data. No funds move.</p>
-          </div>
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => router.push(preview ? "/" : "/?preview=1")}
-          >
-            {preview ? "Exit preview" : "Open preview"}
-            <ArrowUpRight size={15} />
           </button>
         </div>
         <div className="setting-row">

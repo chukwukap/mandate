@@ -1,22 +1,15 @@
 "use client";
-import {
-  Activity,
-  ArrowDownUp,
-  ArrowRight,
-  ArrowUpRight,
-  Search,
-  ShieldCheck,
-  Star,
-} from "lucide-react";
+import { ArrowDownUp, ArrowRight, ArrowUpRight, Search, ShieldCheck, Star } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { currency } from "../../lib/format";
 import type { WorkspaceModel } from "../../providers/use-workspace";
-import { PriceChart } from "../market/price-chart";
 import { StockLogo } from "../market/stock-logo";
 import type { Strategy } from "../strategies/types";
 import { companies, stocks } from "./catalog";
-import { demoChanges } from "./preview";
+import { DeskChart } from "./desk-chart";
+import { MarketChart } from "./market-chart";
+import type { CandleInterval } from "./use-candles";
 
 export function MarketsView({
   model,
@@ -25,7 +18,7 @@ export function MarketsView({
 }: {
   model: Pick<
     WorkspaceModel,
-    | "preview"
+    | "priceStale"
     | "marketError"
     | "strategies"
     | "selected"
@@ -38,7 +31,6 @@ export function MarketsView({
     | "setQuery"
     | "favorites"
     | "setSort"
-    | "href"
     | "price"
     | "company"
     | "visibleStocks"
@@ -50,7 +42,6 @@ export function MarketsView({
   empty(title: string, description: string, action?: boolean): ReactNode;
 }) {
   const {
-    preview,
     marketError,
     strategies,
     selected,
@@ -63,8 +54,8 @@ export function MarketsView({
     setQuery,
     favorites,
     setSort,
-    href,
     price,
+    priceStale,
     company,
     visibleStocks,
     watching,
@@ -92,14 +83,12 @@ export function MarketsView({
             </div>
             <div className="market-card-price">
               <span>{currency(price(symbol))}</span>
-              {preview ? (
-                <span className={`change ${(demoChanges[symbol] ?? 0) < 0 ? "negative" : ""}`}>
-                  {(demoChanges[symbol] ?? 0) > 0 ? "+" : ""}
-                  {demoChanges[symbol]}%
-                </span>
-              ) : (
-                <small>Reference price</small>
-              )}
+              {/*
+                No percentage here. There was a `demoChanges` table with four of the seven
+                symbols in it, so three cards printed "undefined%" and none of the numbers came
+                from anywhere. What the reference genuinely knows is its own age.
+              */}
+              <small>{priceStale(symbol) ? "Last close" : "Reference price"}</small>
             </div>
           </button>
         ))}
@@ -134,30 +123,28 @@ export function MarketsView({
                 {currency(price(selected))}
                 <span>USD</span>
               </div>
-              {preview ? (
-                <p className={`change ${(demoChanges[selected] ?? 0) < 0 ? "negative" : ""}`}>
-                  <ArrowUpRight size={14} />{" "}
-                  {currency((Number(price(selected)) * (demoChanges[selected] ?? 0)) / 100)} (
-                  {demoChanges[selected]}%)<span>today</span>
-                </p>
-              ) : (
-                <p className="quiet">
-                  {marketError
-                    ? "Market data is temporarily unavailable"
-                    : price(selected)
-                      ? "Latest available reference"
-                      : "Waiting for market data"}
-                </p>
-              )}
+              <p className="quiet">
+                {marketError
+                  ? "Market data is temporarily unavailable"
+                  : price(selected)
+                    ? priceStale(selected)
+                      ? "Last recorded close"
+                      : "Latest available reference"
+                    : "Waiting for market data"}
+              </p>
             </div>
+            {/*
+              Every one of these was `disabled={!preview}` and the panel only ever rendered
+              outside preview, so the whole range switcher was permanently dead. The values are
+              the intervals /v1/market/candles actually serves.
+            */}
             <fieldset className="segmented periods" aria-label="Chart range">
-              {["1D", "1W", "1M", "1Y", "ALL"].map((value) => (
+              {(["15m", "1H", "4H", "1D", "1W"] as CandleInterval[]).map((value) => (
                 <button
                   type="button"
                   key={value}
                   className={period === value ? "active" : ""}
                   aria-pressed={period === value}
-                  disabled={!preview}
                   onClick={() => setPeriod(value)}
                 >
                   {value}
@@ -165,23 +152,15 @@ export function MarketsView({
               ))}
             </fieldset>
           </div>
-          {preview ? (
-            <PriceChart
-              basePrice={Number(price(selected))}
-              seed={stocks.indexOf(selected)}
-              period={period}
-            />
-          ) : (
-            <div className="chart-unavailable">
-              <Activity size={28} />
-              <span>Price history isn't available yet.</span>
-              <small>Current references appear as data arrives.</small>
-            </div>
-          )}
+          {/*
+            The real chart. This branch used to say "Price history isn't available yet" to every
+            signed-in user while the candles endpoint was serving real Aerodrome OHLCV the whole
+            time — the working chart was in the preview branch, which this panel never took.
+          */}
+          <MarketChart symbol={selected} interval={period as CandleInterval} average height={300} />
           <div className="feature-bottom">
             <div>
-              <span className="reference-dot" />{" "}
-              {preview ? "Sample price history" : "Reference price"}
+              <span className="reference-dot" /> Observed trades · Aerodrome
               <span className="bottom-separator">/</span>
               <span>USDC pair</span>
             </div>
@@ -196,11 +175,7 @@ export function MarketsView({
             <h2>
               Your strategies<span>{strategies.length}</span>
             </h2>
-            <Link
-              href={href("/strategies")}
-              className="icon-button"
-              aria-label="View all strategies"
-            >
+            <Link href={"/strategies"} className="icon-button" aria-label="View all strategies">
               <ArrowUpRight size={18} />
             </Link>
           </div>
@@ -211,9 +186,9 @@ export function MarketsView({
                 {watching.length} watching the market
               </div>
               <div className="strategy-list">
-                {strategies.slice(0, 3).map((strategy) => strategyRow(strategy))}
+                {strategies.slice(0, 3).map((strategy: Strategy) => strategyRow(strategy))}
               </div>
-              <Link className="all-strategies" href={href("/strategies")}>
+              <Link className="all-strategies" href={"/strategies"}>
                 View all strategies
                 <ArrowRight size={15} />
               </Link>
@@ -277,7 +252,7 @@ export function MarketsView({
               </tr>
             </thead>
             <tbody>
-              {visibleStocks.map((symbol, index) => (
+              {visibleStocks.map((symbol) => (
                 <tr key={symbol}>
                   <td>
                     <button
@@ -309,18 +284,10 @@ export function MarketsView({
                   </td>
                   <td className="number">{currency(price(symbol))}</td>
                   <td>
-                    <span className={`change ${(demoChanges[symbol] ?? 0) < 0 ? "negative" : ""}`}>
-                      {preview
-                        ? `${(demoChanges[symbol] ?? 0) > 0 ? "+" : ""}${demoChanges[symbol]}%`
-                        : "—"}
-                    </span>
+                    <span className="quiet">{priceStale(symbol) ? "Last close" : "Live"}</span>
                   </td>
                   <td>
-                    {preview ? (
-                      <PriceChart compact seed={index} basePrice={Number(price(symbol))} />
-                    ) : (
-                      <span className="quiet">—</span>
-                    )}
+                    <DeskChart compact symbol={symbol} period="1D" />
                   </td>
                   <td>
                     <span className="base-label">
@@ -347,11 +314,7 @@ export function MarketsView({
             {visibleStocks.length} stocks<span className="footer-dot">·</span>Prices in USD
           </span>
           <span>
-            {preview
-              ? "Sample data"
-              : marketError
-                ? "Reconnecting to market data"
-                : "References refresh every 30s"}
+            {marketError ? "Reconnecting to market data" : "References refresh every 30s"}
             <span className={`tiny-dot ${marketError ? "amber" : ""}`} />
           </span>
         </div>

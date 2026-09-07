@@ -13,7 +13,6 @@ export function StrategyDetails({
   model: Pick<
     WorkspaceModel,
     | "detail"
-    | "preview"
     | "call"
     | "session"
     | "fetchOwned"
@@ -23,14 +22,12 @@ export function StrategyDetails({
     | "busy"
     | "setDetail"
     | "router"
-    | "href"
     | "changeStatus"
     | "detailPage"
   >;
 }) {
   const {
     detail,
-    preview,
     call,
     session,
     fetchOwned,
@@ -40,7 +37,6 @@ export function StrategyDetails({
     busy,
     setDetail,
     router,
-    href,
     changeStatus,
     detailPage,
   } = model;
@@ -81,21 +77,19 @@ export function StrategyDetails({
           <pre>{detail.render_text}</pre>
         </details>
       )}
-      {!preview &&
-        detail.requested_mode === "auto" &&
-        !["halted", "ended"].includes(detail.status) && (
-          <SpendingPermission
-            instance={detail.id}
-            call={call}
-            sign={session.signPermission}
-            send={session.sendPermission}
-            onChange={() => {
-              void fetchOwned();
-              void openDetail(detail);
-            }}
-          />
-        )}
-      <StrategyHistory instance={detail.id} preview={preview} call={call} />
+      {detail.requested_mode === "auto" && !["halted", "ended"].includes(detail.status) && (
+        <SpendingPermission
+          instance={detail.id}
+          call={call}
+          sign={session.signPermission}
+          send={session.sendPermission}
+          onChange={() => {
+            void fetchOwned();
+            void openDetail(detail);
+          }}
+        />
+      )}
+      <StrategyHistory instance={detail.id} call={call} />
       {detail.halt_reason && <p className="helper">{detail.halt_reason}</p>}
       {error && (
         <p className="form-error" role="alert">
@@ -126,7 +120,7 @@ export function StrategyDetails({
           className="button secondary"
           onClick={() => {
             setDetail(null);
-            router.push(href("/activity"));
+            router.push("/activity");
           }}
         >
           View activity
@@ -155,7 +149,7 @@ export function StrategyDetails({
   if (detailPage)
     return (
       <section className="panel strategy-detail-page">
-        <Link className="text-button" href={href("/strategies")}>
+        <Link className="text-button" href={"/strategies"}>
           ← All strategies
         </Link>
         {content}
@@ -170,7 +164,7 @@ export function StrategyDetails({
         setError("");
       }}
     >
-      <Link className="text-button detail-page-link" href={href(`/strategies/${detail.id}`)}>
+      <Link className="text-button detail-page-link" href={`/strategies/${detail.id}`}>
         Open strategy page
         <ArrowUpRight size={14} />
       </Link>

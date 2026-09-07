@@ -12,7 +12,6 @@ export function StrategiesView({
 }: {
   model: Pick<
     WorkspaceModel,
-    | "preview"
     | "session"
     | "strategies"
     | "setStrategies"
@@ -30,7 +29,6 @@ export function StrategiesView({
   empty(title: string, description: string, action?: boolean): ReactNode;
 }) {
   const {
-    preview,
     session,
     strategies,
     setStrategies,
@@ -112,10 +110,8 @@ export function StrategiesView({
           </>
         ) : (
           empty(
-            session.authenticated || preview
-              ? "Your first rule starts here."
-              : "Your strategies belong here.",
-            session.authenticated || preview
+            session.authenticated ? "Your first rule starts here." : "Your strategies belong here.",
+            session.authenticated
               ? "Pick a price. We'll keep watch."
               : "Connect your wallet to see your strategies.",
           )
