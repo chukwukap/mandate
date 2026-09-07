@@ -29,6 +29,64 @@
   --desk-red: #b3382f;
 
   --desk-shadow: 0 1px 2px rgb(16 20 28 / 6%), 0 8px 24px -14px rgb(16 20 28 / 22%);
+
+  /*
+   * Shell palette — the panels, dialogs, tables, forms and toasts in globals.css. It is a
+   * warmer, sage-cast set than the desk neutrals above, and that difference is deliberate:
+   * the shell frames the desk rather than repeating it. It lives here, and not beside the
+   * rules that use it, because a colour declared in one place gets one theme's value — which
+   * is precisely how these panels ended up painting a white ground under the dark theme's ink.
+   */
+
+  /* Same in both themes: brand ground under fixed white text, and the dark sidebar chrome. */
+  --green: #36765a;
+  --sidebar: #202a26;
+  --sidebar-muted: #939e96;
+
+  /* Grounds, lightest to most raised. */
+  --canvas: #f7f8f4;
+  --canvas-veil: #f9faf5f2;
+  --paper: #ffffff;
+  --raised: #fcfdf9;
+  --soft: #f7f8f3;
+  --sage: #edf3ec;
+  --sage-soft: #f5f7ef;
+
+  /* Borders, faintest to most stated. */
+  --line-soft: #f0f2ec;
+  --line: #e9ece5;
+  --sage-line: #e2e8d8;
+  --line-strong: #dce2d4;
+  --line-hover: #c1ccb8;
+  --accent-line-strong: #9fb389;
+  --focus-line: #7da890;
+  --focus-ring: 0 0 0 3px #36765a12;
+
+  /* Text, strongest to faintest. --text-5 is separator glyphs, never words. */
+  --ink: #262e29;
+  --ink-2: #4f5a4a;
+  --muted: #82877f;
+  --text-2: #626e59;
+  --text-3: #929d88;
+  --text-4: #a9b1a0;
+  --text-5: #cad0c1;
+
+  /* Accents. --green-ink is the brand green when it is ink rather than ground. */
+  --green-ink: #36765a;
+  --accent-ink: #4f6c3e;
+  --accent: #7f9665;
+  --red: #bc7065;
+
+  --warn-ink: #7c7359;
+  --warn-soft: #f7f6f0;
+  --warn-line: #edeadf;
+  --amber: #b59a66;
+  --amber-ink: #9b7c45;
+
+  --danger-ink: #9e4d40;
+  --danger-mid: #a77460;
+  --danger-soft: #fff3ed;
+  --danger-line: #efd9cc;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -48,6 +106,48 @@
     --desk-red: #f0796b;
 
     --desk-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 28px -16px rgb(0 0 0 / 70%);
+
+    /* Shell palette, dark. The sage cast survives the flip so the shell still reads warm. */
+    --canvas: #101318;
+    --canvas-veil: #101318f2;
+    --paper: #171b21;
+    --raised: #1b2029;
+    --soft: #1d222a;
+    --sage: #1e2a24;
+    --sage-soft: #191f1c;
+
+    --line-soft: #232932;
+    --line: #2a313b;
+    --sage-line: #2f3b33;
+    --line-strong: #39414d;
+    --line-hover: #414b58;
+    --accent-line-strong: #4d8062;
+    --focus-line: #4e9c78;
+    --focus-ring: 0 0 0 3px #4ec98d29;
+
+    --ink: #e6e9ee;
+    --ink-2: #ccd3dc;
+    --muted: #99a1ad;
+    --text-2: #a9b2be;
+    --text-3: #838d9a;
+    --text-4: #79828f;
+    --text-5: #59626e;
+
+    --green-ink: #4ec98d;
+    --accent-ink: #8ed3a8;
+    --accent: #5cbd8c;
+    --red: #f0796b;
+
+    --warn-ink: #cbb083;
+    --warn-soft: #262117;
+    --warn-line: #3a3324;
+    --amber: #cfa96e;
+    --amber-ink: #d9b276;
+
+    --danger-ink: #f0796b;
+    --danger-mid: #ef9184;
+    --danger-soft: #2b1a17;
+    --danger-line: #4a2b25;
   }
 }
 
@@ -66,6 +166,48 @@
   --desk-red: #f0796b;
 
   --desk-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 28px -16px rgb(0 0 0 / 70%);
+
+  /* Shell palette, dark. The sage cast survives the flip so the shell still reads warm. */
+  --canvas: #101318;
+  --canvas-veil: #101318f2;
+  --paper: #171b21;
+  --raised: #1b2029;
+  --soft: #1d222a;
+  --sage: #1e2a24;
+  --sage-soft: #191f1c;
+
+  --line-soft: #232932;
+  --line: #2a313b;
+  --sage-line: #2f3b33;
+  --line-strong: #39414d;
+  --line-hover: #414b58;
+  --accent-line-strong: #4d8062;
+  --focus-line: #4e9c78;
+  --focus-ring: 0 0 0 3px #4ec98d29;
+
+  --ink: #e6e9ee;
+  --ink-2: #ccd3dc;
+  --muted: #99a1ad;
+  --text-2: #a9b2be;
+  --text-3: #838d9a;
+  --text-4: #79828f;
+  --text-5: #59626e;
+
+  --green-ink: #4ec98d;
+  --accent-ink: #8ed3a8;
+  --accent: #5cbd8c;
+  --red: #f0796b;
+
+  --warn-ink: #cbb083;
+  --warn-soft: #262117;
+  --warn-line: #3a3324;
+  --amber: #cfa96e;
+  --amber-ink: #d9b276;
+
+  --danger-ink: #f0796b;
+  --danger-mid: #ef9184;
+  --danger-soft: #2b1a17;
+  --danger-line: #4a2b25;
 }
 
 /* The viewer's chrome paints behind the page, so the ground is set explicitly. */

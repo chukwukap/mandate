@@ -16,7 +16,9 @@ import { useEffect, useRef, useState } from "react";
 import { shortAddress } from "../../lib/format";
 import { useSession } from "../auth/session-provider";
 import { companies, stocks } from "../market/catalog";
+import { DeskChart } from "../market/desk-chart";
 import { StockLogo } from "../market/stock-logo";
+import { useMarket } from "../market/use-market";
 import { useOnboarding } from "./onboarding-provider";
 
 export function OnboardingView() {
@@ -28,6 +30,15 @@ export function OnboardingView() {
   const [mode, setMode] = useState<"manual" | "auto">("manual");
   const [error, setError] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
+  // Public endpoint, so this works before anyone logs in.
+  const { market } = useMarket();
+  const reference = Number(
+    market?.feeds.find((feed) => feed.uri === `oracle:${symbol}`)?.value ?? Number.NaN,
+  );
+  // A plausible entry a little below the current reference. Derived from the real price rather
+  // than invented, and labelled as an example wherever it appears — the point of the card is to
+  // show what a rule looks like against a real market, not to suggest this particular number.
+  const exampleLevel = Number.isFinite(reference) ? reference * 0.95 : undefined;
   useEffect(() => {
     if (step > 0) heading.current?.focus();
   }, [step]);
@@ -70,14 +81,21 @@ export function OnboardingView() {
               </div>
               <span className="onboarding-stock-tag">Your pick</span>
             </div>
-            <svg viewBox="0 0 380 150" fill="none" aria-hidden="true">
-              <path
-                d="M0 112L22 101L43 118L67 90L86 98L107 62L128 83L149 75L171 89L190 55L214 66L237 39L257 53L281 29L306 48L331 16L353 31L380 9"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-              <path d="M0 94H380" stroke="currentColor" strokeDasharray="4 7" opacity=".4" />
-            </svg>
+            {/*
+              The real chart for the stock they just picked, not a drawn squiggle.
+              //
+              This was a hardcoded SVG path — eighteen hand-authored points that went up and to
+              the right no matter which company you selected. On a page whose whole argument is
+              "we only ever act on what actually happened", an invented price line beside a real
+              company name is the one thing on screen that cannot be checked. `/v1/market/candles`
+              is public, so this needs no wallet and no login, and it changes as they change the
+              pick above it.
+              //
+              The dashed level is their example target, drawn a little under the real recent
+              range so the card reads as "here is your price, here is the market" — labelled by
+              DeskChart as "Your level" so it is never mistaken for an observation.
+            */}
+            <DeskChart dark symbol={symbol} period="1W" target={exampleLevel} />
             <div className="onboarding-rule">
               <span className="onboarding-rule-icon">
                 {mode === "manual" ? <Bell size={19} /> : <Zap size={19} />}
@@ -95,7 +113,9 @@ export function OnboardingView() {
               <Check size={17} />
             </div>
             <span className="onboarding-illustration-caption">
-              An illustration of your future rule
+              {reference
+                ? `${symbol} · observed on Base · your level is an example`
+                : `${symbol} · observed on Base`}
             </span>
           </div>
         </div>

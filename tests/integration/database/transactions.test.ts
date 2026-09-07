@@ -32,22 +32,36 @@ import { type InstanceSeed, seedExecution, seedInstance, seedPermission, txHash 
 const suite = describe.skipIf(Boolean(POSTGRES.unavailable));
 
 let pg: Postgres;
+/**
+ * A second connection under the API's role, used only to create the tenants these tests run in.
+ *
+ * Two roles because the scenario genuinely involves two: the API creates the user, the worker
+ * writes the journal, and neither can do the other's job. `mandate_worker` has SELECT on `users`
+ * and nothing more, so `newTenant` has to come from the application role.
+ */
+let app: Postgres;
 let alice: string;
 let bob: string;
 const created: string[] = [];
 
 beforeAll(async () => {
   if (POSTGRES.unavailable) return;
-  pg = openPostgres();
-  alice = await newTenant(pg);
-  bob = await newTenant(pg);
+  // The worker's role. Everything in this file writes the transaction journal or the execution
+  // ledger, and 03-grants.sql gives the API no write on either — it has no signer and never
+  // broadcasts. Connecting as the API role here tested a pairing that does not exist and answered
+  // "permission denied" for statements the real writer is allowed to make.
+  pg = openPostgres({ as: "worker" });
+  app = openPostgres();
+  alice = await newTenant(app);
+  bob = await newTenant(app);
   created.push(alice, bob);
 }, 30_000);
 
 afterAll(async () => {
   if (POSTGRES.unavailable) return;
-  await discardTenants(pg, created);
+  await discardTenants(app, created);
   await pg.close();
+  await app.close();
 }, 30_000);
 
 /** Journal rows for one order, ordered the way the lifecycle reads them. */
@@ -98,7 +112,7 @@ const nonce = () => nextNonce++;
 suite("writeExecutionLeg", () => {
   let seed: InstanceSeed;
   beforeAll(async () => {
-    seed = await seedInstance(pg, alice, { mode: "auto" });
+    seed = await seedInstance(app, alice, { mode: "auto" });
   });
 
   test("journalling the same leg twice writes one row and reports the replay", async () => {
@@ -157,7 +171,7 @@ suite("writeExecutionLeg", () => {
     const mine = await seedExecution(pg, alice, seed);
     await recordExecutionLeg(pg.db, fundLeg(alice, mine.id, shared));
 
-    const theirSeed = await seedInstance(pg, bob, { mode: "auto" });
+    const theirSeed = await seedInstance(app, bob, { mode: "auto" });
     const theirs = await seedExecution(pg, bob, theirSeed);
     // Row level security hides alice's row from bob, but a unique index is not a policy: the
     // signing key is shared across every owner, so two tenants cannot both hold nonce N.
@@ -176,7 +190,7 @@ suite("writeExecutionLeg", () => {
 
 suite("units compose into the caller's transaction", () => {
   test("a unit joined to an outer transaction is rolled back with it", async () => {
-    const seed = await seedInstance(pg, alice, { mode: "auto" });
+    const seed = await seedInstance(app, alice, { mode: "auto" });
     const order = await seedExecution(pg, alice, seed);
     const leg = fundLeg(alice, order.id, nonce());
 
@@ -225,13 +239,13 @@ suite("units compose into the caller's transaction", () => {
 
 suite("writePermissionGrant", () => {
   test("the permission and the instance move in one commit", async () => {
-    const seed = await seedInstance(pg, alice, { mode: "auto" });
-    const permission = await seedPermission(pg, alice, seed, {
+    const seed = await seedInstance(app, alice, { mode: "auto" });
+    const permission = await seedPermission(app, alice, seed, {
       status: "prepared",
       signature: null,
     });
     const now = new Date();
-    const { permission: written, instance } = await recordPermissionGrant(pg.db, {
+    const { permission: written, instance } = await recordPermissionGrant(app.db, {
       userId: alice,
       instanceId: seed.instance.id,
       permissionId: permission.id,
@@ -244,7 +258,7 @@ suite("writePermissionGrant", () => {
     expect(written.status).toBe("active");
     expect(instance.mode).toBe("auto");
 
-    const [row] = await asTenant(pg, alice, (query) =>
+    const [row] = await asTenant(app, alice, (query) =>
       query<{ status: string; mode: string }>(
         `select p.status, i.mode from mandate_v2.permissions p
            join mandate_v2.instances i on i.id = p.instance_id
@@ -259,13 +273,13 @@ suite("writePermissionGrant", () => {
   });
 
   test("a permission re-prepared while the request was in flight is refused, unwritten", async () => {
-    const seed = await seedInstance(pg, alice, { mode: "auto" });
-    const permission = await seedPermission(pg, alice, seed, {
+    const seed = await seedInstance(app, alice, { mode: "auto" });
+    const permission = await seedPermission(app, alice, seed, {
       status: "prepared",
       signature: null,
     });
     await expect(
-      recordPermissionGrant(pg.db, {
+      recordPermissionGrant(app.db, {
         userId: alice,
         instanceId: seed.instance.id,
         permissionId: permission.id,
@@ -278,7 +292,7 @@ suite("writePermissionGrant", () => {
       }),
     ).rejects.toMatchObject({ status: 409, code: "permission-state" });
 
-    const [row] = await asTenant(pg, alice, (query) =>
+    const [row] = await asTenant(app, alice, (query) =>
       query<{ status: string; signature: string | null; mode: string }>(
         `select p.status, p.signature, i.mode from mandate_v2.permissions p
            join mandate_v2.instances i on i.id = p.instance_id
@@ -290,13 +304,13 @@ suite("writePermissionGrant", () => {
   });
 
   test("a grant rolled back by its caller leaves neither half behind", async () => {
-    const seed = await seedInstance(pg, alice, { mode: "auto" });
-    const permission = await seedPermission(pg, alice, seed, {
+    const seed = await seedInstance(app, alice, { mode: "auto" });
+    const permission = await seedPermission(app, alice, seed, {
       status: "prepared",
       signature: null,
     });
     await expect(
-      withTenant(pg.db, alice, UNIT_OPTIONS, async (tx) => {
+      withTenant(app.db, alice, UNIT_OPTIONS, async (tx) => {
         await recordPermissionGrant(tx, {
           userId: alice,
           instanceId: seed.instance.id,
@@ -311,7 +325,7 @@ suite("writePermissionGrant", () => {
       }),
     ).rejects.toThrow("caller failed after granting");
 
-    const [row] = await asTenant(pg, alice, (query) =>
+    const [row] = await asTenant(app, alice, (query) =>
       query<{ status: string; signature: string | null; mode: string; istatus: string }>(
         `select p.status, p.signature, i.mode, i.status as istatus from mandate_v2.permissions p
            join mandate_v2.instances i on i.id = p.instance_id
@@ -330,7 +344,7 @@ suite("writePermissionGrant", () => {
 
 suite("the journal is append-only", () => {
   test("a signed transaction cannot be deleted, by anyone, including the writer", async () => {
-    const seed = await seedInstance(pg, alice, { mode: "auto" });
+    const seed = await seedInstance(app, alice, { mode: "auto" });
     const order = await seedExecution(pg, alice, seed);
     const leg = fundLeg(alice, order.id, nonce());
     await recordExecutionLeg(pg.db, leg);
@@ -338,14 +352,21 @@ suite("the journal is append-only", () => {
     const attempt = asTenant(pg, alice, (query) =>
       query("delete from mandate_v2.transactions where hash = $1", [leg.hash]),
     );
-    // 23514 from `protect_transaction`. This is why `discardTenant` cannot fully clean up after
-    // an execution suite, and it is the correct trade: evidence of a broadcast outlives the run.
-    await expect(attempt).rejects.toMatchObject({ code: "23514" });
+    // Two independent refusals, and either satisfies the property. 42501 is the privilege check:
+    // 03-grants.sql gives no role but the schema owner DELETE on this table, so under the real
+    // grants the statement never reaches the trigger. 23514 is `protect_transaction` itself,
+    // which is what answers when a role that CAN delete tries to. Asserting only the trigger made
+    // this test pass for the wrong reason on a privileged connection and fail on a correct one.
+    // This is also why `discardTenant` cannot fully clean up after an execution suite, and it is
+    // the right trade: evidence of a broadcast outlives the run.
+    await expect(attempt).rejects.toMatchObject({
+      code: expect.stringMatching(/^(23514|42501)$/),
+    });
     expect(await journal(alice, order.id)).toHaveLength(1);
   });
 
   test("a settled transaction cannot be re-settled with a different verdict", async () => {
-    const seed = await seedInstance(pg, alice, { mode: "auto" });
+    const seed = await seedInstance(app, alice, { mode: "auto" });
     const order = await seedExecution(pg, alice, seed);
     const leg = fundLeg(alice, order.id, nonce());
     await recordExecutionLeg(pg.db, leg);
@@ -364,7 +385,7 @@ suite("the journal is append-only", () => {
   });
 
   test("an admitted order's size and pair are immutable once written", async () => {
-    const seed = await seedInstance(pg, alice, { mode: "auto" });
+    const seed = await seedInstance(app, alice, { mode: "auto" });
     const order = await seedExecution(pg, alice, seed);
     const attempt = asTenant(pg, alice, (query) =>
       query("update mandate_v2.executions set amount_in = '999000000' where id = $1", [order.id]),

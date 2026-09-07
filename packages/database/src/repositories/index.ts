@@ -18,14 +18,33 @@ import {
 export class Repository {
   constructor(public readonly db: Database) {}
 
+  /**
+   * The local row for a Privy DID, created on first sight.
+   *
+   * `onConflictDoNothing`, not `onConflictDoUpdate`. The update form needs the UPDATE privilege,
+   * and infra/postgres/03-grants.sql grants the API only SELECT and INSERT on this table on
+   * purpose: a user row is written once and never mutated, so the ability to rewrite one is
+   * authority the API has no use for. The upsert only ever set `privy_did` to the value it
+   * already held — a no-op that existed to make RETURNING fire — so nothing is lost by dropping
+   * it, and the grant no longer has to be widened to accommodate a write that never wrote.
+   *
+   * This surfaced the moment the grants script was applied as written: every sign-in answered
+   * 500 with "permission denied for table users", which reached the browser as a generic "The
+   * request could not be completed" on every page at once.
+   *
+   * The follow-up SELECT is the conflict path, and it is not a race: the unique index on
+   * `privy_did` means whoever lost the insert is reading a row that is already committed.
+   */
   async resolvePrivyUser(privyDid: string) {
-    const [user] = await this.db
+    const [inserted] = await this.db
       .insert(users)
       .values({ id: randomUUID(), privyDid })
-      .onConflictDoUpdate({ target: users.privyDid, set: { privyDid } })
+      .onConflictDoNothing({ target: users.privyDid })
       .returning();
-    if (!user) throw new Error("User resolution failed");
-    return user;
+    if (inserted) return inserted;
+    const [existing] = await this.db.select().from(users).where(eq(users.privyDid, privyDid));
+    if (!existing) throw new Error("User resolution failed");
+    return existing;
   }
   async saveDraft(row: typeof drafts.$inferInsert) {
     await tenant(this.db, row.userId, async (tx) => {

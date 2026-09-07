@@ -63,6 +63,25 @@ const REQUIRED_TABLES = [
  */
 export const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 
+/**
+ * The worker's own credentials, for suites that assert worker-owned behaviour.
+ *
+ * The transaction journal and the execution ledger are written by the worker and by nobody else:
+ * infra/postgres/03-grants.sql gives the API SELECT on `executions` and nothing at all on
+ * `transactions`, because the API has no signer and never broadcasts. A suite that exercises
+ * `writeExecutionLeg` is therefore exercising the WORKER's path, and connecting it as the API
+ * role tests a combination that does not exist — it answers "permission denied" for a statement
+ * the real writer is allowed to make.
+ *
+ * Derived from DATABASE_URL by swapping the role when not given explicitly, so a developer who
+ * has one database configured gets both roles without a second variable.
+ */
+export const WORKER_DATABASE_URL =
+  process.env.TEST_WORKER_DATABASE_URL ??
+  (DATABASE_URL
+    ? DATABASE_URL.replace(/\/\/[^:]+:[^@]+@/, "//mandate_worker:mandate_worker@")
+    : undefined);
+
 /** Host and database only. A connection string carries a password and must never be logged. */
 function target(url: string): string {
   try {
@@ -112,11 +131,16 @@ async function probe(): Promise<Probe> {
 
   const connection = connectDatabase(DATABASE_URL);
   try {
+    // `pg_tables`, not `information_schema.tables`. The latter lists only tables the CURRENT
+    // ROLE holds a privilege on, so under the correctly-restricted application role —
+    // which is granted nothing at all on `transactions`, deliberately, because the API has no
+    // signer — this probe concluded the database was unmigrated and skipped every integration
+    // suite. The security property was working; the probe was asking the wrong catalogue.
     const tables = await connection.pool
-      .query<{ table_name: string }>(
-        "select table_name from information_schema.tables where table_schema = 'mandate_v2'",
+      .query<{ tablename: string }>(
+        "select tablename from pg_tables where schemaname = 'mandate_v2'",
       )
-      .then((result) => new Set(result.rows.map((row) => row.table_name)));
+      .then((result) => new Set(result.rows.map((row) => row.tablename)));
     const missing = REQUIRED_TABLES.filter((table) => !tables.has(table));
     if (missing.length > 0)
       return unusable(
@@ -143,10 +167,16 @@ export const POSTGRES: Probe = await probe();
 
 if (POSTGRES.unavailable) console.warn(`[integration] skipped: ${POSTGRES.unavailable}`);
 
-/** Opens a pool for one suite. The caller closes it; suites must not share one. */
-export function openPostgres(): Postgres {
-  if (!DATABASE_URL) throw new Error("openPostgres called without a database; check POSTGRES");
-  const connection = connectDatabase(DATABASE_URL);
+/**
+ * Opens a pool for one suite. The caller closes it; suites must not share one.
+ *
+ * `as: "worker"` connects with the worker's grants. Use it for anything that writes the journal
+ * or the execution ledger; the default application role is refused those tables on purpose.
+ */
+export function openPostgres(options: { as?: "app" | "worker" } = {}): Postgres {
+  const url = options.as === "worker" ? WORKER_DATABASE_URL : DATABASE_URL;
+  if (!url) throw new Error("openPostgres called without a database; check POSTGRES");
+  const connection = connectDatabase(url);
   return {
     db: connection.db,
     repo: new Repository(connection.db),

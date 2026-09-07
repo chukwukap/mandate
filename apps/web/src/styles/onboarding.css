@@ -1,5 +1,24 @@
 /* biome-ignore-all lint/style/noDescendingSpecificity: Independent onboarding component sections use scoped selectors and responsive overrides. */
+/*
+ * This page commits to one look rather than following the theme.
+ *
+ * It is a deliberate light/dark split — a dark story panel beside a light setup panel — and both
+ * grounds are fixed. That is a fine choice for a front door, but it means the TEXT colours have
+ * to be fixed too. They were not: `.onboarding` set a hardcoded light background and no colour,
+ * so every heading inherited `body { color: var(--ink) }`, which flips with the theme. In dark
+ * mode the setup panel rendered pale grey text on a near-white ground — the headline
+ * "What are you keeping an eye on?" was very nearly invisible, and so were the company names in
+ * the stock picker. The story panel opposite never had the bug because it sets its own colour.
+ *
+ * The same rule now holds one level down: every element here that paints its own fixed ground
+ * (the picker and mode buttons, the summary card, the illustration, the rule icon) states its
+ * text colour outright instead of inheriting one. Anchoring only `.onboarding` happens to work
+ * today, but it leaves each of those grounds one stray themed override away from the original
+ * bug. The contentless decoration — the progress bars and the choice dot — has no text to
+ * inherit and stays background-only.
+ */
 .onboarding {
+  color: #1e2a20;
   padding: 0;
   max-width: none;
   margin: 0;
@@ -52,6 +71,7 @@
 }
 .onboarding-illustration {
   max-width: 440px;
+  color: #ecf0e5;
   border: 1px solid #536249;
   border-radius: 18px;
   padding: 26px;
@@ -118,6 +138,7 @@
 }
 .onboarding-rule-icon {
   display: grid;
+  color: #263b2d;
   place-items: center;
   width: 38px;
   height: 38px;
@@ -291,6 +312,7 @@
 }
 .onboarding-stocks button {
   display: flex;
+  color: #1e2a20;
   align-items: center;
   padding: 13px;
   gap: 10px;
@@ -330,6 +352,7 @@
 }
 .onboarding-modes button {
   display: flex;
+  color: #1e2a20;
   align-items: center;
   gap: 14px;
   text-align: left;
@@ -385,6 +408,7 @@
 }
 .onboarding-summary {
   display: flex;
+  color: #1e2a20;
   align-items: center;
   gap: 12px;
   border: 1px solid #dce2d5;
