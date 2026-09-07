@@ -1,5 +1,13 @@
-export type { Compiler, Proposal } from "./compiler/anthropic.js";
-export { AnthropicCompiler, ClarificationRequired } from "./compiler/anthropic.js";
+export type { Compiler, CompilerSettings, Proposal, Provider } from "./compiler/index.js";
+export {
+  AnthropicCompiler,
+  ClarificationRequired,
+  createCompiler,
+  DEFAULT_MODELS,
+  GoogleCompiler,
+  OpenAICompiler,
+  PROVIDERS,
+} from "./compiler/index.js";
 export type { Authorization, Commitment, Rendered, ReviewCard } from "./review/index.js";
 export { artifactId, authorizationMessage } from "./review/index.js";
 export type { Caps, Envelope, Intent, Plan, Portfolio, Runtime } from "./strategy.js";

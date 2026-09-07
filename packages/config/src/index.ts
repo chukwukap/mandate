@@ -14,11 +14,22 @@ const envSchema = z.object({
   BASE_RPC_URL: z.url().default("https://mainnet.base.org"),
   ANTHROPIC_API_KEY: z.string().optional(),
   /*
-   * Defaulted, so text authoring needs only a key. Requiring an operator to name a model by hand
-   * meant the feature stayed off for anyone who had not memorised a model id, and the config
-   * refused to start if you set one without the other.
+   * Text authoring works with any of three providers, and needs only a key: models are defaulted
+   * per provider in @mandate/strategy. Whichever key is set turns the feature on; AI_PROVIDER
+   * only matters when several are configured and one has to win.
+   *
+   * OPENAI_BASE_URL is the reason the OpenAI adapter is worth more than its name suggests —
+   * Groq, Together, OpenRouter, DeepSeek, Fireworks and a local Ollama all speak the same
+   * chat-completions shape, so a base URL is the whole of the integration for any of them.
    */
-  ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
+  ANTHROPIC_MODEL: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().optional(),
+  OPENAI_BASE_URL: z.url().optional(),
+  GOOGLE_API_KEY: z.string().optional(),
+  GOOGLE_MODEL: z.string().optional(),
+  GOOGLE_BASE_URL: z.url().optional(),
+  AI_PROVIDER: z.enum(["anthropic", "openai", "google"]).optional(),
   SPENDER_ADDRESS: z
     .string()
     .regex(/^0x[0-9a-fA-F]{40}$/)
@@ -45,8 +56,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new Error("APP_ORIGIN must use HTTP or HTTPS");
   if (!["http:", "https:"].includes(new URL(parsed.BASE_RPC_URL).protocol))
     throw new Error("BASE_RPC_URL must use HTTP or HTTPS");
-  // The model always has a value now, so the only question is whether a key was supplied.
-  // Without one, text authoring is unavailable and the structured builder still works.
+  // Naming a provider whose key is absent is a misconfiguration, not a fallback: silently using
+  // a different vendor than the operator asked for is worse than refusing to start.
+  const aiKeys = {
+    anthropic: parsed.ANTHROPIC_API_KEY,
+    openai: parsed.OPENAI_API_KEY,
+    google: parsed.GOOGLE_API_KEY,
+  } as const;
+  if (parsed.AI_PROVIDER && !aiKeys[parsed.AI_PROVIDER])
+    throw new Error(
+      `AI_PROVIDER is "${parsed.AI_PROVIDER}" but its API key is not set. Set the matching key or unset AI_PROVIDER.`,
+    );
   if (origin.origin !== parsed.APP_ORIGIN || origin.username || origin.password)
     throw new Error("APP_ORIGIN must be an origin without a path or credentials");
   if (parsed.NODE_ENV === "production" && origin.protocol !== "https:")
@@ -71,8 +91,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     domain: origin.host,
     databaseUrl: parsed.DATABASE_URL,
     rpcUrl: parsed.BASE_RPC_URL,
-    anthropicKey: parsed.ANTHROPIC_API_KEY,
-    anthropicModel: parsed.ANTHROPIC_MODEL,
+    ai: {
+      provider: parsed.AI_PROVIDER,
+      anthropicKey: parsed.ANTHROPIC_API_KEY,
+      anthropicModel: parsed.ANTHROPIC_MODEL,
+      openaiKey: parsed.OPENAI_API_KEY,
+      openaiModel: parsed.OPENAI_MODEL,
+      openaiBaseUrl: parsed.OPENAI_BASE_URL,
+      googleKey: parsed.GOOGLE_API_KEY,
+      googleModel: parsed.GOOGLE_MODEL,
+      googleBaseUrl: parsed.GOOGLE_BASE_URL,
+    },
     spenderAddress: parsed.SPENDER_ADDRESS,
     privyAppId: parsed.PRIVY_APP_ID,
     privyAppSecret: parsed.PRIVY_APP_SECRET,

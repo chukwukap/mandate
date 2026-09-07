@@ -87,18 +87,18 @@ test("a blank variable behaves as absent, not as an empty value", () => {
   // which is precisely how a blank in a deployment template takes an API down.
   expect(config.devCountry).toBeUndefined();
   expect(config.spenderAddress).toBeUndefined();
-  expect(config.anthropicKey).toBeUndefined();
-  // The model is defaulted, so it is never absent. What decides whether text authoring runs is
-  // the key, which is: main.ts builds the compiler only when one is present.
-  expect(config.anthropicModel).toBe("claude-sonnet-5");
+  expect(config.ai.anthropicKey).toBeUndefined();
+  // The model is absent here and defaulted per provider inside @mandate/strategy, so a key is
+  // the only thing that decides whether text authoring runs.
+  expect(config.ai.anthropicModel).toBeUndefined();
   expect(config.eligibleCountries).toEqual([]);
   expect(config.trustedProxyIps).toEqual([]);
 
-  // And the normalisation feeds the default: a blank model is an absent model, so the key alone
-  // configures text authoring rather than calling Anthropic with an empty model id.
+  // And the normalisation feeds the default: a blank model is an absent model, so the compiler
+  // falls back to the provider's default rather than being asked for the model named "".
   expect(
-    loadConfig(env({ ANTHROPIC_API_KEY: "sk-ant-x", ANTHROPIC_MODEL: "" })).anthropicModel,
-  ).toBe("claude-sonnet-5");
+    loadConfig(env({ ANTHROPIC_API_KEY: "sk-ant-x", ANTHROPIC_MODEL: "" })).ai.anthropicModel,
+  ).toBeUndefined();
 });
 
 /**
@@ -244,19 +244,19 @@ test("text authoring needs only a key, and the model has a working default", () 
   // one without the other. That made an operator name a model by hand to turn the feature on,
   // which is why it stayed off. The key is the only thing they actually have to supply.
   const keyOnly = loadConfig(env({ ANTHROPIC_API_KEY: "sk-ant-x" }));
-  expect(keyOnly.anthropicKey).toBe("sk-ant-x");
-  expect(keyOnly.anthropicModel).toBe("claude-sonnet-5");
+  expect(keyOnly.ai.anthropicKey).toBe("sk-ant-x");
+  expect(keyOnly.ai.anthropicModel).toBeUndefined();
 
   // A model without a key is not an error either: main.ts builds the compiler only when the key
   // is present, so authoring stays off and the structured builder is unaffected.
-  expect(loadConfig(env({ ANTHROPIC_MODEL: "claude-opus-4" })).anthropicKey).toBeUndefined();
+  expect(loadConfig(env({ ANTHROPIC_MODEL: "claude-opus-4" })).ai.anthropicKey).toBeUndefined();
 
   const both = loadConfig(env({ ANTHROPIC_API_KEY: "sk-ant-x", ANTHROPIC_MODEL: "claude-opus-4" }));
-  expect(both.anthropicKey).toBe("sk-ant-x");
-  expect(both.anthropicModel).toBe("claude-opus-4");
+  expect(both.ai.anthropicKey).toBe("sk-ant-x");
+  expect(both.ai.anthropicModel).toBe("claude-opus-4");
   const neither = loadConfig(env());
-  expect(neither.anthropicKey).toBeUndefined();
-  expect(neither.anthropicModel).toBe("claude-sonnet-5");
+  expect(neither.ai.anthropicKey).toBeUndefined();
+  expect(neither.ai.anthropicModel).toBeUndefined();
 });
 
 test("PORT is a whole port number, and 0 stays available for ephemeral binds", () => {
@@ -306,10 +306,17 @@ test("the loaded object is the flat, derived surface the rest of the API reads",
     domain: "localhost:3001",
     databaseUrl: required.DATABASE_URL,
     rpcUrl: "https://mainnet.base.org",
-    anthropicKey: undefined,
-    // Defaulted, so text authoring needs only a key. The compiler is still off without one —
-    // apps/api/src/main.ts builds it only when the key is present.
-    anthropicModel: "claude-sonnet-5",
+    ai: {
+      provider: undefined,
+      anthropicKey: undefined,
+      anthropicModel: undefined,
+      openaiKey: undefined,
+      openaiModel: undefined,
+      openaiBaseUrl: undefined,
+      googleKey: undefined,
+      googleModel: undefined,
+      googleBaseUrl: undefined,
+    },
     spenderAddress: undefined,
     privyAppId: "app-id",
     privyAppSecret: "privy-secret",

@@ -2,7 +2,7 @@ import { CachedAuthenticator, PrivyAuthenticator, privyReader } from "@mandate/a
 import { loadConfig } from "@mandate/config";
 import { connectDatabase, databaseReady, Repository, workerAvailable } from "@mandate/database";
 import { ASSETS, BaseReader } from "@mandate/evm";
-import { AnthropicCompiler } from "@mandate/strategy";
+import { createCompiler } from "@mandate/strategy";
 import { buildApp } from "./app.js";
 
 async function main() {
@@ -33,10 +33,9 @@ async function main() {
         repository,
         chain,
         assets: ASSETS,
-        compiler:
-          config.anthropicKey && config.anthropicModel
-            ? new AnthropicCompiler(config.anthropicKey, config.anthropicModel)
-            : undefined,
+        // Undefined when no key is configured, which the draft route reports as text authoring
+        // being unavailable while the structured builder carries on working.
+        compiler: createCompiler(config.ai),
       },
     });
     app.addHook("onClose", () => connection.close());
