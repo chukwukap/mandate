@@ -11,6 +11,7 @@ import { Problem } from "../../packages/contracts/src/index.js";
 import { type Database, Repository, schema } from "../../packages/database/src/index.js";
 import { ASSETS } from "../../packages/evm/src/addresses/index.js";
 import { permissionHash } from "../../packages/evm/src/permissions/index.js";
+import type { Compiler } from "../../packages/strategy/src/index.js";
 import { units } from "../../packages/strategy/src/index.js";
 import { B20_ASSETS, FakeChainClient, USDC } from "../fixtures/chain/index.js";
 
@@ -198,6 +199,11 @@ export type StartOptions = {
   workerAvailable?: boolean;
   /** Onchain wallet kinds by lowercased address. Unnamed addresses are Base accounts. */
   walletKinds?: Readonly<Record<string, Identity["walletKind"]>>;
+  /**
+   * The natural-language strategy compiler. Absent by default, which is the deployment without
+   * an Anthropic key, and is why POST /v1/strategies/draft answers 503 to a prompt.
+   */
+  compiler?: Compiler | undefined;
 };
 
 /**
@@ -222,7 +228,12 @@ export async function startContractApi(options: StartOptions = {}): Promise<Cont
     databaseReady: async () => options.databaseReady ?? true,
     workerAvailable: async () => options.workerAvailable ?? true,
     chainReady: () => chain.ready(),
-    trading: { repository: repo, chain, assets: CATALOGUE },
+    trading: {
+      repository: repo,
+      chain,
+      assets: CATALOGUE,
+      ...(options.compiler ? { compiler: options.compiler } : {}),
+    },
     ...(options.receipts ? { executions: { receipts: options.receipts } } : {}),
   };
   const app = await buildApp(deps);

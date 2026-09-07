@@ -1,7 +1,16 @@
 "use client";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  Loader2,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "../../components/dialog";
+import { ApiError } from "../../lib/api";
 import { companies, stocks } from "../market/catalog";
 import { draftInput, type StrategyForm } from "./authoring";
 import type { Draft, Strategy } from "./types";
@@ -40,18 +49,30 @@ export function StrategyEditor({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /**
+   * The compiler asking for detail, which is not a failure.
+   *
+   * When a prompt leaves out something essential — no price, no budget, an instrument that is
+   * not listed — the compiler calls `explain_missing` rather than inventing a number, and the
+   * API turns that into a 422 `clarification-required`. Rendering it in the red error banner
+   * told the user their request had broken when it had only been incomplete, so it gets its own
+   * calmer treatment beside the prompt they are editing.
+   */
+  const [clarification, setClarification] = useState("");
   const update = <K extends keyof StrategyForm>(key: K, value: StrategyForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
   const name = form.name.trim() || `${companies[form.symbol]?.name ?? form.symbol} entry`;
   const review = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
+    setClarification("");
     setBusy(true);
     try {
       const input = draftInput({ ...form, name });
       setDraft(await call<Draft>("/v1/strategies/draft", input));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't prepare the review.");
+      if (e instanceof ApiError && e.code === "clarification-required") setClarification(e.message);
+      else setError(e instanceof Error ? e.message : "Couldn't prepare the review.");
     } finally {
       setBusy(false);
     }
@@ -348,6 +369,12 @@ export function StrategyEditor({
               ? "Get a signal when your rule fires. You stay in control."
               : "A compatible smart wallet and spending approval are required."}
           </p>
+          {clarification && (
+            <p className="form-clarify" role="status">
+              <Sparkles size={15} />
+              {clarification}
+            </p>
+          )}
           {error && (
             <p role="alert" className="form-error">
               {error}

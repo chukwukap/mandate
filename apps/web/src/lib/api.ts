@@ -20,8 +20,30 @@ export async function request<T>(
     cache: "no-store",
   });
   const value = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(value?.detail ?? "Couldn't reach Mandate. Please try again.");
+  if (!response.ok) {
+    // The Problem's own `code` travels with the error. Without it every failure looks the same
+    // to a caller, and some of them are not failures: a 422 `clarification-required` is the
+    // strategy compiler asking a question, which belongs on screen as a prompt to add detail
+    // rather than as a red banner saying something went wrong.
+    throw new ApiError(
+      value?.detail ?? "Couldn't reach Mandate. Please try again.",
+      value?.code,
+      response.status,
+    );
+  }
   return value as T;
+}
+
+/** An error that remembers which Problem it came from. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | undefined,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
 }
 
 export type ApiCall = <T>(path: string, body?: unknown) => Promise<T>;

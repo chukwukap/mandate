@@ -2863,3 +2863,27 @@ kbd,
 .advanced-limits .form-row {
   margin-top: 18px;
 }
+
+/*
+ * The strategy compiler asking for a missing detail. Deliberately not styled as an error: the
+ * request was understood and is simply incomplete, and the red banner beside it is reserved for
+ * things that actually went wrong.
+ */
+.form-clarify {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 12px 0 0;
+  padding: 11px 13px;
+  border-radius: 9px;
+  background: var(--sage);
+  border: 1px solid var(--accent-line-strong);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.form-clarify svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--green-ink);
+}

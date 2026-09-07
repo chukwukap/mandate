@@ -13,7 +13,12 @@ const envSchema = z.object({
   DATABASE_URL: z.url(),
   BASE_RPC_URL: z.url().default("https://mainnet.base.org"),
   ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_MODEL: z.string().optional(),
+  /*
+   * Defaulted, so text authoring needs only a key. Requiring an operator to name a model by hand
+   * meant the feature stayed off for anyone who had not memorised a model id, and the config
+   * refused to start if you set one without the other.
+   */
+  ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
   SPENDER_ADDRESS: z
     .string()
     .regex(/^0x[0-9a-fA-F]{40}$/)
@@ -40,8 +45,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new Error("APP_ORIGIN must use HTTP or HTTPS");
   if (!["http:", "https:"].includes(new URL(parsed.BASE_RPC_URL).protocol))
     throw new Error("BASE_RPC_URL must use HTTP or HTTPS");
-  if (Boolean(parsed.ANTHROPIC_API_KEY) !== Boolean(parsed.ANTHROPIC_MODEL))
-    throw new Error("Set both ANTHROPIC_API_KEY and ANTHROPIC_MODEL for text authoring");
+  // The model always has a value now, so the only question is whether a key was supplied.
+  // Without one, text authoring is unavailable and the structured builder still works.
   if (origin.origin !== parsed.APP_ORIGIN || origin.username || origin.password)
     throw new Error("APP_ORIGIN must be an origin without a path or credentials");
   if (parsed.NODE_ENV === "production" && origin.protocol !== "https:")
