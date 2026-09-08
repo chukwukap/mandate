@@ -372,6 +372,10 @@ export function Workspace() {
         <StrategyEditor
           symbol={selected}
           initialMode={model.initialMode}
+          // The builder asked for a target price and showed nothing to judge it against. These
+          // already existed on the model and were simply never passed down.
+          price={model.price}
+          priceStale={model.priceStale}
           onClose={() => setEditor(false)}
           call={call}
           sign={session.sign}

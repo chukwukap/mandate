@@ -21,7 +21,21 @@ export type Strategy = {
 export type Draft = {
   artifact_id: string;
   name: string;
+  /** The bytes the signature covers. `confirm_message` wraps this with header lines. */
   render_text: string;
   confirm_message: string;
   expires_at: string;
+  /**
+   * The structured review the API has always returned and the web has never read.
+   *
+   * Produced by the same deterministic renderer whose sha256 folds into `artifact_id`, so a
+   * review built from these sections cannot disagree with what was validated and signed.
+   * Optional because an older API may not send it, in which case the exact text still shows.
+   */
+  card?: {
+    authority: string[];
+    parameters: string[];
+    rules: string[];
+    cautions: string[];
+  };
 };

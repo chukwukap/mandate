@@ -8,12 +8,18 @@ export function Dialog({
   children,
   onClose,
   wide = false,
+  size,
 }: {
   title: string;
   eyebrow?: string;
   children: ReactNode;
   onClose(): void;
   wide?: boolean;
+  /**
+   * "xl" is for a two-column body — a form beside a live summary, the way a checkout is laid
+   * out. It supersedes `wide`, which stays for the single-column dialogs that already use it.
+   */
+  size?: "wide" | "xl";
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -24,7 +30,7 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      className={`dialog ${wide ? "dialog-wide" : ""}`}
+      className={`dialog ${size === "xl" ? "dialog-xl" : size === "wide" || wide ? "dialog-wide" : ""}`}
       onCancel={onClose}
       onKeyDown={(event) => {
         if (event.key === "Escape") onClose();

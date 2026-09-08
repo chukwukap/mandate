@@ -3142,3 +3142,869 @@ kbd,
   color: var(--accent-ink);
   opacity: 0.75;
 }
+/* Strategy builder ------------------------------------------------------------------------ */
+/*
+   The rules for this surface, in priority order:
+   1. Whitespace and type carry the hierarchy. Borders are for inputs and the one summary card.
+   2. One accent, used for two things only: what is selected, and what is live.
+   3. The number the user is typing is the biggest thing near it.
+   4. Everything is a token, so it renders correctly in either theme without a second thought.
+*/
+.dialog-xl {
+  width: 960px;
+}
+@keyframes step-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.step-enter {
+  animation: step-rise 0.32s var(--ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .step-enter {
+    animation: none;
+  }
+}
+
+/* Progress: three quiet marks, not three pills. */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin: 0;
+  padding: 0 28px 20px;
+  list-style: none;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text-4);
+}
+.stepper li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stepper li i {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--text-3);
+}
+.stepper li.current {
+  color: var(--ink);
+}
+.stepper li.current i {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.stepper li.done {
+  color: var(--text-3);
+}
+.stepper li.done i {
+  border-color: var(--accent-line-strong);
+  color: var(--accent-ink);
+}
+
+.eyebrow-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ---- Step 1: a choice, not a form ---------------------------------------------------- */
+.choose {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 22px 28px 28px;
+}
+.recipe-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.recipe {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px 8px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.15s var(--ease);
+}
+.recipe svg {
+  color: var(--accent-ink);
+}
+.recipe:hover {
+  border-color: var(--accent-line-strong);
+  background: var(--sage-soft);
+  transform: translateY(-1px);
+}
+.shape-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.shape-list .eyebrow-label {
+  margin-bottom: 6px;
+}
+.shape-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto 16px;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 12px 12px 10px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.shape-row:hover,
+.shape-row:focus-visible {
+  background: var(--sage-soft);
+  border-color: var(--sage-line);
+  outline: none;
+}
+.shape-row-glyph {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--sage);
+  color: var(--accent-ink);
+}
+.shape-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.shape-row-text strong {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.shape-row-text > span {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.shape-row-text em {
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--danger-ink);
+}
+.shape-row-tag {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-3);
+}
+.shape-row-go {
+  color: var(--text-4);
+}
+.describe-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: center;
+  padding: 8px 2px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.describe-link:hover {
+  color: var(--accent-ink);
+}
+
+/* ---- Step 2: form beside its consequence -------------------------------------------- */
+.setup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 32px;
+  padding: 22px 28px 28px;
+}
+.setup-main {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  min-width: 0;
+}
+.setup-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .dialog-xl {
+    width: 700px;
+  }
+  .setup {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chosen {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px 10px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--sage-line);
+  background: var(--sage-soft);
+  text-align: left;
+  cursor: pointer;
+}
+.chosen:hover .chosen-change {
+  color: var(--accent-ink);
+}
+.chosen-glyph {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--sage);
+  color: var(--accent-ink);
+}
+.chosen-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.chosen-text strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.chosen-text em {
+  font-style: normal;
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.chosen-change {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.block > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.block > header h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+.block > header span {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+/* Fields: a label, a line, and the value. No box inside a box. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.field > span {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.field > span em {
+  margin-left: 6px;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--text-4);
+}
+.field-input {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  border-bottom: 1px solid var(--line-strong);
+  padding-bottom: 6px;
+  transition: border-color 0.15s;
+}
+.field-input:focus-within {
+  border-color: var(--accent);
+}
+.field-input i {
+  font-style: normal;
+  font-size: 14px;
+  color: var(--text-3);
+}
+.field-input b {
+  flex: none;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.setup .field-input input,
+.setup textarea.prompt {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 15px;
+  color: var(--ink);
+  outline: none;
+  box-shadow: none;
+}
+.setup .field-input input::placeholder {
+  color: var(--text-4);
+}
+.field.big .field-input i {
+  font-size: 18px;
+}
+.setup .field.big .field-input input {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.setup textarea.prompt {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.setup textarea.prompt:focus {
+  border-color: var(--accent);
+}
+.money {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.trio {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+@media (max-width: 560px) {
+  .money,
+  .trio {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Segmented control: the pattern every good money app uses in place of a <select>. */
+.segment {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--soft);
+}
+.segment button {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
+}
+.segment button[aria-pressed="true"] {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+.segment.big {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.segment.big button {
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Stocks: rings, not a grid of boxes. Selection is a ring and a tick, in the accent. */
+.stock-rings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 10px;
+}
+.stock-ring {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 10.5px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.stock-ring-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  transition:
+    border-color 0.15s,
+    transform 0.15s var(--ease);
+}
+.stock-ring:hover .stock-ring-mark {
+  transform: translateY(-1px);
+  border-color: var(--line-strong);
+}
+.stock-ring.on {
+  color: var(--ink);
+}
+.stock-ring.on .stock-ring-mark {
+  border-color: var(--accent);
+}
+.stock-ring-mark i {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--raised);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* A price beside the price it is judged against. */
+.prices {
+  display: grid;
+  gap: 18px;
+}
+.price {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.price-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.price-head strong {
+  font-weight: 500;
+  color: var(--ink);
+}
+.price-head em {
+  font-style: normal;
+  color: var(--text-3);
+}
+.price-now {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.price-now b {
+  font-weight: 500;
+  color: var(--ink);
+}
+.price-now.stale {
+  color: var(--text-4);
+}
+.price-delta {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.price-delta.down {
+  color: var(--danger-ink);
+}
+.price-delta.up {
+  color: var(--accent-ink);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chips button {
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.chips button:hover {
+  border-color: var(--accent-line-strong);
+}
+.chips button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--sage);
+  color: var(--accent-ink);
+}
+.rungs {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+.rungs li {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.rungs li:nth-child(odd) {
+  background: var(--sage-soft);
+}
+.rungs em {
+  font-style: normal;
+  color: var(--text-2);
+}
+.rungs strong {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.guardrails summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  list-style: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.guardrails summary::-webkit-details-marker {
+  display: none;
+}
+.guardrails summary em {
+  flex: 1;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.guardrails summary svg {
+  color: var(--text-4);
+  transition: transform 0.2s var(--ease);
+}
+.guardrails[open] summary svg {
+  transform: rotate(180deg);
+}
+.guardrails-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px 20px;
+  padding: 16px 0 4px;
+}
+
+/* The consequence card. The one bordered surface on the screen, so the eye lands on it. */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid var(--sage-line);
+  background: var(--paper);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+}
+.preview-sentence {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.preview-today {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.preview-today i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+.preview-today.on {
+  color: var(--accent-ink);
+}
+.preview-today.on i {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.preview-rows {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.preview-rows div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+.preview-rows dt {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.preview-rows dd {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: right;
+  color: var(--ink);
+}
+.preview-warn {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 2px 0 0;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: var(--danger-soft);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--danger-ink);
+}
+.preview-warn svg {
+  flex: none;
+  margin-top: 2px;
+}
+.preview-empty {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+.actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.setup-side .actions .button.primary {
+  flex: 1;
+  justify-content: center;
+}
+
+/* ---- Step 3: the worst case first, in the largest type on the screen --------------- */
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 28px 28px;
+}
+.review-worst {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: var(--sage);
+}
+.review-worst > span {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.review-worst strong {
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--accent-ink);
+}
+.review-worst em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.review-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.review-block h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.review-block ul,
+.review-block ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.review-block ol {
+  counter-reset: grant;
+}
+.review-block ol li {
+  counter-increment: grant;
+  padding-left: 26px;
+  position: relative;
+}
+.review-block ol li::before {
+  content: counter(grant);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--soft);
+  font-size: 10px;
+  color: var(--text-2);
+}
+.review-block li {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.review-block li strong {
+  font-weight: 500;
+  color: var(--ink);
+}
+.review-block.cautions li {
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+.review-exact summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.review-exact summary::-webkit-details-marker {
+  display: none;
+}
+.review-exact .signed-review {
+  margin-top: 10px;
+}
+
+/* The card wrapper had no gap, so its sections sat on top of one another. */
+.review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+/* The rules are the engine's own text, verbatim, because that is what the signature covers and
+   a paraphrase could drift from it. They are set as rows rather than prose so they read as
+   "the exact rules" instead of as sentences someone forgot to write properly. */
+.review-rules li {
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: var(--soft);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+  word-break: break-word;
+}

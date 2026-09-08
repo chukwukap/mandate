@@ -1,63 +1,88 @@
 "use client";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Check,
   ChevronDown,
+  ChevronRight,
   Loader2,
-  ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog } from "../../components/dialog";
 import { ApiError } from "../../lib/api";
 import { companies, stocks } from "../market/catalog";
 import { StockLogo } from "../market/stock-logo";
-import { draftInput, ladderRungs, MAX_ASSETS, type StrategyForm, scaleAmount } from "./authoring";
+import { draftInput, ladderRungs, MAX_ASSETS, type StrategyForm } from "./authoring";
+import { project } from "./plan-preview";
+import { PriceField } from "./price-field";
+import { ReviewCard } from "./review-card";
+import { ShapeGlyph } from "./shape-glyph";
+import { SHAPES, type ShapeId, STARTERS, shapeById } from "./shapes";
 import type { Draft, Strategy } from "./types";
 
-/**
- * The five rule shapes, each with the name it is known by elsewhere.
- *
- * `also` exists because the plain-English titles are not what someone arrives looking for. A
- * person who wants a martingale searches for "martingale", and naming the shape only "Step
- * ladder" made an implemented strategy look absent to the person who asked for it. The trade is
- * deliberate: the TITLE stays honest about what the thing does, and the subtitle carries the
- * word people know — with the missing half named right there, so the familiar term never
- * implies an exit this system cannot perform.
- */
-const SHAPES = [
-  {
-    id: "levels",
-    title: "A price for each",
-    also: "Limit buy",
-    blurb: "Buy when a stock crosses the level you set for it.",
-  },
-  {
-    id: "discount",
-    title: "Cheaper than the reference",
-    also: "Basis trade",
-    blurb: "Buy whichever one the pool is discounting against Chainlink.",
-  },
-  {
-    id: "recurring",
-    title: "Recurring buys",
-    also: "DCA",
-    blurb: "The same amount on a fixed schedule, whatever the price.",
-  },
-  {
-    id: "ladder",
-    title: "Step ladder",
-    also: "Martingale-style scale-in",
-    blurb: "Buy more, and larger, each time it falls another step. No automatic exit.",
-  },
-  {
-    id: "rebalance",
-    title: "Keep balanced",
-    also: "Rebalancing",
-    blurb: "Top up whichever holding has fallen behind the others.",
-  },
-] as const;
+/** Blank enough to be honest, defaulted enough to be usable. */
+function emptyForm(symbol: string, mode: "manual" | "auto"): StrategyForm {
+  return {
+    name: "",
+    symbols: [symbol],
+    shape: "levels",
+    direction: "lt",
+    thresholds: {},
+    discountBps: "20",
+    cadenceHours: "168",
+    ladderStart: "",
+    ladderStepPct: "4",
+    ladderMultiple: "1.6",
+    ladderRungs: "4",
+    amount: "",
+    budget: "",
+    days: "30",
+    mode,
+    authoring: "rule",
+    prompt: "",
+    dailyBudget: "",
+    maxOrders: "10",
+    cooldownMinutes: "60",
+    slippageBps: "50",
+  };
+}
+
+const money = (value: string) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed)
+    ? `$${parsed.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+    : "—";
+};
+
+/** A row of exclusive options. The pattern every good money app uses instead of a <select>. */
+function Segment<T extends string>({
+  value,
+  options,
+  onChange,
+  big = false,
+}: {
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange(value: T): void;
+  big?: boolean;
+}) {
+  return (
+    <div className={`segment ${big ? "big" : ""}`}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function StrategyEditor({
   symbol,
@@ -66,6 +91,8 @@ export function StrategyEditor({
   onCreate,
   call,
   sign,
+  price,
+  priceStale,
 }: {
   symbol: string;
   initialMode?: "manual" | "auto";
@@ -73,55 +100,87 @@ export function StrategyEditor({
   onCreate(strategy?: Strategy): void;
   call<T>(path: string, body?: unknown): Promise<T>;
   sign(message: string): Promise<`0x${string}`>;
+  /** Today's oracle price, so a threshold can be judged against something. */
+  price(symbol: string): string | undefined;
+  /** True when that price is a held close rather than a live reading — say so, do not hide it. */
+  priceStale(symbol: string): boolean;
 }) {
-  const [form, setForm] = useState<StrategyForm>({
-    name: "",
-    symbols: [symbol],
-    shape: "levels",
-    direction: "lt",
-    thresholds: {},
-    discountBps: "20",
-    cadenceHours: "24",
-    ladderStart: "",
-    ladderStepPct: "3",
-    ladderMultiple: "1.5",
-    ladderRungs: "4",
-    amount: "",
-    budget: "",
-    days: "30",
-    mode: initialMode,
-    authoring: "rule",
-    prompt: "",
-    dailyBudget: "",
-    maxOrders: "10",
-    cooldownMinutes: "60",
-    slippageBps: "50",
-  });
+  /**
+   * Three screens, and the first one asks a question rather than presenting a form.
+   *
+   * Every platform researched makes the bot type the entire first screen with nothing else on
+   * it, and the reason is legible here: until the shape is known, none of the other fields mean
+   * anything definite. "Amount" means five different things across the five shapes.
+   */
+  const [step, setStep] = useState<"shape" | "setup">("shape");
+  const [form, setForm] = useState<StrategyForm>(() => emptyForm(symbol, initialMode));
+  const [cash, setCash] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  /**
-   * The compiler asking for detail, which is not a failure.
-   *
-   * When a prompt leaves out something essential — no price, no budget, an instrument that is
-   * not listed — the compiler calls `explain_missing` rather than inventing a number, and the
-   * API turns that into a 422 `clarification-required`. Rendering it in the red error banner
-   * told the user their request had broken when it had only been incomplete, so it gets its own
-   * calmer treatment beside the prompt they are editing.
-   */
+  /** The compiler asking for detail, which is not a failure and must not look like one. */
   const [clarification, setClarification] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void call<{ cash: string }>("/v1/portfolio")
+      .then((p) => {
+        if (!cancelled) setCash(p.cash);
+      })
+      // An affordability hint is an assist, not a gate.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [call]);
+
   const update = <K extends keyof StrategyForm>(key: K, value: StrategyForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
-  /**
-   * Toggling, with a floor of one.
-   *
-   * An empty basket has no valid outcome — every path from here ends in "Choose at least one
-   * stock" on submit — so the last selected asset refuses to turn itself off rather than letting
-   * the form reach a state it can only fail from.
-   */
+
+  const shape = shapeById(form.shape);
+
+  const chooseShape = (id: ShapeId) => {
+    setForm((current) => ({
+      ...current,
+      shape: id,
+      authoring: "rule",
+      // A ladder addresses one stock by its rung indexes; keep the first if a basket was chosen.
+      symbols: shapeById(id).single ? current.symbols.slice(0, 1) : current.symbols,
+      ladderStart:
+        id === "ladder" && !current.ladderStart
+          ? (price(current.symbols[0] ?? symbol) ?? "")
+          : current.ladderStart,
+    }));
+    setStep("setup");
+  };
+
+  const applyStarter = (id: string) => {
+    const starter = STARTERS.find((s) => s.id === id);
+    if (!starter) return;
+    const anchor = starter.symbols[0] ?? symbol;
+    setForm((current) => ({
+      ...current,
+      ...starter.form,
+      shape: starter.shape,
+      authoring: "rule",
+      symbols: [...starter.symbols],
+      // Prices come from today's market, never from a constant written weeks ago.
+      ladderStart: starter.shape === "ladder" ? (price(anchor) ?? "") : current.ladderStart,
+      thresholds:
+        starter.shape === "levels" && price(anchor)
+          ? { [anchor]: (Number(price(anchor)) * 0.95).toFixed(2) }
+          : current.thresholds,
+      name: starter.title,
+    }));
+    setStep("setup");
+  };
+
   const toggle = (ticker: string) =>
     setForm((current) => {
+      if (shapeById(current.shape).single) return { ...current, symbols: [ticker] };
       const selected = current.symbols.includes(ticker);
+      // Never empty and never over the machine cap: the picker refuses rather than letting the
+      // form reach a state whose only outcome is an error on submit.
       if (selected && current.symbols.length === 1) return current;
       if (!selected && current.symbols.length >= MAX_ASSETS) return current;
       return {
@@ -131,40 +190,36 @@ export function StrategyEditor({
           : [...current.symbols, ticker],
       };
     });
-  // Keyed by symbol, so unpicking one stock and picking it again brings its price back rather
-  // than sliding the next stock's price into its place.
+
   const setThreshold = (ticker: string, value: string) =>
     setForm((current) => ({ ...current, thresholds: { ...current.thresholds, [ticker]: value } }));
-  const basketDay = scaleAmount(form.amount, form.symbols.length);
-  /**
-   * The ladder as it will actually be bought. Derived rather than stored so it cannot disagree
-   * with what `draftInput` sends, and null while the inputs are still being typed — a preview
-   * that shows "NaN" mid-keystroke is worse than one that waits.
-   */
-  const preview = (() => {
-    if (form.shape !== "ladder" || form.authoring !== "rule") return null;
-    try {
-      const rungs = ladderRungs(form);
-      const total = rungs.reduce((sum, r) => sum + Number(r.amount), 0);
-      return { rungs, length: rungs.length, total: total.toFixed(2) };
-    } catch {
-      return null;
-    }
-  })();
+
   const first = form.symbols[0] ?? symbol;
   const name =
     form.name.trim() ||
     (form.symbols.length === 1
-      ? `${companies[first]?.name ?? first} entry`
+      ? `${companies[first]?.name ?? first} ${shape.also.toLowerCase()}`
       : `${form.symbols.length} stocks`);
+
+  /** Live, from today's numbers. A forward projection — never a claim about the past. */
+  const projection = project(form, price, cash);
+
+  const rungs = (() => {
+    if (form.shape !== "ladder" || form.authoring !== "rule") return null;
+    try {
+      return ladderRungs(form);
+    } catch {
+      return null;
+    }
+  })();
+
   const review = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
     setClarification("");
     setBusy(true);
     try {
-      const input = draftInput({ ...form, name });
-      setDraft(await call<Draft>("/v1/strategies/draft", input));
+      setDraft(await call<Draft>("/v1/strategies/draft", draftInput({ ...form, name })));
     } catch (e) {
       if (e instanceof ApiError && e.code === "clarification-required") setClarification(e.message);
       else setError(e instanceof Error ? e.message : "Couldn't prepare the review.");
@@ -172,6 +227,7 @@ export function StrategyEditor({
       setBusy(false);
     }
   };
+
   const save = async () => {
     if (!draft) return;
     setBusy(true);
@@ -186,493 +242,576 @@ export function StrategyEditor({
       setBusy(false);
     }
   };
+
+  const stepIndex = draft ? 2 : step === "shape" ? 0 : 1;
+  const worstCase =
+    form.budget && form.days
+      ? {
+          total: money(form.budget),
+          expires: new Date(Date.now() + Number(form.days) * 86_400_000).toLocaleDateString(
+            undefined,
+            { day: "numeric", month: "long", year: "numeric" },
+          ),
+        }
+      : null;
+
+  const stepper = (
+    <ol className="stepper" aria-label="Progress">
+      {["Choose", "Set up", "Review"].map((label, index) => (
+        <li
+          key={label}
+          className={index < stepIndex ? "done" : index === stepIndex ? "current" : ""}
+          aria-current={index === stepIndex ? "step" : undefined}
+        >
+          <i>{index < stepIndex ? <Check size={11} /> : index + 1}</i>
+          {label}
+        </li>
+      ))}
+    </ol>
+  );
+
   return (
     <Dialog
-      title={draft ? "One last look." : "Make your next move."}
-      eyebrow={draft ? "REVIEW YOUR STRATEGY" : "NEW STRATEGY"}
+      title={draft ? "One last look." : step === "shape" ? "What should it do?" : "Set it up."}
+      eyebrow="NEW STRATEGY"
       onClose={onClose}
+      size={draft || step === "shape" ? "wide" : "xl"}
     >
-      <div className="steps">
-        <span className="done">
-          <span>{draft ? <Check size={12} /> : "1"}</span>Set your rule
-        </span>
-        <i />
-        <span className={draft ? "done" : ""}>
-          <span>2</span>Review & save
-        </span>
-      </div>
+      {stepper}
+
       {draft ? (
-        <div className="review-body">
-          <div className="review-title">
-            <ShieldCheck size={24} />
-            <div>
-              <h3>{draft.name}</h3>
-              <p>Your wallet signs this exact review.</p>
-            </div>
-          </div>
-          <pre className="signed-review">{draft.render_text}</pre>
-          <p className="helper">
-            Saved strategies start paused.
-            {form.mode === "auto" && " Automatic mode needs a separate spending approval."}
-          </p>
+        <div className="review step-enter">
+          <ReviewCard draft={draft} worstCase={worstCase} automatic={form.mode === "auto"} />
           {error && (
             <p className="form-error" role="alert">
               {error}
             </p>
           )}
-          <div className="dialog-actions">
-            <button
-              type="button"
-              className="button secondary"
-              disabled={busy}
-              onClick={() => setDraft(null)}
-            >
-              <ArrowLeft size={16} />
-              Edit
+          <div className="actions">
+            <button type="button" className="button secondary" onClick={() => setDraft(null)}>
+              <ArrowLeft size={15} /> Back
             </button>
             <button type="button" className="button primary" disabled={busy} onClick={save}>
-              {busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} {"Sign & save"}
+              {busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />}
+              {form.mode === "auto" ? "Sign & turn it on" : "Sign & watch"}
             </button>
           </div>
         </div>
-      ) : (
-        <form onSubmit={review} className="editor-form">
-          <fieldset className="authoring-switch">
-            <legend>Build your strategy</legend>
-            <button
-              type="button"
-              aria-pressed={form.authoring === "rule"}
-              className={form.authoring === "rule" ? "active" : ""}
-              onClick={() => update("authoring", "rule")}
-            >
-              Price rule
-            </button>
-            <button
-              type="button"
-              aria-pressed={form.authoring === "text"}
-              className={form.authoring === "text" ? "active" : ""}
-              onClick={() => update("authoring", "text")}
-            >
-              Describe a strategy
-            </button>
-          </fieldset>
-          <label>
-            Strategy name <span className="optional">Optional</span>
-            <input
-              value={form.name}
-              maxLength={100}
-              onChange={(e) => update("name", e.target.value)}
-              placeholder="Give this one a name"
-              autoComplete="off"
-            />
-          </label>
-          <div className="form-section">
-            <span className="field-label">
-              {form.authoring === "rule" ? "Watch these stocks" : "Stocks"}
-              {form.symbols.length > 1 ? (
-                <span className="field-count">{form.symbols.length} selected</span>
-              ) : null}
-            </span>
-            <div className="asset-options">
-              {stocks.map((ticker) => {
-                const selected = form.symbols.includes(ticker);
-                return (
-                  <button
-                    key={ticker}
-                    type="button"
-                    aria-pressed={selected}
-                    className={selected ? "selected" : ""}
-                    onClick={() => toggle(ticker)}
-                  >
-                    {/* The catalogue's own mark, with the coloured initial as its fallback.
-                        This picker used to hand-render the initial and never reach for the
-                        image at all, which is why every other asset row in the app had a logo
-                        and this one did not. */}
-                    <StockLogo symbol={ticker} small />
-                    {ticker.replace("c", "")}
-                  </button>
-                );
-              })}
+      ) : step === "shape" ? (
+        <div className="choose step-enter">
+          <div className="recipes">
+            <span className="eyebrow-label">Try one</span>
+            <div className="recipe-row">
+              {STARTERS.map((starter) => (
+                <button
+                  key={starter.id}
+                  type="button"
+                  className="recipe"
+                  onClick={() => applyStarter(starter.id)}
+                >
+                  <ShapeGlyph shape={starter.shape} size={26} />
+                  <span>{starter.title}</span>
+                </button>
+              ))}
             </div>
-            <span className="helper">
-              Pick more than one and each stock gets its own rule, evaluated independently — one
-              triggering never holds up another.
-            </span>
           </div>
-          {form.authoring === "rule" ? (
-            <>
-              <div className="form-section">
-                <span className="field-label">
-                  Choose a strategy
-                  <span className="field-count">pick one</span>
+
+          <div className="shape-list">
+            <span className="eyebrow-label">Or build your own</span>
+            {SHAPES.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className="shape-row"
+                onClick={() => chooseShape(option.id)}
+              >
+                <span className="shape-row-glyph">
+                  <ShapeGlyph shape={option.id} />
                 </span>
-                <div className="shape-options">
-                  {SHAPES.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      aria-pressed={form.shape === option.id}
-                      className={form.shape === option.id ? "selected" : ""}
-                      onClick={() => update("shape", option.id)}
-                    >
-                      <strong>
-                        {option.title}
-                        <em>{option.also}</em>
-                      </strong>
-                      <span>{option.blurb}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {form.shape === "recurring" ? (
-                <label>
-                  Buy every
-                  <div className="input-affix suffix">
-                    <input
-                      required
-                      type="number"
-                      min="1"
-                      max="8760"
-                      step="1"
-                      value={form.cadenceHours}
-                      onChange={(e) => update("cadenceHours", e.target.value)}
-                    />
-                    <span>hours</span>
-                  </div>
-                  <span className="helper">
-                    24 is daily, 168 is weekly. This becomes the cooldown on your signed limits —
-                    the rule itself is always willing to buy, and the cooldown is what paces it.
-                  </span>
-                </label>
-              ) : form.shape === "rebalance" ? (
-                <span className="helper">
-                  Each stock is topped up whenever it falls below an equal share of your portfolio
-                  {form.symbols.length > 1
-                    ? ` — ${(100 / form.symbols.length).toFixed(0)}% each`
-                    : ""}
-                  . Buying is all this can do, so it corrects drift by adding to the laggards; it
-                  cannot trim a winner, and it goes quiet once your cash is spent.
+                <span className="shape-row-text">
+                  <strong>{option.goal}</strong>
+                  <span>{option.mechanism}</span>
+                  {option.caveat && <em>{option.caveat}</em>}
                 </span>
-              ) : form.shape === "ladder" ? (
+                <span className="shape-row-tag">{option.also}</span>
+                <ChevronRight size={16} className="shape-row-go" />
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="describe-link"
+            onClick={() => {
+              update("authoring", "text");
+              setStep("setup");
+            }}
+          >
+            <Sparkles size={15} />
+            Describe it in your own words instead
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={review} className="setup step-enter">
+          <div className="setup-main">
+            <button type="button" className="chosen" onClick={() => setStep("shape")}>
+              {form.authoring === "rule" ? (
                 <>
-                  <div className="form-row">
-                    <label>
-                      First step under
-                      <div className="input-affix">
-                        <span>$</span>
-                        <input
-                          required
-                          type="number"
-                          min="0.000001"
-                          step="0.000001"
-                          placeholder="0.00"
-                          value={form.ladderStart}
-                          onChange={(e) => update("ladderStart", e.target.value)}
-                        />
-                      </div>
-                    </label>
-                    <label>
-                      Number of steps
-                      <input
-                        required
-                        type="number"
-                        min="1"
-                        max="24"
-                        step="1"
-                        value={form.ladderRungs}
-                        onChange={(e) => update("ladderRungs", e.target.value)}
-                      />
-                    </label>
+                  <span className="chosen-glyph">
+                    <ShapeGlyph shape={form.shape} size={30} />
+                  </span>
+                  <span className="chosen-text">
+                    <strong>{shape.goal}</strong>
+                    <em>{shape.also}</em>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="chosen-glyph">
+                    <Sparkles size={18} />
+                  </span>
+                  <span className="chosen-text">
+                    <strong>Described in your words</strong>
+                    <em>Compiled for you</em>
+                  </span>
+                </>
+              )}
+              <span className="chosen-change">Change</span>
+            </button>
+
+            {form.authoring === "text" ? (
+              <section className="block">
+                <header>
+                  <h3>Describe it</h3>
+                </header>
+                <textarea
+                  required
+                  rows={5}
+                  maxLength={4000}
+                  className="prompt"
+                  value={form.prompt}
+                  onChange={(event) => update("prompt", event.target.value)}
+                  placeholder="e.g. Buy $50 of Apple every time it falls 5% below where it is now, up to $400."
+                />
+                <p className="hint">
+                  You'll review the compiled rule before signing. If something essential is missing,
+                  the compiler asks rather than guessing.
+                </p>
+              </section>
+            ) : (
+              <>
+                <section className="block">
+                  <header>
+                    <h3>{shape.single ? "Stock" : "Stocks"}</h3>
+                    {!shape.single && form.symbols.length > 1 && (
+                      <span>{form.symbols.length} selected</span>
+                    )}
+                  </header>
+                  <div className="stock-rings">
+                    {stocks.map((ticker) => {
+                      const selected = form.symbols.includes(ticker);
+                      return (
+                        <button
+                          key={ticker}
+                          type="button"
+                          className={`stock-ring ${selected ? "on" : ""}`}
+                          aria-pressed={selected}
+                          onClick={() => toggle(ticker)}
+                        >
+                          <span className="stock-ring-mark">
+                            <StockLogo symbol={ticker} />
+                            {selected && (
+                              <i>
+                                <Check size={10} />
+                              </i>
+                            )}
+                          </span>
+                          <span>{ticker.replace("c", "")}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className="form-row">
-                    <label>
-                      Each step lower by
-                      <div className="input-affix suffix">
-                        <input
-                          required
-                          type="number"
-                          min="0.1"
-                          max="50"
-                          step="0.1"
-                          value={form.ladderStepPct}
-                          onChange={(e) => update("ladderStepPct", e.target.value)}
+                </section>
+
+                {form.shape === "levels" && (
+                  <section className="block">
+                    <header>
+                      <h3>Trigger</h3>
+                    </header>
+                    <Segment
+                      value={form.direction}
+                      options={[
+                        { value: "lt", label: "Falls below" },
+                        { value: "gt", label: "Rises above" },
+                      ]}
+                      onChange={(value) => update("direction", value)}
+                    />
+                    <div className="prices">
+                      {form.symbols.map((ticker) => (
+                        <PriceField
+                          key={ticker}
+                          symbol={ticker}
+                          spot={price(ticker)}
+                          stale={priceStale(ticker)}
+                          value={form.thresholds[ticker] ?? ""}
+                          direction={form.direction}
+                          onChange={(value) => setThreshold(ticker, value)}
                         />
-                        <span>%</span>
-                      </div>
-                    </label>
-                    <label>
-                      Each step bigger by
-                      <div className="input-affix suffix">
-                        <input
-                          required
-                          type="number"
-                          min="1"
-                          max="5"
-                          step="0.1"
-                          value={form.ladderMultiple}
-                          onChange={(e) => update("ladderMultiple", e.target.value)}
-                        />
-                        <span>×</span>
-                      </div>
-                    </label>
-                  </div>
-                  {/* The total is the number that matters most and the one a user is least
-                      likely to work out from four inputs. Shown before signing, not after. */}
-                  {preview && (
-                    <div className="ladder-preview">
-                      <span className="field-label">
-                        {preview.length} steps, ${preview.total} in total
-                      </span>
-                      <ol>
-                        {preview.rungs.map((rung) => (
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {form.shape === "recurring" && (
+                  <section className="block">
+                    <header>
+                      <h3>How often</h3>
+                    </header>
+                    <Segment
+                      value={form.cadenceHours}
+                      options={[
+                        { value: "24", label: "Daily" },
+                        { value: "168", label: "Weekly" },
+                        { value: "336", label: "Fortnightly" },
+                        { value: "720", label: "Monthly" },
+                      ]}
+                      onChange={(value) => update("cadenceHours", value)}
+                    />
+                    <p className="hint">
+                      Whatever the price is doing. The interval becomes the minimum gap between buys
+                      on your signed limits.
+                    </p>
+                  </section>
+                )}
+
+                {form.shape === "ladder" && (
+                  <section className="block">
+                    <header>
+                      <h3>Steps</h3>
+                    </header>
+                    <PriceField
+                      symbol={first}
+                      spot={price(first)}
+                      stale={priceStale(first)}
+                      value={form.ladderStart}
+                      direction="lt"
+                      onChange={(value) => update("ladderStart", value)}
+                    />
+                    <div className="trio">
+                      <label className="field">
+                        <span>Steps</span>
+                        <div className="field-input">
+                          <input
+                            required
+                            inputMode="numeric"
+                            value={form.ladderRungs}
+                            onChange={(e) => update("ladderRungs", e.target.value)}
+                          />
+                        </div>
+                      </label>
+                      <label className="field">
+                        <span>Each lower by</span>
+                        <div className="field-input">
+                          <input
+                            required
+                            inputMode="decimal"
+                            value={form.ladderStepPct}
+                            onChange={(e) => update("ladderStepPct", e.target.value)}
+                          />
+                          <b>%</b>
+                        </div>
+                      </label>
+                      <label className="field">
+                        <span>Each bigger by</span>
+                        <div className="field-input">
+                          <input
+                            required
+                            inputMode="decimal"
+                            value={form.ladderMultiple}
+                            onChange={(e) => update("ladderMultiple", e.target.value)}
+                          />
+                          <b>×</b>
+                        </div>
+                      </label>
+                    </div>
+                    {rungs && (
+                      <ol className="rungs">
+                        {rungs.map((rung, index) => (
                           <li key={rung.price}>
-                            <span>under ${Number(rung.price).toFixed(2)}</span>
+                            <span>Step {index + 1}</span>
+                            <em>under ${Number(rung.price).toFixed(2)}</em>
                             <strong>${rung.amount}</strong>
                           </li>
                         ))}
                       </ol>
-                      <span className="helper">
-                        Nothing sells this back. The ladder stops after the last step and holds what
-                        it bought.
-                      </span>
+                    )}
+                  </section>
+                )}
+
+                {form.shape === "discount" && (
+                  <section className="block">
+                    <header>
+                      <h3>How much cheaper</h3>
+                    </header>
+                    <div className="chips">
+                      {[
+                        ["10", "0.10%"],
+                        ["20", "0.20%"],
+                        ["50", "0.50%"],
+                        ["100", "1.00%"],
+                      ].map(([bps, label]) => (
+                        <button
+                          key={bps}
+                          type="button"
+                          aria-pressed={form.discountBps === bps}
+                          onClick={() => update("discountBps", bps as string)}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                  )}
-                </>
-              ) : form.shape === "levels" ? (
-                <>
-                  <label>
-                    Condition
-                    <div className="select-wrap">
-                      <select
-                        value={form.direction}
-                        onChange={(e) => update("direction", e.target.value as "lt" | "gt")}
-                      >
-                        <option value="lt">Falls below</option>
-                        <option value="gt">Rises above</option>
-                      </select>
-                      <ChevronDown size={16} />
-                    </div>
-                  </label>
-                  <div className="threshold-rows">
-                    {form.symbols.map((ticker) => (
-                      <label key={ticker} className="threshold-row">
-                        <span className="threshold-asset">
-                          <StockLogo symbol={ticker} small />
-                          {ticker.replace("c", "")}
-                        </span>
-                        <div className="input-affix">
-                          <span>$</span>
-                          <input
-                            required
-                            type="number"
-                            min="0.000001"
-                            step="0.000001"
-                            placeholder="0.00"
-                            aria-label={`Target price for ${companies[ticker]?.name ?? ticker}`}
-                            value={form.thresholds[ticker] ?? ""}
-                            onChange={(e) => setThreshold(ticker, e.target.value)}
-                          />
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <label>
-                  Discount to the Chainlink reference
-                  <div className="input-affix suffix">
+                    <label className="field">
+                      <span>Or exactly</span>
+                      <div className="field-input">
+                        <input
+                          required
+                          inputMode="decimal"
+                          value={form.discountBps}
+                          onChange={(e) => update("discountBps", e.target.value)}
+                        />
+                        <b>bps</b>
+                      </div>
+                    </label>
+                    <p className="hint">
+                      The pool quote already includes fees and impact, so it normally sits a little
+                      above the reference — 0.20% below is already a real dislocation. More than 5%
+                      under is treated as a broken pool and skipped.
+                    </p>
+                  </section>
+                )}
+
+                {form.shape === "rebalance" && (
+                  <section className="block">
+                    <header>
+                      <h3>Target</h3>
+                    </header>
+                    <p className="hint">
+                      An even split
+                      {form.symbols.length > 1
+                        ? ` — about ${(100 / form.symbols.length).toFixed(0)}% each`
+                        : ""}
+                      . Whichever stock falls below its share gets topped up.
+                    </p>
+                  </section>
+                )}
+              </>
+            )}
+
+            <section className="block">
+              <header>
+                <h3>Money</h3>
+                {cash && <span>You hold {money(cash)} USDC</span>}
+              </header>
+              <div className="money">
+                <label className="field big">
+                  <span>{form.shape === "ladder" ? "First step" : "Per buy"}</span>
+                  <div className="field-input">
+                    <i>$</i>
+                    {/* inputMode rather than type=number: a scroll gesture over a focused
+                        number input silently changes the amount that is about to be signed. */}
                     <input
                       required
-                      type="number"
-                      min="1"
-                      max="2000"
-                      step="1"
-                      placeholder="20"
-                      value={form.discountBps}
-                      onChange={(e) => update("discountBps", e.target.value)}
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={form.amount}
+                      onChange={(e) => update("amount", e.target.value)}
                     />
-                    <span>bps</span>
+                    <b>USDC</b>
                   </div>
-                  <span className="helper">
-                    100 bps is 1%. The quote used is what a real buy would cost on Aerodrome, fees
-                    and impact included, so it normally sits a little above the reference — 20 bps
-                    is already a genuine dislocation. Anything more than 5% under is treated as a
-                    broken pool and skipped.
-                  </span>
                 </label>
-              )}
-              <div className="rule-divider">
-                <ArrowRight size={14} />
-                <span>then buy</span>
+                <label className="field big">
+                  <span>Total budget</span>
+                  <div className="field-input">
+                    <i>$</i>
+                    <input
+                      required
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={form.budget}
+                      onChange={(e) => update("budget", e.target.value)}
+                    />
+                    <b>USDC</b>
+                  </div>
+                </label>
               </div>
-            </>
-          ) : (
-            <label>
-              Describe your strategy
-              <textarea
-                required
-                rows={4}
-                maxLength={4000}
-                value={form.prompt}
-                onChange={(event) => update("prompt", event.target.value)}
-                placeholder="Describe the condition, action, and amount you have in mind."
+              <div className="field">
+                <span>Run for</span>
+                <Segment
+                  value={form.days}
+                  options={[
+                    { value: "7", label: "1 week" },
+                    { value: "30", label: "1 month" },
+                    { value: "90", label: "3 months" },
+                    { value: "180", label: "6 months" },
+                  ]}
+                  onChange={(value) => update("days", value)}
+                />
+              </div>
+            </section>
+
+            {/* A consequential choice that used to be a two-option <select> beside "Run for". */}
+            <section className="block">
+              <header>
+                <h3>When it fires</h3>
+              </header>
+              <Segment
+                big
+                value={form.mode}
+                options={[
+                  { value: "manual", label: "Tell me" },
+                  { value: "auto", label: "Buy it for me" },
+                ]}
+                onChange={(value) => update("mode", value)}
               />
-              <span className="helper">
-                You’ll review the compiled rule before signing. The compiler may ask for more
-                detail.
+              <p className="hint">
+                {form.mode === "manual"
+                  ? "You get a signal and decide. Nothing can spend your money."
+                  : "After signing you approve a spending limit — a separate onchain step you can revoke at any time."}
+              </p>
+            </section>
+
+            <details className="guardrails">
+              <summary>
+                <span>Guardrails</span>
+                <em>
+                  {form.maxOrders} buys a day · {form.slippageBps} bps slippage
+                  {form.shape !== "recurring" && ` · ${form.cooldownMinutes} min apart`}
+                </em>
+                <ChevronDown size={15} />
+              </summary>
+              <div className="guardrails-grid">
+                <label className="field">
+                  <span>Most in one day</span>
+                  <div className="field-input">
+                    <i>$</i>
+                    <input
+                      inputMode="decimal"
+                      placeholder="Same as budget"
+                      value={form.dailyBudget}
+                      onChange={(event) => update("dailyBudget", event.target.value)}
+                    />
+                  </div>
+                </label>
+                <label className="field">
+                  <span>Buys per day</span>
+                  <div className="field-input">
+                    <input
+                      inputMode="numeric"
+                      value={form.maxOrders}
+                      onChange={(event) => update("maxOrders", event.target.value)}
+                    />
+                  </div>
+                </label>
+                {form.shape !== "recurring" && (
+                  <label className="field">
+                    <span>Minimum gap</span>
+                    <div className="field-input">
+                      <input
+                        inputMode="numeric"
+                        value={form.cooldownMinutes}
+                        onChange={(event) => update("cooldownMinutes", event.target.value)}
+                      />
+                      <b>min</b>
+                    </div>
+                  </label>
+                )}
+                <label className="field">
+                  <span>Slippage</span>
+                  <div className="field-input">
+                    <input
+                      inputMode="numeric"
+                      value={form.slippageBps}
+                      onChange={(event) => update("slippageBps", event.target.value)}
+                    />
+                    <b>bps</b>
+                  </div>
+                </label>
+              </div>
+            </details>
+
+            <label className="field">
+              <span>
+                Name <em>optional</em>
               </span>
-            </label>
-          )}
-          <div className="form-row">
-            <label>
-              {form.authoring === "rule" ? "Amount per buy" : "Per-order buy limit"}
-              <div className="input-affix">
-                <span>$</span>
+              <div className="field-input">
                 <input
-                  required
-                  type="number"
-                  min="0.000001"
-                  step="0.000001"
-                  placeholder="0.00"
-                  value={form.amount}
-                  onChange={(e) => update("amount", e.target.value)}
+                  maxLength={100}
+                  value={form.name}
+                  onChange={(e) => update("name", e.target.value)}
+                  placeholder={name}
+                  autoComplete="off"
                 />
-                <small>USDC</small>
-              </div>
-              {/* The single most surprising thing about a basket: this limit is enforced per
-                  order, so N stocks triggering together spend N times it in one day. Saying so
-                  here is cheaper than a user discovering it from their statement. */}
-              {form.symbols.length > 1 && basketDay ? (
-                <span className="helper">
-                  Per stock. All {form.symbols.length} triggering on the same day spends up to $
-                  {basketDay}, which your daily budget and order limit still cap.
-                </span>
-              ) : null}
-            </label>
-            <label>
-              Total budget
-              <div className="input-affix">
-                <span>$</span>
-                <input
-                  required
-                  type="number"
-                  min="0.000001"
-                  step="0.000001"
-                  placeholder="0.00"
-                  value={form.budget}
-                  onChange={(e) => update("budget", e.target.value)}
-                />
-                <small>USDC</small>
               </div>
             </label>
+
+            {clarification && (
+              <p className="form-clarify">
+                <Sparkles size={14} />
+                {clarification}
+              </p>
+            )}
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
           </div>
-          <div className="form-row">
-            <label>
-              Run for
-              <div className="select-wrap">
-                <select value={form.days} onChange={(e) => update("days", e.target.value)}>
-                  <option value="7">7 days</option>
-                  <option value="30">30 days</option>
-                  <option value="90">90 days</option>
-                </select>
-                <ChevronDown size={16} />
-              </div>
-            </label>
-            <label>
-              Execution
-              <div className="select-wrap">
-                <select
-                  value={form.mode}
-                  onChange={(e) => update("mode", e.target.value as "manual" | "auto")}
-                >
-                  <option value="manual">Signal only</option>
-                  <option value="auto">Automatic buy</option>
-                </select>
-                <ChevronDown size={16} />
-              </div>
-            </label>
-          </div>
-          <details className="review-details advanced-limits">
-            <summary>
-              Advanced limits
-              <ChevronDown size={15} />
-            </summary>
-            <div className="form-row">
-              <label>
-                Daily budget
-                <input
-                  type="number"
-                  min="0.000001"
-                  step="0.000001"
-                  placeholder="Same as total budget"
-                  value={form.dailyBudget}
-                  onChange={(event) => update("dailyBudget", event.target.value)}
-                />
-              </label>
-              <label>
-                Orders per day
-                <input
-                  required
-                  type="number"
-                  min="1"
-                  max="10000"
-                  step="1"
-                  value={form.maxOrders}
-                  onChange={(event) => update("maxOrders", event.target.value)}
-                />
-              </label>
+
+          <aside className="setup-side">
+            <div className="preview">
+              <span className="eyebrow-label">What this does</span>
+              {projection ? (
+                <>
+                  <p className="preview-sentence">{projection.sentence}</p>
+                  {projection.today && (
+                    <div className={`preview-today ${projection.today.firing ? "on" : ""}`}>
+                      <i />
+                      {projection.today.detail}
+                    </div>
+                  )}
+                  {projection.facts.length > 0 && (
+                    <dl className="preview-rows">
+                      {projection.facts.map((fact) => (
+                        <div key={fact.label}>
+                          <dt>{fact.label}</dt>
+                          <dd>{fact.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  {projection.warnings.map((warning) => (
+                    <p key={warning} className="preview-warn">
+                      <AlertTriangle size={13} />
+                      {warning}
+                    </p>
+                  ))}
+                </>
+              ) : (
+                <p className="preview-empty">
+                  Describe what you want and the compiled rule will appear here before you sign.
+                </p>
+              )}
             </div>
-            <div className="form-row">
-              <label>
-                Cooldown (minutes)
-                <input
-                  required
-                  type="number"
-                  min="0"
-                  max="525600"
-                  step="1"
-                  value={form.cooldownMinutes}
-                  onChange={(event) => update("cooldownMinutes", event.target.value)}
-                />
-              </label>
-              <label>
-                Slippage (basis points)
-                <input
-                  required
-                  type="number"
-                  min="1"
-                  max="500"
-                  step="1"
-                  value={form.slippageBps}
-                  onChange={(event) => update("slippageBps", event.target.value)}
-                />
-                <span className="helper">50 basis points = 0.5%</span>
-              </label>
+            <div className="actions">
+              <button type="button" className="button secondary" onClick={() => setStep("shape")}>
+                <ArrowLeft size={15} /> Back
+              </button>
+              <button type="submit" className="button primary" disabled={busy}>
+                {busy ? <Loader2 size={16} className="spin" /> : <ArrowRight size={16} />}
+                Review
+              </button>
             </div>
-          </details>
-          <p className="helper">
-            {form.mode === "manual"
-              ? "Get a signal when your rule fires. You stay in control."
-              : "A compatible smart wallet and spending approval are required."}
-          </p>
-          {clarification && (
-            <p className="form-clarify" role="status">
-              <Sparkles size={15} />
-              {clarification}
-            </p>
-          )}
-          {error && (
-            <p role="alert" className="form-error">
-              {error}
-            </p>
-          )}
-          <div className="dialog-actions">
-            <span className="quiet">Nothing moves until you approve.</span>
-            <button className="button primary" type="submit" disabled={busy}>
-              {busy ? <Loader2 size={16} className="spin" /> : null}Review strategy
-              <ArrowRight size={16} />
-            </button>
-          </div>
+          </aside>
         </form>
       )}
     </Dialog>
