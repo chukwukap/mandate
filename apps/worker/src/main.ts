@@ -26,6 +26,9 @@ async function main() {
     const chain = new WorkerChain(config);
     worker = new Worker(config, new WorkerStore(database.db, lease), lease, chain, {
       log,
+      // Recovery pages owners with its own cursor, so it needs the handle rather than the
+      // shared WorkerStore.
+      db: database.db,
       // The pool doubles as the claim connector: `pg.Pool` satisfies ClaimConnector
       // structurally, so the scheduler takes its own dedicated session from it for the
       // per-instance advisory locks and nothing else changes about how the pool is used.

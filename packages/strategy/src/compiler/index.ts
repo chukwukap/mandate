@@ -15,11 +15,18 @@ export {
 export const PROVIDERS = ["anthropic", "openai", "google"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
-/** Sensible defaults so an operator supplies a key and nothing else. */
+/**
+ * Sensible defaults so an operator supplies a key and nothing else.
+ *
+ * Chosen for availability on a fresh key, not for being the largest model each vendor sells.
+ * `gpt-5` was the OpenAI default until a real key answered "Your organization must be verified
+ * to use the model `gpt-5`" — a default that needs an extra account step is not a default. Any
+ * of these can be overridden per provider.
+ */
 export const DEFAULT_MODELS: Record<Provider, string> = {
   anthropic: "claude-sonnet-5",
-  openai: "gpt-5",
-  google: "gemini-2.5-pro",
+  openai: "gpt-4.1",
+  google: "gemini-2.5-flash",
 };
 
 export type CompilerSettings = {

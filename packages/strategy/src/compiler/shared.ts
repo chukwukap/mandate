@@ -60,7 +60,11 @@ export const clarifyJsonSchema = {
  * afterwards, a refusal the user never sees is better than an error they do.
  */
 export function systemPrompt(assets: Asset[]): string {
-  return `Translate the user's own instructions into a reviewable strategy. Never choose investments or invent prices, amounts or thresholds. Ask for clarification by using ${CLARIFY_TOOL} when essential details are absent or unsupported. Plans use decimal strings and portfolio-scoped machines. Buys use quote or pct_equity sizes; sells use base or pct_position sizes. Never invent feed URIs. Conditions default to on_edge. while_true needs a finite max_repeats. A halt ends execution. There are no calendar, time-series, news, or technical-indicator inputs. Available assets by index: ${JSON.stringify(
+  return `Translate the user's own instructions into a reviewable strategy. Never choose investments or invent prices, amounts or thresholds. Ask for clarification by using ${CLARIFY_TOOL} when essential details are absent or unsupported. Plans use decimal strings and portfolio-scoped machines. Buys use quote or pct_equity sizes; sells use base or pct_position sizes. Never invent feed URIs. Conditions default to on_edge. while_true needs a finite max_repeats. A halt ends execution. There are no calendar, time-series, news, or technical-indicator inputs.
+
+Do NOT implement spend or frequency limits in the plan. How much may be spent per order, per period and over the strategy's lifetime, how many orders a period allows, and the cooldown between them are all part of the signed envelope and are enforced outside the plan. A plan that counts its own fills is duplicating a limit the user already set, and usually fails validation.
+
+The \`set\` action assigns a variable from a NODE, not from a literal: its \`value\` is the id of a node that evaluates to a number. There is no increment operator. Most strategies need no \`set\` at all — reach for it only when a later condition must compare against something computed earlier. Available assets by index: ${JSON.stringify(
     assets.map((a, i) => ({ index: i, symbol: a.symbol })),
   )}. Available feeds: ${assets.flatMap((a) => [`dex:${a.symbol}`, `oracle:${a.symbol}`]).join(", ")}.`;
 }

@@ -1,8 +1,9 @@
 import type { WorkerConfig } from "@mandate/config";
-import type { WorkerLease, WorkerStore } from "@mandate/database";
+import type { Database, WorkerLease, WorkerStore } from "@mandate/database";
 import { Admission, Lifecycle } from "@mandate/execution";
 import type { WorkerChain } from "./chain.js";
 import type { JobLogger } from "./jobs/types.js";
+import { Recovery } from "./recovery/index.js";
 import { type ClaimConnector, Scheduler } from "./scheduler/index.js";
 
 /**
@@ -20,6 +21,14 @@ export interface WorkerOptions {
    * in the same second, and failure backoff, so a strategy that cannot succeed stops asking.
    */
   connector?: ClaimConnector | undefined;
+  /**
+   * The database handle, for the recovery pass.
+   *
+   * Recovery pages every owner to reconstruct what this worker has committed for the spender
+   * key, and it must do that with its own cursor rather than the shared `WorkerStore.owners()`
+   * one that the scheduling loop reads — see `eachOwner`.
+   */
+  db?: Database | undefined;
 }
 
 export class Worker {
@@ -33,6 +42,14 @@ export class Worker {
    * at a flat 30s spacing before this was wired.
    */
   private readonly scheduler;
+  /**
+   * Present when execution is on and a database handle was supplied.
+   *
+   * Without it a `recovery_required` order is permanent: `Lifecycle.run` returns immediately on
+   * that status and nothing else moves it, while `cycle` keeps blocking admissions for every
+   * owner because the order is still outstanding. One stuck trade halted the whole fleet.
+   */
+  private readonly recovery;
   constructor(
     private readonly config: WorkerConfig,
     private readonly store: WorkerStore,
@@ -58,6 +75,17 @@ export class Worker {
     );
     this.lifecycle = new Lifecycle(store, chain, config.receiptTimeoutMs);
     this.scheduler = connector && log ? new Scheduler({ store, connector, log }) : undefined;
+    this.recovery =
+      options.db && log && config.execute && config.spender
+        ? new Recovery({
+            store,
+            db: options.db,
+            chain,
+            log,
+            spender: config.spender as `0x${string}`,
+            receiptTimeoutMs: config.receiptTimeoutMs,
+          })
+        : undefined;
   }
   async cycle(signal: AbortSignal) {
     const active = await this.store.activeExecution();
@@ -65,7 +93,16 @@ export class Worker {
     if (signal.aborted) return;
     // Reconcile every admitted order before any new strategy can reserve funds.
     if (active) {
-      if (this.config.execute) await this.lifecycle.run(active);
+      if (!this.config.execute) return;
+      // A stuck order is the lifecycle's dead end — it returns immediately on this status — so
+      // it is recovery's to look at. Still `return` afterwards: the order remains outstanding
+      // until a pass clears it, and admitting a new one alongside it is exactly what the
+      // single-order gate exists to prevent.
+      if (active.status === "recovery_required") {
+        if (this.recovery) await this.recovery.run(active);
+        return;
+      }
+      await this.lifecycle.run(active);
       return;
     }
     let remaining = this.config.maxBatch;
