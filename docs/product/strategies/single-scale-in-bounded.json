@@ -1,0 +1,107 @@
+{
+  "params": [
+    {
+      "id": "deep",
+      "label": "GOOGLc accumulation level (USD)",
+      "value": "180"
+    },
+    {
+      "id": "premium",
+      "label": "Max pool premium multiple (1.005 = 50 bps)",
+      "value": "1.005"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "deep_enough",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:GOOGLc"
+        },
+        {
+          "kind": "param",
+          "param": "deep"
+        }
+      ]
+    },
+    {
+      "id": "max_pool_price",
+      "op": "mul",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:GOOGLc"
+        },
+        {
+          "kind": "param",
+          "param": "premium"
+        }
+      ]
+    },
+    {
+      "id": "pool_not_rich",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "max_pool_price"
+        }
+      ]
+    },
+    {
+      "id": "accumulate",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "deep_enough"
+        },
+        {
+          "kind": "node",
+          "node": "pool_not_rich"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "scale_in",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "accumulate",
+              "fires": "while_true",
+              "max_repeats": 5,
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 1,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "100"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "GOOGLc under 180 and the pool is not rich: added 100 USDC (max 5 adds per episode)."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

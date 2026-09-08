@@ -1,0 +1,216 @@
+{
+  "params": [
+    {
+      "id": "ratio_entry",
+      "label": "AAPL/MSFT ratio that counts as cheap",
+      "value": "0.520"
+    },
+    {
+      "id": "ratio_add",
+      "label": "AAPL/MSFT ratio that counts as very cheap",
+      "value": "0.490"
+    },
+    {
+      "id": "ratio_exit",
+      "label": "AAPL/MSFT ratio that counts as back to normal",
+      "value": "0.575"
+    },
+    {
+      "id": "max_premium",
+      "label": "Most the Aerodrome pool may exceed the oracle (1.006 = 0.6%)",
+      "value": "1.006"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ratio",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "fill",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AAPLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "fair_fill",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "fill"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "cheap",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "ratio"
+        },
+        {
+          "kind": "param",
+          "param": "ratio_entry"
+        }
+      ]
+    },
+    {
+      "id": "very_cheap",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "ratio"
+        },
+        {
+          "kind": "param",
+          "param": "ratio_add"
+        }
+      ]
+    },
+    {
+      "id": "enter",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheap"
+        },
+        {
+          "kind": "node",
+          "node": "fair_fill"
+        }
+      ]
+    },
+    {
+      "id": "add_more",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "very_cheap"
+        },
+        {
+          "kind": "node",
+          "node": "fair_fill"
+        }
+      ]
+    },
+    {
+      "id": "rich",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "ratio"
+        },
+        {
+          "kind": "param",
+          "param": "ratio_exit"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "aapl_vs_msft",
+      "scope": "portfolio",
+      "initial": "armed",
+      "states": [
+        {
+          "id": "armed",
+          "transitions": [
+            {
+              "when": "enter",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "250"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought AAPLc: AAPL/MSFT fell below your cheap ratio and the Aerodrome pool was within your premium tolerance."
+                }
+              ],
+              "to": "engaged"
+            }
+          ]
+        },
+        {
+          "id": "engaged",
+          "transitions": [
+            {
+              "when": "add_more",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "250"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Added to AAPLc: the ratio fell through your deeper level while already engaged."
+                }
+              ],
+              "to": "engaged"
+            },
+            {
+              "when": "rich",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "AAPL/MSFT is back above your normal ratio. Consider trimming AAPLc manually; the strategy cannot sell. Re-armed for the next dip."
+                }
+              ],
+              "to": "armed"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

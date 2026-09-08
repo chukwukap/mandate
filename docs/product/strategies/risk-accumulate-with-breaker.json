@@ -1,0 +1,239 @@
+{
+  "params": [
+    {
+      "id": "cheap_at",
+      "label": "Accumulate while DEX is at least this far below oracle",
+      "value": "-0.0025"
+    },
+    {
+      "id": "dislocation",
+      "label": "Halt when |DEX-oracle|/oracle exceeds",
+      "value": "0.05"
+    },
+    {
+      "id": "floor_price",
+      "label": "Halt if the MSFTc oracle price falls under",
+      "value": "300"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "gap",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:MSFTc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        }
+      ]
+    },
+    {
+      "id": "basis",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "node",
+          "node": "gap"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "magnitude",
+      "op": "abs",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        }
+      ]
+    },
+    {
+      "id": "dislocated",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "magnitude"
+        },
+        {
+          "kind": "param",
+          "param": "dislocation"
+        }
+      ]
+    },
+    {
+      "id": "under_floor",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "param",
+          "param": "floor_price"
+        }
+      ]
+    },
+    {
+      "id": "oracle_live",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "dex_live",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "live",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "oracle_live"
+        },
+        {
+          "kind": "node",
+          "node": "dex_live"
+        }
+      ]
+    },
+    {
+      "id": "regime_break",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "under_floor"
+        },
+        {
+          "kind": "node",
+          "node": "oracle_live"
+        }
+      ]
+    },
+    {
+      "id": "stop_everything",
+      "op": "or",
+      "args": [
+        {
+          "kind": "node",
+          "node": "dislocated"
+        },
+        {
+          "kind": "node",
+          "node": "regime_break"
+        }
+      ]
+    },
+    {
+      "id": "discounted",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "cheap_at"
+        }
+      ]
+    },
+    {
+      "id": "accumulate",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "discounted"
+        },
+        {
+          "kind": "node",
+          "node": "live"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "accumulator",
+      "scope": "portfolio",
+      "initial": "running",
+      "states": [
+        {
+          "id": "running",
+          "transitions": [
+            {
+              "when": "stop_everything",
+              "fires": "on_edge",
+              "to": "stopped",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "Circuit breaker: the MSFTc pool has dislocated from oracle by more than 5%, or the oracle price has broken your 300 floor. Accumulation is over."
+                },
+                {
+                  "action": "halt",
+                  "reason": "MSFTc dislocation or price floor breached"
+                }
+              ]
+            },
+            {
+              "when": "accumulate",
+              "fires": "while_true",
+              "max_repeats": 8,
+              "to": "running",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 4,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "50"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "stopped",
+          "transitions": []
+        }
+      ]
+    }
+  ]
+}

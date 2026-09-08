@@ -1,0 +1,911 @@
+{
+  "params": [
+    {
+      "id": "buy_below",
+      "label": "Buy only when the cheapest name is this far below your fair level (0.93 = 7% below)",
+      "value": "0.93"
+    },
+    {
+      "id": "max_premium",
+      "label": "Most the Aerodrome pool may exceed the oracle (1.006 = 0.6%)",
+      "value": "1.006"
+    },
+    {
+      "id": "fair_aapl",
+      "label": "Your fair price for AAPLc",
+      "value": "230"
+    },
+    {
+      "id": "fair_googl",
+      "label": "Your fair price for GOOGLc",
+      "value": "190"
+    },
+    {
+      "id": "fair_meta",
+      "label": "Your fair price for METAc",
+      "value": "600"
+    },
+    {
+      "id": "fair_nvda",
+      "label": "Your fair price for NVDAc",
+      "value": "130"
+    },
+    {
+      "id": "fair_msft",
+      "label": "Your fair price for MSFTc",
+      "value": "420"
+    },
+    {
+      "id": "fair_amzn",
+      "label": "Your fair price for AMZNc",
+      "value": "200"
+    },
+    {
+      "id": "fair_tsla",
+      "label": "Your fair price for TSLAc",
+      "value": "340"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "r_aapl",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "param",
+          "param": "fair_aapl"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "r_googl",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:GOOGLc"
+        },
+        {
+          "kind": "param",
+          "param": "fair_googl"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "r_meta",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:METAc"
+        },
+        {
+          "kind": "param",
+          "param": "fair_meta"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "r_nvda",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "param",
+          "param": "fair_nvda"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "r_msft",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "param",
+          "param": "fair_msft"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "r_amzn",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:AMZNc"
+        },
+        {
+          "kind": "param",
+          "param": "fair_amzn"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "r_tsla",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:TSLAc"
+        },
+        {
+          "kind": "param",
+          "param": "fair_tsla"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "worst",
+      "op": "min",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_aapl"
+        },
+        {
+          "kind": "node",
+          "node": "r_googl"
+        },
+        {
+          "kind": "node",
+          "node": "r_meta"
+        },
+        {
+          "kind": "node",
+          "node": "r_nvda"
+        },
+        {
+          "kind": "node",
+          "node": "r_msft"
+        },
+        {
+          "kind": "node",
+          "node": "r_amzn"
+        },
+        {
+          "kind": "node",
+          "node": "r_tsla"
+        }
+      ]
+    },
+    {
+      "id": "prem_aapl",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AAPLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "fill_aapl",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "prem_aapl"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "cheap_aapl",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_aapl"
+        },
+        {
+          "kind": "param",
+          "param": "buy_below"
+        }
+      ]
+    },
+    {
+      "id": "worst_aapl",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_aapl"
+        },
+        {
+          "kind": "node",
+          "node": "worst"
+        }
+      ]
+    },
+    {
+      "id": "buy_aapl",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheap_aapl"
+        },
+        {
+          "kind": "node",
+          "node": "worst_aapl"
+        },
+        {
+          "kind": "node",
+          "node": "fill_aapl"
+        }
+      ]
+    },
+    {
+      "id": "prem_googl",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:GOOGLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:GOOGLc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "fill_googl",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "prem_googl"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "cheap_googl",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_googl"
+        },
+        {
+          "kind": "param",
+          "param": "buy_below"
+        }
+      ]
+    },
+    {
+      "id": "worst_googl",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_googl"
+        },
+        {
+          "kind": "node",
+          "node": "worst"
+        }
+      ]
+    },
+    {
+      "id": "buy_googl",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheap_googl"
+        },
+        {
+          "kind": "node",
+          "node": "worst_googl"
+        },
+        {
+          "kind": "node",
+          "node": "fill_googl"
+        }
+      ]
+    },
+    {
+      "id": "prem_meta",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:METAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:METAc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "fill_meta",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "prem_meta"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "cheap_meta",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_meta"
+        },
+        {
+          "kind": "param",
+          "param": "buy_below"
+        }
+      ]
+    },
+    {
+      "id": "worst_meta",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_meta"
+        },
+        {
+          "kind": "node",
+          "node": "worst"
+        }
+      ]
+    },
+    {
+      "id": "buy_meta",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheap_meta"
+        },
+        {
+          "kind": "node",
+          "node": "worst_meta"
+        },
+        {
+          "kind": "node",
+          "node": "fill_meta"
+        }
+      ]
+    },
+    {
+      "id": "prem_nvda",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:NVDAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "fill_nvda",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "prem_nvda"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "cheap_nvda",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_nvda"
+        },
+        {
+          "kind": "param",
+          "param": "buy_below"
+        }
+      ]
+    },
+    {
+      "id": "worst_nvda",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_nvda"
+        },
+        {
+          "kind": "node",
+          "node": "worst"
+        }
+      ]
+    },
+    {
+      "id": "buy_nvda",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheap_nvda"
+        },
+        {
+          "kind": "node",
+          "node": "worst_nvda"
+        },
+        {
+          "kind": "node",
+          "node": "fill_nvda"
+        }
+      ]
+    },
+    {
+      "id": "prem_msft",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:MSFTc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "fill_msft",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "prem_msft"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "cheap_msft",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_msft"
+        },
+        {
+          "kind": "param",
+          "param": "buy_below"
+        }
+      ]
+    },
+    {
+      "id": "worst_msft",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_msft"
+        },
+        {
+          "kind": "node",
+          "node": "worst"
+        }
+      ]
+    },
+    {
+      "id": "buy_msft",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheap_msft"
+        },
+        {
+          "kind": "node",
+          "node": "worst_msft"
+        },
+        {
+          "kind": "node",
+          "node": "fill_msft"
+        }
+      ]
+    },
+    {
+      "id": "prem_amzn",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AMZNc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AMZNc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "fill_amzn",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "prem_amzn"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "cheap_amzn",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_amzn"
+        },
+        {
+          "kind": "param",
+          "param": "buy_below"
+        }
+      ]
+    },
+    {
+      "id": "worst_amzn",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_amzn"
+        },
+        {
+          "kind": "node",
+          "node": "worst"
+        }
+      ]
+    },
+    {
+      "id": "buy_amzn",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheap_amzn"
+        },
+        {
+          "kind": "node",
+          "node": "worst_amzn"
+        },
+        {
+          "kind": "node",
+          "node": "fill_amzn"
+        }
+      ]
+    },
+    {
+      "id": "prem_tsla",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:TSLAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:TSLAc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "fill_tsla",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "prem_tsla"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "cheap_tsla",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_tsla"
+        },
+        {
+          "kind": "param",
+          "param": "buy_below"
+        }
+      ]
+    },
+    {
+      "id": "worst_tsla",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "r_tsla"
+        },
+        {
+          "kind": "node",
+          "node": "worst"
+        }
+      ]
+    },
+    {
+      "id": "buy_tsla",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheap_tsla"
+        },
+        {
+          "kind": "node",
+          "node": "worst_tsla"
+        },
+        {
+          "kind": "node",
+          "node": "fill_tsla"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "deepest_discount",
+      "scope": "portfolio",
+      "initial": "scanning",
+      "states": [
+        {
+          "id": "scanning",
+          "transitions": [
+            {
+              "when": "buy_aapl",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "200"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought AAPLc: it is the furthest below your fair level of the seven, past your buy_below threshold, and its Aerodrome pool was within your premium tolerance."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "buy_googl",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 1,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "200"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought GOOGLc: it is the furthest below your fair level of the seven, past your buy_below threshold, and its Aerodrome pool was within your premium tolerance."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "buy_meta",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 2,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "200"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought METAc: it is the furthest below your fair level of the seven, past your buy_below threshold, and its Aerodrome pool was within your premium tolerance."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "buy_nvda",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 3,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "200"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought NVDAc: it is the furthest below your fair level of the seven, past your buy_below threshold, and its Aerodrome pool was within your premium tolerance."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "buy_msft",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 4,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "200"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought MSFTc: it is the furthest below your fair level of the seven, past your buy_below threshold, and its Aerodrome pool was within your premium tolerance."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "buy_amzn",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 5,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "200"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought AMZNc: it is the furthest below your fair level of the seven, past your buy_below threshold, and its Aerodrome pool was within your premium tolerance."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "buy_tsla",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 6,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "200"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought TSLAc: it is the furthest below your fair level of the seven, past your buy_below threshold, and its Aerodrome pool was within your premium tolerance."
+                }
+              ],
+              "to": "scanning"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

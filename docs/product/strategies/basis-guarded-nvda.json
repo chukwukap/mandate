@@ -1,0 +1,107 @@
+{
+  "params": [
+    {
+      "id": "no_premium",
+      "label": "Only buy while the pool ask is at or below Chainlink (1.0000 = par)",
+      "value": "1.0000"
+    },
+    {
+      "id": "sanity_floor",
+      "label": "Stop buying if the discount exceeds 200 bps - that is a broken pool, not a bargain",
+      "value": "0.9800"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "basis",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:NVDAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "at_or_below_reference",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "no_premium"
+        }
+      ]
+    },
+    {
+      "id": "not_broken",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "fair_or_better",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "at_or_below_reference"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "nvda_accumulator",
+      "scope": "portfolio",
+      "initial": "accumulating",
+      "states": [
+        {
+          "id": "accumulating",
+          "transitions": [
+            {
+              "when": "fair_or_better",
+              "fires": "while_true",
+              "max_repeats": 10000,
+              "to": "accumulating",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "25"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

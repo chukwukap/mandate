@@ -1,0 +1,260 @@
+{
+  "params": [
+    {
+      "id": "entry_discount",
+      "label": "Buy when DEX sits this far below oracle",
+      "value": "-0.0035"
+    },
+    {
+      "id": "dislocation",
+      "label": "Halt when |DEX-oracle|/oracle exceeds",
+      "value": "0.04"
+    },
+    {
+      "id": "stop_level",
+      "label": "Alert level for the NVDAc oracle price",
+      "value": "150"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "gap",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:NVDAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        }
+      ]
+    },
+    {
+      "id": "basis",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "node",
+          "node": "gap"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "const",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "magnitude",
+      "op": "abs",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        }
+      ]
+    },
+    {
+      "id": "dislocated",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "magnitude"
+        },
+        {
+          "kind": "param",
+          "param": "dislocation"
+        }
+      ]
+    },
+    {
+      "id": "oracle_live",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "const",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "dex_live",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:NVDAc"
+        },
+        {
+          "kind": "const",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "sane",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "oracle_live"
+        },
+        {
+          "kind": "node",
+          "node": "dex_live"
+        }
+      ]
+    },
+    {
+      "id": "cheap",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "entry_discount"
+        }
+      ]
+    },
+    {
+      "id": "entry",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheap"
+        },
+        {
+          "kind": "node",
+          "node": "sane"
+        }
+      ]
+    },
+    {
+      "id": "stop_hit",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "param",
+          "param": "stop_level"
+        }
+      ]
+    },
+    {
+      "id": "stop_alert",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "stop_hit"
+        },
+        {
+          "kind": "node",
+          "node": "oracle_live"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "breaker",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "dislocated",
+              "fires": "on_edge",
+              "to": "tripped",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "NVDAc pool price is more than 4% away from the Chainlink oracle. Stopping the strategy; no further orders will be admitted."
+                },
+                {
+                  "action": "halt",
+                  "reason": "Pool dislocated from oracle beyond the 4% circuit-breaker threshold"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tripped",
+          "transitions": []
+        }
+      ]
+    },
+    {
+      "id": "entry_book",
+      "scope": "portfolio",
+      "initial": "flat",
+      "states": [
+        {
+          "id": "flat",
+          "transitions": [
+            {
+              "when": "entry",
+              "fires": "on_edge",
+              "to": "held",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 3,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "250"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought 250 USDC of NVDAc on a DEX discount of 35bps or more to oracle."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "held",
+          "transitions": [
+            {
+              "when": "stop_alert",
+              "fires": "on_edge",
+              "to": "stopped_out",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "NVDAc oracle price fell below your 150 stop level. Mandate CANNOT sell for you - sell manually if you want out. This strategy will not buy NVDAc again."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "stopped_out",
+          "transitions": []
+        }
+      ]
+    }
+  ]
+}

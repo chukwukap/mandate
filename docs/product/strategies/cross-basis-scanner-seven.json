@@ -1,0 +1,750 @@
+{
+  "params": [
+    {
+      "id": "buy_at_or_below",
+      "label": "Pool price relative to oracle that counts as a real discount (0.995 = 0.5% below)",
+      "value": "0.995"
+    },
+    {
+      "id": "sanity_floor",
+      "label": "Discount beyond which the pool is treated as broken rather than cheap (0.97 = 3% below)",
+      "value": "0.97"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "basis_aapl",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AAPLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "basis_googl",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:GOOGLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:GOOGLc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "basis_meta",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:METAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:METAc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "basis_nvda",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:NVDAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "basis_msft",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:MSFTc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "basis_amzn",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AMZNc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AMZNc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "basis_tsla",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:TSLAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:TSLAc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "deepest",
+      "op": "min",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_aapl"
+        },
+        {
+          "kind": "node",
+          "node": "basis_googl"
+        },
+        {
+          "kind": "node",
+          "node": "basis_meta"
+        },
+        {
+          "kind": "node",
+          "node": "basis_nvda"
+        },
+        {
+          "kind": "node",
+          "node": "basis_msft"
+        },
+        {
+          "kind": "node",
+          "node": "basis_amzn"
+        },
+        {
+          "kind": "node",
+          "node": "basis_tsla"
+        }
+      ]
+    },
+    {
+      "id": "disc_aapl",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_aapl"
+        },
+        {
+          "kind": "param",
+          "param": "buy_at_or_below"
+        }
+      ]
+    },
+    {
+      "id": "sane_aapl",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_aapl"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "best_aapl",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_aapl"
+        },
+        {
+          "kind": "node",
+          "node": "deepest"
+        }
+      ]
+    },
+    {
+      "id": "take_aapl",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "disc_aapl"
+        },
+        {
+          "kind": "node",
+          "node": "sane_aapl"
+        },
+        {
+          "kind": "node",
+          "node": "best_aapl"
+        }
+      ]
+    },
+    {
+      "id": "disc_googl",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_googl"
+        },
+        {
+          "kind": "param",
+          "param": "buy_at_or_below"
+        }
+      ]
+    },
+    {
+      "id": "sane_googl",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_googl"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "best_googl",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_googl"
+        },
+        {
+          "kind": "node",
+          "node": "deepest"
+        }
+      ]
+    },
+    {
+      "id": "take_googl",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "disc_googl"
+        },
+        {
+          "kind": "node",
+          "node": "sane_googl"
+        },
+        {
+          "kind": "node",
+          "node": "best_googl"
+        }
+      ]
+    },
+    {
+      "id": "disc_meta",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_meta"
+        },
+        {
+          "kind": "param",
+          "param": "buy_at_or_below"
+        }
+      ]
+    },
+    {
+      "id": "sane_meta",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_meta"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "best_meta",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_meta"
+        },
+        {
+          "kind": "node",
+          "node": "deepest"
+        }
+      ]
+    },
+    {
+      "id": "take_meta",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "disc_meta"
+        },
+        {
+          "kind": "node",
+          "node": "sane_meta"
+        },
+        {
+          "kind": "node",
+          "node": "best_meta"
+        }
+      ]
+    },
+    {
+      "id": "disc_nvda",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_nvda"
+        },
+        {
+          "kind": "param",
+          "param": "buy_at_or_below"
+        }
+      ]
+    },
+    {
+      "id": "sane_nvda",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_nvda"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "best_nvda",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_nvda"
+        },
+        {
+          "kind": "node",
+          "node": "deepest"
+        }
+      ]
+    },
+    {
+      "id": "take_nvda",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "disc_nvda"
+        },
+        {
+          "kind": "node",
+          "node": "sane_nvda"
+        },
+        {
+          "kind": "node",
+          "node": "best_nvda"
+        }
+      ]
+    },
+    {
+      "id": "disc_msft",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_msft"
+        },
+        {
+          "kind": "param",
+          "param": "buy_at_or_below"
+        }
+      ]
+    },
+    {
+      "id": "sane_msft",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_msft"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "best_msft",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_msft"
+        },
+        {
+          "kind": "node",
+          "node": "deepest"
+        }
+      ]
+    },
+    {
+      "id": "take_msft",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "disc_msft"
+        },
+        {
+          "kind": "node",
+          "node": "sane_msft"
+        },
+        {
+          "kind": "node",
+          "node": "best_msft"
+        }
+      ]
+    },
+    {
+      "id": "disc_amzn",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_amzn"
+        },
+        {
+          "kind": "param",
+          "param": "buy_at_or_below"
+        }
+      ]
+    },
+    {
+      "id": "sane_amzn",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_amzn"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "best_amzn",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_amzn"
+        },
+        {
+          "kind": "node",
+          "node": "deepest"
+        }
+      ]
+    },
+    {
+      "id": "take_amzn",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "disc_amzn"
+        },
+        {
+          "kind": "node",
+          "node": "sane_amzn"
+        },
+        {
+          "kind": "node",
+          "node": "best_amzn"
+        }
+      ]
+    },
+    {
+      "id": "disc_tsla",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_tsla"
+        },
+        {
+          "kind": "param",
+          "param": "buy_at_or_below"
+        }
+      ]
+    },
+    {
+      "id": "sane_tsla",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_tsla"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "best_tsla",
+      "op": "eq",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_tsla"
+        },
+        {
+          "kind": "node",
+          "node": "deepest"
+        }
+      ]
+    },
+    {
+      "id": "take_tsla",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "disc_tsla"
+        },
+        {
+          "kind": "node",
+          "node": "sane_tsla"
+        },
+        {
+          "kind": "node",
+          "node": "best_tsla"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "basis_hunter",
+      "scope": "portfolio",
+      "initial": "scanning",
+      "states": [
+        {
+          "id": "scanning",
+          "transitions": [
+            {
+              "when": "take_aapl",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "150"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought AAPLc: its Aerodrome pool was the deepest discount to Chainlink of the seven, past your threshold and still inside your sanity floor."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "take_googl",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 1,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "150"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought GOOGLc: its Aerodrome pool was the deepest discount to Chainlink of the seven, past your threshold and still inside your sanity floor."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "take_meta",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 2,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "150"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought METAc: its Aerodrome pool was the deepest discount to Chainlink of the seven, past your threshold and still inside your sanity floor."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "take_nvda",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 3,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "150"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought NVDAc: its Aerodrome pool was the deepest discount to Chainlink of the seven, past your threshold and still inside your sanity floor."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "take_msft",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 4,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "150"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought MSFTc: its Aerodrome pool was the deepest discount to Chainlink of the seven, past your threshold and still inside your sanity floor."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "take_amzn",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 5,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "150"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought AMZNc: its Aerodrome pool was the deepest discount to Chainlink of the seven, past your threshold and still inside your sanity floor."
+                }
+              ],
+              "to": "scanning"
+            },
+            {
+              "when": "take_tsla",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 6,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "150"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Bought TSLAc: its Aerodrome pool was the deepest discount to Chainlink of the seven, past your threshold and still inside your sanity floor."
+                }
+              ],
+              "to": "scanning"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

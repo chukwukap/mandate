@@ -1,0 +1,1388 @@
+{
+  "params": [
+    {
+      "id": "peer_gap",
+      "label": "How far below the six-peer average basis this pool must trade (0.0030 = 30 bps)",
+      "value": "0.0030"
+    },
+    {
+      "id": "premium_ceiling",
+      "label": "Never buy a pool trading above its own Chainlink reference",
+      "value": "1.0000"
+    },
+    {
+      "id": "sanity_floor",
+      "label": "Refuse a discount deeper than 200 bps - that is a broken pool, not a bargain",
+      "value": "0.9800"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "b_AAPLc",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AAPLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "b_GOOGLc",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:GOOGLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:GOOGLc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "b_METAc",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:METAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:METAc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "b_NVDAc",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:NVDAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "b_MSFTc",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:MSFTc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "b_AMZNc",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AMZNc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AMZNc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "b_TSLAc",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:TSLAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:TSLAc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "gap_x6",
+      "op": "mul",
+      "args": [
+        {
+          "kind": "param",
+          "param": "peer_gap"
+        },
+        {
+          "kind": "const",
+          "value": "6"
+        }
+      ]
+    },
+    {
+      "id": "peers_AAPLc",
+      "op": "add",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "b_AMZNc"
+        },
+        {
+          "kind": "node",
+          "node": "b_TSLAc"
+        }
+      ]
+    },
+    {
+      "id": "limit_AAPLc",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "node",
+          "node": "peers_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "gap_x6"
+        }
+      ]
+    },
+    {
+      "id": "six_AAPLc",
+      "op": "mul",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AAPLc"
+        },
+        {
+          "kind": "const",
+          "value": "6"
+        }
+      ]
+    },
+    {
+      "id": "cheaper_than_peers_AAPLc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "limit_AAPLc"
+        }
+      ]
+    },
+    {
+      "id": "not_a_premium_AAPLc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AAPLc"
+        },
+        {
+          "kind": "param",
+          "param": "premium_ceiling"
+        }
+      ]
+    },
+    {
+      "id": "not_broken_AAPLc",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AAPLc"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "dislocated_AAPLc",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheaper_than_peers_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "not_a_premium_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken_AAPLc"
+        }
+      ]
+    },
+    {
+      "id": "rejoined_AAPLc",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "peers_AAPLc"
+        }
+      ]
+    },
+    {
+      "id": "peers_GOOGLc",
+      "op": "add",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "b_AMZNc"
+        },
+        {
+          "kind": "node",
+          "node": "b_TSLAc"
+        }
+      ]
+    },
+    {
+      "id": "limit_GOOGLc",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "node",
+          "node": "peers_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "gap_x6"
+        }
+      ]
+    },
+    {
+      "id": "six_GOOGLc",
+      "op": "mul",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_GOOGLc"
+        },
+        {
+          "kind": "const",
+          "value": "6"
+        }
+      ]
+    },
+    {
+      "id": "cheaper_than_peers_GOOGLc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "limit_GOOGLc"
+        }
+      ]
+    },
+    {
+      "id": "not_a_premium_GOOGLc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_GOOGLc"
+        },
+        {
+          "kind": "param",
+          "param": "premium_ceiling"
+        }
+      ]
+    },
+    {
+      "id": "not_broken_GOOGLc",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_GOOGLc"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "dislocated_GOOGLc",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheaper_than_peers_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "not_a_premium_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken_GOOGLc"
+        }
+      ]
+    },
+    {
+      "id": "rejoined_GOOGLc",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "peers_GOOGLc"
+        }
+      ]
+    },
+    {
+      "id": "peers_METAc",
+      "op": "add",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "b_AMZNc"
+        },
+        {
+          "kind": "node",
+          "node": "b_TSLAc"
+        }
+      ]
+    },
+    {
+      "id": "limit_METAc",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "node",
+          "node": "peers_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "gap_x6"
+        }
+      ]
+    },
+    {
+      "id": "six_METAc",
+      "op": "mul",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_METAc"
+        },
+        {
+          "kind": "const",
+          "value": "6"
+        }
+      ]
+    },
+    {
+      "id": "cheaper_than_peers_METAc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "limit_METAc"
+        }
+      ]
+    },
+    {
+      "id": "not_a_premium_METAc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_METAc"
+        },
+        {
+          "kind": "param",
+          "param": "premium_ceiling"
+        }
+      ]
+    },
+    {
+      "id": "not_broken_METAc",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_METAc"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "dislocated_METAc",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheaper_than_peers_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "not_a_premium_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken_METAc"
+        }
+      ]
+    },
+    {
+      "id": "rejoined_METAc",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "peers_METAc"
+        }
+      ]
+    },
+    {
+      "id": "peers_NVDAc",
+      "op": "add",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "b_AMZNc"
+        },
+        {
+          "kind": "node",
+          "node": "b_TSLAc"
+        }
+      ]
+    },
+    {
+      "id": "limit_NVDAc",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "node",
+          "node": "peers_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "gap_x6"
+        }
+      ]
+    },
+    {
+      "id": "six_NVDAc",
+      "op": "mul",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_NVDAc"
+        },
+        {
+          "kind": "const",
+          "value": "6"
+        }
+      ]
+    },
+    {
+      "id": "cheaper_than_peers_NVDAc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "limit_NVDAc"
+        }
+      ]
+    },
+    {
+      "id": "not_a_premium_NVDAc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_NVDAc"
+        },
+        {
+          "kind": "param",
+          "param": "premium_ceiling"
+        }
+      ]
+    },
+    {
+      "id": "not_broken_NVDAc",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_NVDAc"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "dislocated_NVDAc",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheaper_than_peers_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "not_a_premium_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken_NVDAc"
+        }
+      ]
+    },
+    {
+      "id": "rejoined_NVDAc",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "peers_NVDAc"
+        }
+      ]
+    },
+    {
+      "id": "peers_MSFTc",
+      "op": "add",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_AMZNc"
+        },
+        {
+          "kind": "node",
+          "node": "b_TSLAc"
+        }
+      ]
+    },
+    {
+      "id": "limit_MSFTc",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "node",
+          "node": "peers_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "gap_x6"
+        }
+      ]
+    },
+    {
+      "id": "six_MSFTc",
+      "op": "mul",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "6"
+        }
+      ]
+    },
+    {
+      "id": "cheaper_than_peers_MSFTc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "limit_MSFTc"
+        }
+      ]
+    },
+    {
+      "id": "not_a_premium_MSFTc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_MSFTc"
+        },
+        {
+          "kind": "param",
+          "param": "premium_ceiling"
+        }
+      ]
+    },
+    {
+      "id": "not_broken_MSFTc",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_MSFTc"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "dislocated_MSFTc",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheaper_than_peers_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "not_a_premium_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken_MSFTc"
+        }
+      ]
+    },
+    {
+      "id": "rejoined_MSFTc",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "peers_MSFTc"
+        }
+      ]
+    },
+    {
+      "id": "peers_AMZNc",
+      "op": "add",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "b_TSLAc"
+        }
+      ]
+    },
+    {
+      "id": "limit_AMZNc",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "node",
+          "node": "peers_AMZNc"
+        },
+        {
+          "kind": "node",
+          "node": "gap_x6"
+        }
+      ]
+    },
+    {
+      "id": "six_AMZNc",
+      "op": "mul",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AMZNc"
+        },
+        {
+          "kind": "const",
+          "value": "6"
+        }
+      ]
+    },
+    {
+      "id": "cheaper_than_peers_AMZNc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_AMZNc"
+        },
+        {
+          "kind": "node",
+          "node": "limit_AMZNc"
+        }
+      ]
+    },
+    {
+      "id": "not_a_premium_AMZNc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AMZNc"
+        },
+        {
+          "kind": "param",
+          "param": "premium_ceiling"
+        }
+      ]
+    },
+    {
+      "id": "not_broken_AMZNc",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AMZNc"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "dislocated_AMZNc",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheaper_than_peers_AMZNc"
+        },
+        {
+          "kind": "node",
+          "node": "not_a_premium_AMZNc"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken_AMZNc"
+        }
+      ]
+    },
+    {
+      "id": "rejoined_AMZNc",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_AMZNc"
+        },
+        {
+          "kind": "node",
+          "node": "peers_AMZNc"
+        }
+      ]
+    },
+    {
+      "id": "peers_TSLAc",
+      "op": "add",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_AAPLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_GOOGLc"
+        },
+        {
+          "kind": "node",
+          "node": "b_METAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_NVDAc"
+        },
+        {
+          "kind": "node",
+          "node": "b_MSFTc"
+        },
+        {
+          "kind": "node",
+          "node": "b_AMZNc"
+        }
+      ]
+    },
+    {
+      "id": "limit_TSLAc",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "node",
+          "node": "peers_TSLAc"
+        },
+        {
+          "kind": "node",
+          "node": "gap_x6"
+        }
+      ]
+    },
+    {
+      "id": "six_TSLAc",
+      "op": "mul",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_TSLAc"
+        },
+        {
+          "kind": "const",
+          "value": "6"
+        }
+      ]
+    },
+    {
+      "id": "cheaper_than_peers_TSLAc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_TSLAc"
+        },
+        {
+          "kind": "node",
+          "node": "limit_TSLAc"
+        }
+      ]
+    },
+    {
+      "id": "not_a_premium_TSLAc",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_TSLAc"
+        },
+        {
+          "kind": "param",
+          "param": "premium_ceiling"
+        }
+      ]
+    },
+    {
+      "id": "not_broken_TSLAc",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "b_TSLAc"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "dislocated_TSLAc",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheaper_than_peers_TSLAc"
+        },
+        {
+          "kind": "node",
+          "node": "not_a_premium_TSLAc"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken_TSLAc"
+        }
+      ]
+    },
+    {
+      "id": "rejoined_TSLAc",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "six_TSLAc"
+        },
+        {
+          "kind": "node",
+          "node": "peers_TSLAc"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "scan_AAPLc",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "dislocated_AAPLc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "25"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "AAPLc pool is trading below its six B20 peers and below its own Chainlink reference; bought 25 USDC."
+                }
+              ]
+            },
+            {
+              "when": "rejoined_AAPLc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "AAPLc basis has rejoined the peer average."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scan_GOOGLc",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "dislocated_GOOGLc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 1,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "25"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "GOOGLc pool is trading below its six B20 peers and below its own Chainlink reference; bought 25 USDC."
+                }
+              ]
+            },
+            {
+              "when": "rejoined_GOOGLc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "GOOGLc basis has rejoined the peer average."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scan_METAc",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "dislocated_METAc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 2,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "25"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "METAc pool is trading below its six B20 peers and below its own Chainlink reference; bought 25 USDC."
+                }
+              ]
+            },
+            {
+              "when": "rejoined_METAc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "METAc basis has rejoined the peer average."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scan_NVDAc",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "dislocated_NVDAc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 3,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "25"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "NVDAc pool is trading below its six B20 peers and below its own Chainlink reference; bought 25 USDC."
+                }
+              ]
+            },
+            {
+              "when": "rejoined_NVDAc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "NVDAc basis has rejoined the peer average."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scan_MSFTc",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "dislocated_MSFTc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 4,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "25"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "MSFTc pool is trading below its six B20 peers and below its own Chainlink reference; bought 25 USDC."
+                }
+              ]
+            },
+            {
+              "when": "rejoined_MSFTc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "MSFTc basis has rejoined the peer average."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scan_AMZNc",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "dislocated_AMZNc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 5,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "25"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "AMZNc pool is trading below its six B20 peers and below its own Chainlink reference; bought 25 USDC."
+                }
+              ]
+            },
+            {
+              "when": "rejoined_AMZNc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "AMZNc basis has rejoined the peer average."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scan_TSLAc",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "dislocated_TSLAc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 6,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "25"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "TSLAc pool is trading below its six B20 peers and below its own Chainlink reference; bought 25 USDC."
+                }
+              ]
+            },
+            {
+              "when": "rejoined_TSLAc",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "TSLAc basis has rejoined the peer average."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

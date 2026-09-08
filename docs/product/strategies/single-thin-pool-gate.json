@@ -1,0 +1,138 @@
+{
+  "params": [
+    {
+      "id": "entry",
+      "label": "MSFTc entry price (USD)",
+      "value": "400"
+    },
+    {
+      "id": "tolerance",
+      "label": "Max pool-vs-oracle gap (0.005 = 50 bps)",
+      "value": "0.005"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "gap",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:MSFTc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        }
+      ]
+    },
+    {
+      "id": "abs_gap",
+      "op": "abs",
+      "args": [
+        {
+          "kind": "node",
+          "node": "gap"
+        }
+      ]
+    },
+    {
+      "id": "deviation",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "node",
+          "node": "abs_gap"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "id": "pool_sane",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "deviation"
+        },
+        {
+          "kind": "param",
+          "param": "tolerance"
+        }
+      ]
+    },
+    {
+      "id": "cheap",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "param",
+          "param": "entry"
+        }
+      ]
+    },
+    {
+      "id": "enter",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "cheap"
+        },
+        {
+          "kind": "node",
+          "node": "pool_sane"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "gated_entry",
+      "scope": "portfolio",
+      "initial": "waiting",
+      "states": [
+        {
+          "id": "waiting",
+          "transitions": [
+            {
+              "when": "enter",
+              "fires": "on_edge",
+              "to": "filled",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 4,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "400"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "MSFTc under 400 with the Aerodrome pool within 50 bps of Chainlink: bought 400 USDC."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "filled",
+          "transitions": []
+        }
+      ]
+    }
+  ]
+}

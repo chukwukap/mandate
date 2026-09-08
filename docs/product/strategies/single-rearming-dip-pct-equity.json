@@ -1,0 +1,164 @@
+{
+  "params": [
+    {
+      "id": "dip",
+      "label": "TSLAc dip level (USD)",
+      "value": "300"
+    },
+    {
+      "id": "rearm",
+      "label": "TSLAc re-arm level (USD)",
+      "value": "330"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "in_dip",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:TSLAc"
+        },
+        {
+          "kind": "param",
+          "param": "dip"
+        }
+      ]
+    },
+    {
+      "id": "recovered",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:TSLAc"
+        },
+        {
+          "kind": "param",
+          "param": "rearm"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "dip_buyer",
+      "scope": "portfolio",
+      "initial": "armed_1",
+      "states": [
+        {
+          "id": "armed_1",
+          "transitions": [
+            {
+              "when": "in_dip",
+              "fires": "on_edge",
+              "to": "spent_1",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 6,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 500
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "TSLAc below 300 (dip 1 of 3): bought 5% of equity."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "spent_1",
+          "transitions": [
+            {
+              "when": "recovered",
+              "fires": "on_edge",
+              "to": "armed_2",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "TSLAc back over 330: re-armed for dip 2 of 3."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "armed_2",
+          "transitions": [
+            {
+              "when": "in_dip",
+              "fires": "on_edge",
+              "to": "spent_2",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 6,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 500
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "TSLAc below 300 (dip 2 of 3): bought 5% of equity."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "spent_2",
+          "transitions": [
+            {
+              "when": "recovered",
+              "fires": "on_edge",
+              "to": "armed_3",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "TSLAc back over 330: re-armed for dip 3 of 3."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "armed_3",
+          "transitions": [
+            {
+              "when": "in_dip",
+              "fires": "on_edge",
+              "to": "done",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 6,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 500
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "TSLAc below 300 (dip 3 of 3): bought 5% of equity. Strategy complete."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "done",
+          "transitions": []
+        }
+      ]
+    }
+  ]
+}

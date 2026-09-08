@@ -1,0 +1,310 @@
+{
+  "params": [
+    {
+      "id": "act_at",
+      "label": "Buy when the pool ask is 25 bps or more below Chainlink",
+      "value": "0.9975"
+    },
+    {
+      "id": "sanity_floor",
+      "label": "Never buy a discount deeper than 150 bps",
+      "value": "0.9850"
+    },
+    {
+      "id": "breaker_at",
+      "label": "Stop the whole strategy if either pool is more than 350 bps from its reference in either direction",
+      "value": "0.0350"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "basis_aapl",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AAPLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "basis_googl",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:GOOGLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:GOOGLc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "spread_aapl",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_aapl"
+        },
+        {
+          "kind": "const",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "id": "spread_googl",
+      "op": "sub",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_googl"
+        },
+        {
+          "kind": "const",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "id": "abs_aapl",
+      "op": "abs",
+      "args": [
+        {
+          "kind": "node",
+          "node": "spread_aapl"
+        }
+      ]
+    },
+    {
+      "id": "abs_googl",
+      "op": "abs",
+      "args": [
+        {
+          "kind": "node",
+          "node": "spread_googl"
+        }
+      ]
+    },
+    {
+      "id": "worst_dislocation",
+      "op": "max",
+      "args": [
+        {
+          "kind": "node",
+          "node": "abs_aapl"
+        },
+        {
+          "kind": "node",
+          "node": "abs_googl"
+        }
+      ]
+    },
+    {
+      "id": "venue_broken",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "worst_dislocation"
+        },
+        {
+          "kind": "param",
+          "param": "breaker_at"
+        }
+      ]
+    },
+    {
+      "id": "aapl_cheap",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_aapl"
+        },
+        {
+          "kind": "param",
+          "param": "act_at"
+        }
+      ]
+    },
+    {
+      "id": "aapl_sane",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_aapl"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "buy_aapl",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "aapl_cheap"
+        },
+        {
+          "kind": "node",
+          "node": "aapl_sane"
+        }
+      ]
+    },
+    {
+      "id": "googl_cheap",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_googl"
+        },
+        {
+          "kind": "param",
+          "param": "act_at"
+        }
+      ]
+    },
+    {
+      "id": "googl_sane",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis_googl"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "buy_googl",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "googl_cheap"
+        },
+        {
+          "kind": "node",
+          "node": "googl_sane"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "circuit_breaker",
+      "scope": "portfolio",
+      "initial": "monitoring",
+      "states": [
+        {
+          "id": "monitoring",
+          "transitions": [
+            {
+              "when": "venue_broken",
+              "fires": "on_edge",
+              "to": "tripped",
+              "actions": [
+                {
+                  "action": "halt",
+                  "reason": "An Aerodrome pool is more than 350 bps from its Chainlink reference. That is a dislocated or captured pool, not a discount. Stopping and handing this back to you."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tripped",
+          "transitions": []
+        }
+      ]
+    },
+    {
+      "id": "buy_aapl_discount",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "buy_aapl",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "40"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "AAPLc pool ask 25 bps or more below Chainlink and inside the sane band; bought 40 USDC."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "buy_googl_discount",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "buy_googl",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 1,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "40"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "GOOGLc pool ask 25 bps or more below Chainlink and inside the sane band; bought 40 USDC."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "params": [
+    {
+      "id": "rung1",
+      "label": "AAPLc first rung (USD)",
+      "value": "230"
+    },
+    {
+      "id": "rung2",
+      "label": "AAPLc second rung (USD)",
+      "value": "220"
+    },
+    {
+      "id": "rung3",
+      "label": "AAPLc third rung (USD)",
+      "value": "210"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "under_rung1",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "param",
+          "param": "rung1"
+        }
+      ]
+    },
+    {
+      "id": "under_rung2",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "param",
+          "param": "rung2"
+        }
+      ]
+    },
+    {
+      "id": "under_rung3",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "param",
+          "param": "rung3"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "ladder",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "under_rung1",
+              "fires": "on_edge",
+              "to": "rung1_filled",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "200"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "AAPLc ladder rung 1 filled below 230."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rung1_filled",
+          "transitions": [
+            {
+              "when": "under_rung2",
+              "fires": "on_edge",
+              "to": "rung2_filled",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "300"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "AAPLc ladder rung 2 filled below 220."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rung2_filled",
+          "transitions": [
+            {
+              "when": "under_rung3",
+              "fires": "on_edge",
+              "to": "rung3_filled",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "500"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "AAPLc ladder rung 3 filled below 210. Ladder complete."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rung3_filled",
+          "transitions": []
+        }
+      ]
+    }
+  ]
+}

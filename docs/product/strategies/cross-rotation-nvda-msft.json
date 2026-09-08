@@ -1,0 +1,389 @@
+{
+  "params": [
+    {
+      "id": "tilt_nvda_below",
+      "label": "NVDA/MSFT ratio below which NVDA is the cheap leg",
+      "value": "0.285"
+    },
+    {
+      "id": "tilt_msft_above",
+      "label": "NVDA/MSFT ratio above which MSFT is the cheap leg",
+      "value": "0.335"
+    },
+    {
+      "id": "add_nvda_below",
+      "label": "Deeper NVDA/MSFT ratio at which to add to an existing NVDA tilt",
+      "value": "0.270"
+    },
+    {
+      "id": "add_msft_above",
+      "label": "Deeper NVDA/MSFT ratio at which to add to an existing MSFT tilt",
+      "value": "0.350"
+    },
+    {
+      "id": "neutral_low",
+      "label": "Ratio at which an NVDA tilt is considered spent",
+      "value": "0.300"
+    },
+    {
+      "id": "neutral_high",
+      "label": "Ratio at which an MSFT tilt is considered spent",
+      "value": "0.320"
+    },
+    {
+      "id": "max_premium",
+      "label": "Most an Aerodrome pool may exceed its oracle (1.006 = 0.6%)",
+      "value": "1.006"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ratio",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "prem_nvda",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:NVDAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "prem_msft",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:MSFTc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "fill_nvda",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "prem_nvda"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "fill_msft",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "prem_msft"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "nvda_is_cheap",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "ratio"
+        },
+        {
+          "kind": "param",
+          "param": "tilt_nvda_below"
+        }
+      ]
+    },
+    {
+      "id": "msft_is_cheap",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "ratio"
+        },
+        {
+          "kind": "param",
+          "param": "tilt_msft_above"
+        }
+      ]
+    },
+    {
+      "id": "take_nvda",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "nvda_is_cheap"
+        },
+        {
+          "kind": "node",
+          "node": "fill_nvda"
+        }
+      ]
+    },
+    {
+      "id": "take_msft",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "msft_is_cheap"
+        },
+        {
+          "kind": "node",
+          "node": "fill_msft"
+        }
+      ]
+    },
+    {
+      "id": "nvda_much_cheaper",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "ratio"
+        },
+        {
+          "kind": "param",
+          "param": "add_nvda_below"
+        }
+      ]
+    },
+    {
+      "id": "msft_much_cheaper",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "ratio"
+        },
+        {
+          "kind": "param",
+          "param": "add_msft_above"
+        }
+      ]
+    },
+    {
+      "id": "add_nvda",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "nvda_much_cheaper"
+        },
+        {
+          "kind": "node",
+          "node": "fill_nvda"
+        }
+      ]
+    },
+    {
+      "id": "add_msft",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "msft_much_cheaper"
+        },
+        {
+          "kind": "node",
+          "node": "fill_msft"
+        }
+      ]
+    },
+    {
+      "id": "nvda_tilt_spent",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "ratio"
+        },
+        {
+          "kind": "param",
+          "param": "neutral_low"
+        }
+      ]
+    },
+    {
+      "id": "msft_tilt_spent",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "ratio"
+        },
+        {
+          "kind": "param",
+          "param": "neutral_high"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "nvda_msft_rotation",
+      "scope": "portfolio",
+      "initial": "neutral",
+      "states": [
+        {
+          "id": "neutral",
+          "transitions": [
+            {
+              "when": "take_nvda",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "300"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Rotated toward NVDAc: NVDA/MSFT fell below your NVDA-cheap ratio with a clean Aerodrome pool."
+                }
+              ],
+              "to": "tilt_nvda"
+            },
+            {
+              "when": "take_msft",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 1,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "300"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Rotated toward MSFTc: NVDA/MSFT rose above your MSFT-cheap ratio with a clean Aerodrome pool."
+                }
+              ],
+              "to": "tilt_msft"
+            }
+          ]
+        },
+        {
+          "id": "tilt_nvda",
+          "transitions": [
+            {
+              "when": "add_nvda",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "300"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Added to the NVDAc leg: the ratio broke through your deeper NVDA add level while already tilted."
+                }
+              ],
+              "to": "tilt_nvda"
+            },
+            {
+              "when": "nvda_tilt_spent",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "NVDA/MSFT has recovered to your neutral band. The NVDA tilt is spent and the strategy is neutral again; it cannot sell, so rebalancing is yours."
+                }
+              ],
+              "to": "neutral"
+            }
+          ]
+        },
+        {
+          "id": "tilt_msft",
+          "transitions": [
+            {
+              "when": "add_msft",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 1,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "300"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Added to the MSFTc leg: the ratio broke through your deeper MSFT add level while already tilted."
+                }
+              ],
+              "to": "tilt_msft"
+            },
+            {
+              "when": "msft_tilt_spent",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "NVDA/MSFT has fallen back to your neutral band. The MSFT tilt is spent and the strategy is neutral again; it cannot sell, so rebalancing is yours."
+                }
+              ],
+              "to": "neutral"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

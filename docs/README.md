@@ -22,6 +22,7 @@ API users. The Next.js web workspace supports stock browsing and strategy author
 
 - [Web feature structure](architecture/web.md)
 - [Onboarding design](product/onboarding.md)
+- [What users can actually strategise](product/strategies.md) — the engine's real limits, measured, with 17 validated plans
 - [Remaining directory placeholders](migration/structure-audit.md)
 - [Package boundaries](architecture/README.md)
 - [Privy authentication decision](architecture/decisions/0001-privy-auth.md)

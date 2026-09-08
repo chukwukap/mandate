@@ -1,0 +1,140 @@
+{
+  "params": [
+    {
+      "id": "act_at",
+      "label": "Buy when the pool ask is at least this far below Chainlink (0.9980 = -20 bps)",
+      "value": "0.9980"
+    },
+    {
+      "id": "sanity_floor",
+      "label": "Refuse discounts deeper than this - a broken or captured pool, not a bargain (0.9800 = -200 bps)",
+      "value": "0.9800"
+    },
+    {
+      "id": "rearm_at",
+      "label": "Re-arm once the pool trades back at or above Chainlink",
+      "value": "1.0000"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "basis",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AAPLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "discounted",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "act_at"
+        }
+      ]
+    },
+    {
+      "id": "not_broken",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "buy_the_discount",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "discounted"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken"
+        }
+      ]
+    },
+    {
+      "id": "basis_normalised",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "rearm_at"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "aapl_basis",
+      "scope": "portfolio",
+      "initial": "watching",
+      "states": [
+        {
+          "id": "watching",
+          "transitions": [
+            {
+              "when": "buy_the_discount",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "50"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "AAPLc pool ask crossed below the Chainlink reference inside the sane band; bought 50 USDC."
+                }
+              ]
+            },
+            {
+              "when": "basis_normalised",
+              "fires": "on_edge",
+              "to": "watching",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "AAPLc basis back at or above the Chainlink reference."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,331 @@
+{
+  "params": [
+    {
+      "id": "rung1_at",
+      "label": "First rung: pool ask 10 bps below Chainlink",
+      "value": "0.9990"
+    },
+    {
+      "id": "rung2_at",
+      "label": "Second rung: 40 bps below",
+      "value": "0.9960"
+    },
+    {
+      "id": "rung3_at",
+      "label": "Third rung: 100 bps below",
+      "value": "0.9900"
+    },
+    {
+      "id": "sanity_floor",
+      "label": "Below 250 bps the pool is dislocated, not cheap - buy nothing",
+      "value": "0.9750"
+    },
+    {
+      "id": "reset_at",
+      "label": "Reset the ladder once the pool trades back at or above Chainlink",
+      "value": "1.0000"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "basis",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:TSLAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:TSLAc"
+        },
+        {
+          "kind": "const",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "not_broken",
+      "op": "gt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "sanity_floor"
+        }
+      ]
+    },
+    {
+      "id": "below_1",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "rung1_at"
+        }
+      ]
+    },
+    {
+      "id": "below_2",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "rung2_at"
+        }
+      ]
+    },
+    {
+      "id": "below_3",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "rung3_at"
+        }
+      ]
+    },
+    {
+      "id": "step_1",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "below_1"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken"
+        }
+      ]
+    },
+    {
+      "id": "step_2",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "below_2"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken"
+        }
+      ]
+    },
+    {
+      "id": "step_3",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "below_3"
+        },
+        {
+          "kind": "node",
+          "node": "not_broken"
+        }
+      ]
+    },
+    {
+      "id": "back_to_par",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "basis"
+        },
+        {
+          "kind": "param",
+          "param": "reset_at"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "tsla_ladder",
+      "scope": "portfolio",
+      "initial": "rung0",
+      "states": [
+        {
+          "id": "rung0",
+          "transitions": [
+            {
+              "when": "step_3",
+              "fires": "on_edge",
+              "to": "rung3",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 400
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "TSLAc gapped straight past the third rung; took the full 4% of equity."
+                }
+              ]
+            },
+            {
+              "when": "step_2",
+              "fires": "on_edge",
+              "to": "rung2",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 200
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "TSLAc opened at the second rung; took 2% of equity."
+                }
+              ]
+            },
+            {
+              "when": "step_1",
+              "fires": "on_edge",
+              "to": "rung1",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 100
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "TSLAc pool ask fell below Chainlink; took the first 1% rung."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rung1",
+          "transitions": [
+            {
+              "when": "step_3",
+              "fires": "on_edge",
+              "to": "rung3",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 400
+                  }
+                }
+              ]
+            },
+            {
+              "when": "step_2",
+              "fires": "on_edge",
+              "to": "rung2",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 200
+                  }
+                }
+              ]
+            },
+            {
+              "when": "back_to_par",
+              "fires": "on_edge",
+              "to": "rung0",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "TSLAc basis back at par; ladder reset from rung 1."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rung2",
+          "transitions": [
+            {
+              "when": "step_3",
+              "fires": "on_edge",
+              "to": "rung3",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 400
+                  }
+                }
+              ]
+            },
+            {
+              "when": "back_to_par",
+              "fires": "on_edge",
+              "to": "rung0",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "TSLAc basis back at par; ladder reset from rung 2."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rung3",
+          "transitions": [
+            {
+              "when": "back_to_par",
+              "fires": "on_edge",
+              "to": "rung0",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "TSLAc basis back at par; ladder reset from rung 3."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

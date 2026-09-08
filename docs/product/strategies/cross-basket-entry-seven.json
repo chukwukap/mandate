@@ -1,0 +1,375 @@
+{
+  "params": [
+    {
+      "id": "index_entry",
+      "label": "Sum of the seven oracle prices that counts as a broad drawdown",
+      "value": "1950"
+    },
+    {
+      "id": "index_reset",
+      "label": "Sum of the seven oracle prices that re-arms the strategy",
+      "value": "2150"
+    },
+    {
+      "id": "max_premium",
+      "label": "Most any one Aerodrome pool may exceed its oracle (1.006 = 0.6%)",
+      "value": "1.006"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "index",
+      "op": "add",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:GOOGLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:METAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AMZNc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:TSLAc"
+        }
+      ]
+    },
+    {
+      "id": "prem_aapl",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AAPLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AAPLc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "prem_googl",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:GOOGLc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:GOOGLc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "prem_meta",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:METAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:METAc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "prem_nvda",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:NVDAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "prem_msft",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:MSFTc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:MSFTc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "prem_amzn",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:AMZNc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:AMZNc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "prem_tsla",
+      "op": "safe_div",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "dex:TSLAc"
+        },
+        {
+          "kind": "feed",
+          "feed": "oracle:TSLAc"
+        },
+        {
+          "kind": "const",
+          "value": "999"
+        }
+      ]
+    },
+    {
+      "id": "worst_prem",
+      "op": "max",
+      "args": [
+        {
+          "kind": "node",
+          "node": "prem_aapl"
+        },
+        {
+          "kind": "node",
+          "node": "prem_googl"
+        },
+        {
+          "kind": "node",
+          "node": "prem_meta"
+        },
+        {
+          "kind": "node",
+          "node": "prem_nvda"
+        },
+        {
+          "kind": "node",
+          "node": "prem_msft"
+        },
+        {
+          "kind": "node",
+          "node": "prem_amzn"
+        },
+        {
+          "kind": "node",
+          "node": "prem_tsla"
+        }
+      ]
+    },
+    {
+      "id": "pools_ok",
+      "op": "lte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "worst_prem"
+        },
+        {
+          "kind": "param",
+          "param": "max_premium"
+        }
+      ]
+    },
+    {
+      "id": "index_low",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "node",
+          "node": "index"
+        },
+        {
+          "kind": "param",
+          "param": "index_entry"
+        }
+      ]
+    },
+    {
+      "id": "deploy",
+      "op": "and",
+      "args": [
+        {
+          "kind": "node",
+          "node": "index_low"
+        },
+        {
+          "kind": "node",
+          "node": "pools_ok"
+        }
+      ]
+    },
+    {
+      "id": "index_back",
+      "op": "gte",
+      "args": [
+        {
+          "kind": "node",
+          "node": "index"
+        },
+        {
+          "kind": "param",
+          "param": "index_reset"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "basket_entry",
+      "scope": "portfolio",
+      "initial": "armed",
+      "states": [
+        {
+          "id": "armed",
+          "transitions": [
+            {
+              "when": "deploy",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 0,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 200
+                  }
+                },
+                {
+                  "action": "order",
+                  "asset": 1,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 200
+                  }
+                },
+                {
+                  "action": "order",
+                  "asset": 2,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 200
+                  }
+                },
+                {
+                  "action": "order",
+                  "asset": 3,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 200
+                  }
+                },
+                {
+                  "action": "order",
+                  "asset": 4,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 200
+                  }
+                },
+                {
+                  "action": "order",
+                  "asset": 5,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 200
+                  }
+                },
+                {
+                  "action": "order",
+                  "asset": 6,
+                  "side": "buy",
+                  "size": {
+                    "unit": "pct_equity",
+                    "bps": 200
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Basket deployed: the seven-name price index fell through your entry level with every Aerodrome pool inside your premium tolerance. Seven equal-weight buys of 2% of equity each were submitted."
+                }
+              ],
+              "to": "deployed"
+            }
+          ]
+        },
+        {
+          "id": "deployed",
+          "transitions": [
+            {
+              "when": "index_back",
+              "fires": "on_edge",
+              "actions": [
+                {
+                  "action": "notify",
+                  "message": "The seven-name index is back above your reset level. The basket is re-armed for the next drawdown. The strategy cannot sell, so any trimming is yours to do."
+                }
+              ],
+              "to": "armed"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

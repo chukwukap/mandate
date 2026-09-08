@@ -1,0 +1,63 @@
+{
+  "params": [
+    {
+      "id": "limit",
+      "label": "NVDAc limit price (USD)",
+      "value": "150"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "below_limit",
+      "op": "lt",
+      "args": [
+        {
+          "kind": "feed",
+          "feed": "oracle:NVDAc"
+        },
+        {
+          "kind": "param",
+          "param": "limit"
+        }
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "limit_buy",
+      "scope": "portfolio",
+      "initial": "waiting",
+      "states": [
+        {
+          "id": "waiting",
+          "transitions": [
+            {
+              "when": "below_limit",
+              "fires": "on_edge",
+              "to": "filled",
+              "actions": [
+                {
+                  "action": "order",
+                  "asset": 3,
+                  "side": "buy",
+                  "size": {
+                    "unit": "quote",
+                    "value": "250"
+                  }
+                },
+                {
+                  "action": "notify",
+                  "message": "Limit reached: bought 250 USDC of NVDAc under 150."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "filled",
+          "transitions": []
+        }
+      ]
+    }
+  ]
+}
