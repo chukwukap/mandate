@@ -23,7 +23,14 @@ sleep 2
 # block it builds, so a 2s interval is 30 upstream requests a minute purely to sit idle — enough
 # for a public endpoint to start refusing, and anvil aborts rather than retrying past its limit.
 # Blocks are produced by the ticker below instead, slowly, and by transactions themselves.
-anvil --fork-url "$RPC" --fork-block-number "$BLOCK" --chain-id 8453 --port 8545 --silent \
+# --hardfork cancun, deliberately behind Base's actual fork. Prague's EIP-2935 has the node write
+# each block's parent hash into the history contract at 0x0000f908…2935 during pre-execution,
+# which reads a NEW ring-buffer slot every block — never cached, always an upstream round trip.
+# On a public endpoint one of those eventually fails and anvil panics instead of retrying past
+# its limit; that was every crash this fork has had, at 0x0000f908…2935 each time. Nothing the
+# product touches needs a Prague opcode (the mocks are compiled for cancun), so the fork gives
+# up nothing by staying one fork behind and stops depending on the backend to make a block.
+anvil --fork-url "$RPC" --fork-block-number "$BLOCK" --chain-id 8453 --port 8545 --silent --hardfork cancun \
   --accounts 5 --balance 1000 --retries 20 --fork-retry-backoff 3000 \
   --compute-units-per-second 60 --timeout 120000 > "$STATE/anvil.log" 2>&1 &
 for _ in $(seq 1 40); do cast block-number --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1 && break; sleep 1; done

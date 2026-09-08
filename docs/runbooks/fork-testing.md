@@ -56,8 +56,16 @@ block's timestamp while the worker measures freshness against `Date.now()`.
 - **The first `/v1/market` after a cold fork reports every `dex:` feed null.** Routing probes six
   tick spacings per asset against an unwarmed fork and exceeds the 5s RPC timeout, and the result
   is cached for 15s. It settles by the second poll.
-- **Anvil aborts if its fork backend rate-limits.** It does not retry past its limit; it panics.
-  Use an endpoint that serves archive state (`https://mainnet.base.org` does) and avoid interval
-  mining, which refetches L1 system-account storage on every block.
+- **Anvil used to die every few hours, always at the same address.** Every crash was
+  `GetStorage(0x0000f90827f1c53a10cb7a02335b175320002935, …)` against the fork backend. That is the
+  EIP-2935 block-hash history contract: at Prague and later, the node writes each block's parent
+  hash into it during pre-execution, which reads a *new* ring-buffer slot every block — never
+  cached, always an upstream round trip. On a public endpoint one eventually fails, and anvil
+  panics rather than retrying past its limit. `fork-up.sh` therefore runs `--hardfork cancun`,
+  one fork behind Base, which removes the per-block dependency entirely: measured, forty blocks
+  mined in seconds with zero fetches of that address and the same swap filling. Nothing the
+  product touches needs a Prague opcode, and the mocks are compiled for cancun to match. Keep an
+  archive-serving backend anyway (`https://mainnet.base.org`) for the state that still has to be
+  fetched on first touch.
 - **AAPLc's tick-spacing-200 pool quotes thousands of dollars a share.** That is real mainnet
   state faithfully reproduced, and it is why routing sanity-checks every quote against Chainlink.

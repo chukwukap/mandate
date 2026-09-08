@@ -130,7 +130,13 @@ export async function registerPortfolio(app: FastifyInstance, deps: PortfolioDep
       }
 
       const [balances, snapshot] = await Promise.all([
-        deps.chain.balances(wallet, deps.assets),
+        // An RPC that cannot be reached is an outage, not a bug. Left unguarded this rejected
+        // into the generic 500 "internal-error", which tells an operator to look for a defect in
+        // this code while the chain is simply down — and it is the one failure this route can
+        // do nothing about except say so.
+        deps.chain.balances(wallet, deps.assets).catch(() => {
+          throw Problem.unavailable("Balances could not be read from the chain right now.");
+        }),
         // A price failure must not hide the balances. Quantities are the part the user cannot
         // get anywhere else in this app; an unpriced holding is still worth showing.
         deps.snapshots.current().catch(() => undefined),
