@@ -1,5 +1,5 @@
 import type { Hex } from "@mandate/contracts";
-import type { ExecutionRow, TransactionRow } from "@mandate/database";
+import type { ExecutionRow } from "@mandate/database";
 import { type Database, schema, type WorkerStore } from "@mandate/database";
 import { and, eq } from "drizzle-orm";
 import { DEFAULT_REBROADCAST_AFTER_MS, diagnose, type StuckPolicy } from "./diagnosis.js";

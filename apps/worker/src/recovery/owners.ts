@@ -26,7 +26,7 @@ const PAGE = 100;
 export async function eachOwner(
   db: Database,
   maxOwners: number,
-  visit: (userId: string, tx: Transaction) => Promise<"stop" | void>,
+  visit: (userId: string, tx: Transaction) => Promise<"stop" | undefined>,
 ): Promise<{ complete: boolean; visited: number }> {
   let cursor: string | undefined;
   let visited = 0;

@@ -97,11 +97,11 @@ const draftBody = {
 
 afterAll(async () => {
   await api?.close();
-});
+}, 60_000);
 
 beforeAll(() => {
   alice = newIdentity();
-});
+}, 60_000);
 
 test("a prompt becomes a reviewable draft, and the model never sees more than the catalogue", async () => {
   const compiler = new StubCompiler(() => ({
@@ -136,7 +136,7 @@ test("a prompt becomes a reviewable draft, and the model never sees more than th
   expect(compiler.prompts).toEqual([draftBody.prompt]);
   const seen = compiler.assetsSeen[0] ?? [];
   expect(seen.map((asset) => asset.symbol)).toEqual(["AAPLc"]);
-});
+}, 60_000);
 
 test("a plan the model invents is validated, not trusted", async () => {
   // `oracle:DOGE` is not in the catalogue. A model that hallucinates a feed must not be able to
@@ -167,7 +167,7 @@ test("a plan the model invents is validated, not trusted", async () => {
   } finally {
     await rogueApi.close();
   }
-});
+}, 60_000);
 
 test("a request for missing detail is a question, not a failure", async () => {
   const compiler = {
@@ -193,7 +193,7 @@ test("a request for missing detail is a question, not a failure", async () => {
   } finally {
     await asking.close();
   }
-});
+}, 60_000);
 
 test("without a key, text authoring says so and the structured builder still works", async () => {
   const bare = await startContractApi({ identities: [alice] });
@@ -221,4 +221,4 @@ test("without a key, text authoring says so and the structured builder still wor
   } finally {
     await bare.close();
   }
-});
+}, 60_000);

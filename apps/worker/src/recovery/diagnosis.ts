@@ -109,7 +109,7 @@ function has(legs: readonly LegFacts[], leg: Leg, status: string) {
  */
 export function foreignActivity(facts: ChainFacts) {
   const { nonce, journal } = facts;
-  if (!nonce || !journal || !journal.complete) return false;
+  if (!nonce || !journal?.complete) return false;
   if (nonce.latest > journal.ceiling) return true;
   const explained = new Set(journal.unsettled);
   for (let n = nonce.latest; n < nonce.pending; n += 1) if (!explained.has(n)) return true;
@@ -130,7 +130,7 @@ export function foreignActivity(facts: ChainFacts) {
  *  7. everything reconciles.
  */
 export function diagnose(
-  order: { status: string; stage: string },
+  _order: { status: string; stage: string },
   facts: ChainFacts,
   policy: StuckPolicy,
 ): Diagnosis {

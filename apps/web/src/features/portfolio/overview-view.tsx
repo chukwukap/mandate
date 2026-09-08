@@ -3,7 +3,6 @@ import {
   ArrowDownLeft,
   ArrowRight,
   ArrowUpRight,
-  Layers3,
   Loader2,
   ShieldCheck,
   SlidersHorizontal,

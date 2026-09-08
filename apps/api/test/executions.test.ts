@@ -14,7 +14,6 @@ import {
   BaseReceiptReader,
   fillPricing,
   type ReceiptReader,
-  registerExecutions,
   registerInstanceExecutions,
   type Settlement,
   type SettlementReceipt,
