@@ -34,7 +34,29 @@ async function main() {
       // per-instance advisory locks and nothing else changes about how the pool is used.
       connector: database.pool,
     });
-    if (!(await worker.ready())) throw new Error("Worker readiness failed");
+    // Retried, not fatal on the first miss.
+    //
+    // `worker.ready()` ends with an RPC round trip, and a public Base endpoint under load
+    // answers it in more than the 10s budget often enough to matter — the worker was exiting at
+    // boot on a check that succeeded a second later, on config that was entirely valid.
+    // Leadership already waits in a loop for the same class of reason; readiness deserves the
+    // same patience. Bounded, so a genuinely misconfigured worker still stops rather than
+    // retrying forever.
+    let ready = false;
+    for (let attempt = 1; attempt <= 5 && !stop.signal.aborted && !ready; attempt += 1) {
+      // The reason travels with the retry. `Scheduler.ready()` reports clock skew by THROWING a
+      // Problem carrying the measured numbers and the remedy, so a bare `catch(() => false)`
+      // turns a precise diagnosis into "not ready" and sends an operator to check their RPC.
+      let reason: string | undefined;
+      ready = await worker.ready().catch((error: unknown) => {
+        reason = error instanceof Error ? error.message : String(error);
+        return false;
+      });
+      if (ready) break;
+      log.warn({ attempt, ...(reason ? { reason } : {}) }, "Worker not ready yet; retrying");
+      await delay(3_000, undefined, { signal: stop.signal }).catch(() => {});
+    }
+    if (!ready && !stop.signal.aborted) throw new Error("Worker readiness failed");
     while (!stop.signal.aborted && !(await lease.acquire())) {
       log.info("Another worker holds leadership; waiting");
       await delay(config.pollMs, undefined, { signal: stop.signal }).catch(() => {});
@@ -58,8 +80,16 @@ async function main() {
       while (!stop.signal.aborted) {
         try {
           await worker.cycle(stop.signal);
-        } catch {
-          log.error("Worker cycle failed; durable state retained for retry");
+        } catch (error) {
+          // Named, not swallowed. A bare catch here logs "cycle failed" on every pass and leaves
+          // an operator with a loop that is plainly broken and no way to tell why — which is
+          // exactly the position this was in.
+          log.error(
+            { reason: error instanceof Error ? error.message : String(error) },
+            "Worker cycle failed; durable state retained for retry",
+          );
+          // Mark the lease unhealthy so /ready reports execution as unavailable while the loop
+          // is failing, and give up leadership if even that write cannot land.
           await lease.heartbeat(false).catch(() => {
             stop.abort();
             process.exitCode = 1;

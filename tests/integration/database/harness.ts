@@ -61,7 +61,16 @@ const REQUIRED_TABLES = [
  * brief asks for and what CI provides; on a laptop it is usually the local development database,
  * which is why every tenant these suites create is namespaced and torn down (see `discardTenant`).
  */
-export const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+/**
+ * TEST_DATABASE_URL only. There is deliberately no fallback to DATABASE_URL.
+ *
+ * That fallback is how these suites came to write 92 fixture users, 90 armed strategies and 142
+ * outstanding orders into the database the live worker polls — and with execution enabled the
+ * worker then tried to reconcile transaction hashes that exist only in a test against Base
+ * mainnet. Requiring an explicit variable means running the integration suites is a decision,
+ * and pointing them at a live database is a decision someone has to type.
+ */
+export const DATABASE_URL = process.env.TEST_DATABASE_URL;
 
 /**
  * The worker's own credentials, for suites that assert worker-owned behaviour.
@@ -118,7 +127,7 @@ async function probe(): Promise<Probe> {
   const unusable = (reason: string): Probe => ({ unavailable: reason, rlsEnforced: false });
   if (!DATABASE_URL)
     return unusable(
-      "DATABASE_URL (or TEST_DATABASE_URL) is not set, so there is no PostgreSQL to integrate against.",
+      "TEST_DATABASE_URL is not set, so there is no PostgreSQL to integrate against. Set it to a database used by nothing else: `TEST_DATABASE_URL=postgres://mandate:mandate@127.0.0.1:5432/mandate_test bun test tests/integration`.",
     );
   let protocol: string;
   try {
