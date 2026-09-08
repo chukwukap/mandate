@@ -262,24 +262,103 @@ plan in the library passed both before the change, so nothing here depended on w
 
 ## What the app's builder emits
 
-The structured builder in the web app produces two of the shapes above, over any subset of the
-seven listed assets:
+Five shapes, over any subset of the seven listed assets. All five validate against the real
+engine, and the last three run end to end on a forked mainnet (`apps/api/fork/bot-shapes.ts`).
 
-| Shape | Plan | Notes |
+| Shape | Plan | What makes it work |
 | --- | --- | --- |
-| A price for each | `levelsPlan` | One `lt`/`gt` node and one machine per selected stock, each with its own threshold. The multi-asset generalisation of [`single-limit-buy`](strategies/single-limit-buy.json). |
-| Cheaper than the reference | `discountPlan` | `safe_div(dex:X, oracle:X, 0)` banded between the chosen discount and a 500 bps floor, per stock. The multi-asset generalisation of [`single-thin-pool-gate`](strategies/single-thin-pool-gate.json). |
+| A price for each | `levelsPlan` | One `lt`/`gt` node and one machine per stock, each with its own threshold. |
+| Cheaper than the reference | `discountPlan` | `safe_div(dex:X, oracle:X, 0)` banded between the chosen discount and a 500 bps floor. |
+| Recurring buys | `recurringPlan` | An always-true rule paced entirely by `caps.cooldown_secs`. |
+| Step ladder | `ladderPlan` | One machine state per rung, so the machine remembers its depth without variables. |
+| Keep balanced | `rebalancePlan` | `safe_div(value:X, equity, 1)` against a target weight, gated on `cash`. |
 
-Both give every asset its own machine rather than sharing one, for the reason in
-[Mechanics that will surprise you](#mechanics-that-will-surprise-you) — one transition fires
-per machine per tick — and both use a
-self-looping state to keep `on_edge` memory fresh. The remaining shapes in the library — ladders,
-`while_true` accumulation, halts — are reachable through the prompt compiler rather than the form.
+### Recurring buys is DCA, and the clock is the cap
 
-Two limits bound a basket, and the stricter one is the machine count:
+The engine has no clock, and for a long time that read as "dollar-cost averaging is impossible".
+It is not. `caps.cooldown_secs` is signed, an admitted order stamps `lastFires[machine/rule]`,
+and `Budget.admit` refuses anything inside the cooldown — so a rule whose condition is always
+true fires exactly as often as the cooldown permits.
 
-- `assets`: at most 20
-- `machines`: at most 16 ← the real ceiling, since these shapes emit one machine per asset
+Measured in simulation: 1,440 ten-minute ticks with an 86,400s cooldown produced ten fills,
+each 24 hours apart to the minute. Measured on the fork with a 120s cooldown and a 12s tick, the
+steady-state gap between admissions was **134s** — the cooldown plus one tick, which is the
+granularity the scheduler can offer.
 
-The app enforces 16 with a message that names the limit, rather than letting a filled-in form fail
-schema validation at the API.
+Two consequences worth knowing. The cadence lives in the envelope rather than the plan, so it is
+the *cooldown* on the review card that the user is really signing. And every tick between fills
+records a refusal, because the rule wants to fire and the cap says no; a slow schedule therefore
+writes a lot of evaluation rows.
+
+### Step ladder is not a martingale, and must not be sold as one
+
+The shape — buy more, and larger, each step down — is the accumulation half of what bots call a
+martingale or "DCA with safety orders". The other half is the exit: take profit against the
+average entry, reset, cycle. That half needs to sell, and [selling cannot execute](#the-honest-limit-of-all-of-it).
+
+A scale-in with no exit is the accumulation engine of a martingale with every one of its brakes
+removed. It buys progressively larger amounts into a fall and then holds, indefinitely. That is
+a legitimate thing to want if you want the position anyway and want a hard ceiling on the spend
+— the ceiling being `caps.lifetime`, not anything in the plan — but it is not a martingale bot,
+and naming it after one would sell someone the dangerous half of a strategy while implying the
+safety half is present.
+
+The builder therefore shows the rungs and the total spend before signing, and says plainly that
+nothing sells it back.
+
+One bound that is easy to get wrong: `per_order` must be sized to the LARGEST rung. Sizing it
+from the opening amount lets rung one through and has the envelope refuse every rung after it,
+so the strategy looks armed, fires once, and then does nothing on exactly the falls it was built
+for. `draftInput` derives the cap from the deepest rung for this reason.
+
+### Keep balanced corrects by dilution only
+
+Target-weight rebalancing needs a condition that can read holdings, which is what the portfolio
+feeds added: `position:SYM` (shares), `value:SYM` (those shares at the oracle price), `equity`,
+and `cash`. Sizing had always been computed from exactly this data; only conditions could not
+see it.
+
+`cash` gates every rule rather than `equity`, because equity counts stock, stock cannot be spent,
+and sizing against equity alone produces orders a wallet cannot settle.
+
+The ceiling is structural: with no sell authority this can only buy the laggards, never trim the
+winner. Simulated from a 100%-Apple book it converged to 51/24/24 rather than 33/33/33 and then
+stopped, because the cash ran out. That is the honest behaviour of cash-flow rebalancing, and it
+is what the form tells the user.
+
+## What we cannot do, and what each would take
+
+Measured against the strategies trading-bot platforms actually ship.
+
+| Strategy | Status | Blocked on |
+| --- | --- | --- |
+| Recurring / DCA | **Works** | — |
+| Scale-in ladder | **Works** (entry only) | its exit needs sells |
+| Rebalancing | **Works** (buy side) | trimming needs sells |
+| Price levels, basis/discount | **Works** | — |
+| Grid | Blocked | sells — a grid is defined by its sell side |
+| Take-profit, stop-loss, trailing | Blocked | sells, and cost basis as a readable feed |
+| Trend-following (MA cross) | Blocked | price history |
+| Long/short hedging | Not possible here | there is no shorting primitive for these assets |
+
+**Sell authority is the keystone.** A Coinbase spend permission authorises exactly one token, and
+that token is USDC — it is set at construction, held immutable by a database trigger, and
+re-asserted by the worker before every leg. `SpendPermissionManager` itself supports any ERC-20,
+so the path is a second permission per equity token at prepare time, then removing the
+`requiresSellAuthority` gate and widening the per-leg guard to accept `tokenIn = asset.token`.
+Until that exists, every exit knob is dead regardless of what the strategy language can express,
+so nothing else on this list is worth building first.
+
+**Cost basis would be the next unlock, and is smaller than it looks.** Average entry can be
+computed from the `executions` rows the system already stores and injected as `cost:SYM` and
+`pnl:SYM` feeds — the evaluator, schema, operators and renderer all keep working, because a
+synthetic feed is just another key. The non-trivial part is the funding-time re-check: the
+worker re-evaluates an admitted order's guard against a *fresh* snapshot, and a guard reading
+`cost:SYM` would re-check against a post-fill basis and cancel valid orders. That needs the
+admitting tick's feeds persisted on the execution row, which is a design decision rather than a
+field addition.
+
+**Trend-following needs history, and the pools already carry it.** The Aerodrome pools we route
+through report `observationCardinality` of 2048 — a fully populated oracle ring buffer — so
+`observe()` yields a real onchain TWAP with no external dependency in the execution path.
+Verified against mainnet: a 1-hour TWAP tick of −11512.4 against a spot tick of −11513.
