@@ -3,6 +3,7 @@ import { Activity, ArrowDownLeft, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import { Status } from "../../components/status";
 import type { WorkspaceModel } from "../../providers/use-workspace";
+import { reasonText } from "./types";
 
 export function ActivityView({
   model,
@@ -46,7 +47,7 @@ export function ActivityView({
               <div>
                 <strong>{item.name}</strong>
                 <small>{new Date(item.createdAt).toLocaleString()}</small>
-                {item.reason && <small>{item.reason}</small>}
+                {item.reason && <small>{reasonText(item.reason)}</small>}
               </div>
               <span className="number">
                 {item.intent?.amount ?? item.amountIn}

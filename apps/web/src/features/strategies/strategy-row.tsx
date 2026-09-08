@@ -35,7 +35,9 @@ export function StrategyRow({
           <small>
             {[
               strategy.mode === "auto" ? "Automatic" : "Signal only",
-              strategy.assets?.length ? strategy.assets.map((s) => s.replace("c", "")).join(", ") : null,
+              strategy.assets?.length
+                ? strategy.assets.map((s) => s.replace("c", "")).join(", ")
+                : null,
               full ? `${strategy.orders} orders` : `${currency(strategy.lifetime)} budget`,
             ]
               .filter(Boolean)

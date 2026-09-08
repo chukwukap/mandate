@@ -79,7 +79,11 @@ const REFUSALS: Record<string, Idle> = {
 
 const OUTCOMES: Record<string, Idle> = {
   halted: { headline: "Stopped by its own rule", action: null, tone: "attention" },
-  expired: { headline: "Expired", action: "Create a new strategy to keep going.", tone: "attention" },
+  expired: {
+    headline: "Expired",
+    action: "Create a new strategy to keep going.",
+    tone: "attention",
+  },
   "execution-disabled": {
     headline: "Automatic execution is off",
     action: "Nothing will be bought until it is back on.",
@@ -95,7 +99,8 @@ const OUTCOMES: Record<string, Idle> = {
   // which, so neither do we. Naming the most common cause first is more useful than a shrug.
   "observation-or-authority-unavailable": {
     headline: "Waiting for the market to open",
-    action: "Automatic buys run 9:35am–3:55pm ET on weekdays. It also waits if prices cannot be read.",
+    action:
+      "Automatic buys run 9:35am–3:55pm ET on weekdays. It also waits if prices cannot be read.",
     tone: "waiting",
   },
   "observation-expired": {
@@ -110,16 +115,38 @@ const OUTCOMES: Record<string, Idle> = {
   },
 };
 
-export function whyIdle(latest: Evaluation | null, status: string): Idle | null {
-  if (status === "paused") return { headline: "Paused", action: "Arm it to start buying.", tone: "waiting" };
+export function whyIdle(
+  latest: Evaluation | null,
+  status: string,
+  mode?: string,
+  requestedMode?: string,
+): Idle | null {
+  if (status === "paused")
+    return { headline: "Paused", action: "Arm it to start buying.", tone: "waiting" };
   if (status === "ended") return { headline: "Stopped", action: null, tone: "attention" };
+  /**
+   * Asked for automatic, still running as signals.
+   *
+   * `mode` only becomes "auto" once the spending permission is activated; a strategy whose
+   * permission was never approved arms happily and records signals instead. This has to be
+   * checked BEFORE the admitted branch below, because a recorded signal counts as an admitted
+   * order — so the page would otherwise show a green "Bought on the last check" to someone who
+   * has bought nothing at all.
+   */
+  if (requestedMode === "auto" && mode && mode !== "auto")
+    return {
+      headline: "Approval needed before it can buy",
+      action: "This is recording signals only. Approve spending to place real orders.",
+      tone: "attention",
+    };
   if (!latest)
     return {
       headline: "Not checked yet",
       action: "The first check happens within a minute of arming.",
       tone: "waiting",
     };
-  if (latest.admitted > 0) return { headline: "Bought on the last check", action: null, tone: "ok" };
+  if (latest.admitted > 0)
+    return { headline: "Bought on the last check", action: null, tone: "ok" };
   if (latest.refused && REFUSALS[latest.refused]) return REFUSALS[latest.refused] as Idle;
   if (OUTCOMES[latest.outcome]) return OUTCOMES[latest.outcome] as Idle;
   // `evaluated` with nothing admitted and nothing refused is the ordinary case: the strategy

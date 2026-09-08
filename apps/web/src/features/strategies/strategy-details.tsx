@@ -66,7 +66,7 @@ export function StrategyDetails({
   }, [instanceId, call]);
 
   if (!detail) return null;
-  const idle = whyIdle(latest, detail.status);
+  const idle = whyIdle(latest, detail.status, detail.mode, detail.requested_mode);
   const content = (
     <div className="detail-content">
       <div className="detail-status">

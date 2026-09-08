@@ -68,4 +68,20 @@ describe("why a strategy is idle", () => {
       expect(idle, `no translation for outcome: ${outcome}`).not.toBeNull();
     }
   });
+
+  /**
+   * The most expensive way to be wrong here: telling someone they bought when the permission
+   * was never approved and every "order" was a recorded signal.
+   */
+  test("asked for automatic but running as signals is called out, over any tick result", () => {
+    const bought = evaluation({ admitted: 3 });
+    const pending = whyIdle(bought, "armed", "manual", "auto");
+    expect(pending?.tone).toBe("attention");
+    expect(pending?.headline).toMatch(/approval needed/i);
+    expect(pending?.action).toMatch(/signals only/i);
+    // Once the permission is active the same tick reads normally again.
+    expect(whyIdle(bought, "armed", "auto", "auto")?.tone).toBe("ok");
+    // A strategy the user deliberately created as signal-only is not nagged.
+    expect(whyIdle(bought, "armed", "manual", "manual")?.tone).toBe("ok");
+  });
 });

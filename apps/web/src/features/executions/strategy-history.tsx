@@ -3,6 +3,7 @@ import { ExternalLink, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Status } from "../../components/status";
 import type { ApiCall } from "../../lib/api";
+import { reasonText } from "./types";
 import { useHistory } from "./use-history";
 export function StrategyHistory({ instance, call }: { instance: string; call: ApiCall }) {
   const [kind, setKind] = useState<"evaluations" | "executions">("executions");
@@ -69,7 +70,7 @@ export function StrategyHistory({ instance, call }: { instance: string; call: Ap
                   {item.intent?.amount ?? item.amountIn}{" "}
                   {item.intent?.side === "buy" ? "USDC" : item.intent ? "tokens" : "raw units"}
                 </strong>
-                {item.reason && <span>{item.reason}</span>}
+                {item.reason && <span>{reasonText(item.reason)}</span>}
               </>
             )}
           </div>

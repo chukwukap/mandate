@@ -3,6 +3,7 @@ import type { Call, Hex } from "@mandate/contracts";
 import { ArrowUpRight, Loader2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { formatUnits } from "viem";
+import { ApiError } from "../../lib/api";
 
 type Permission = {
   status: string;
@@ -15,6 +16,35 @@ type Permission = {
   revocation_call?: Call;
   onchain_revocation_required?: boolean;
 };
+/**
+ * Keyed by the API's RFC7807 `code`, so the copy tracks the backend's own vocabulary.
+ *
+ * Each says what is true for a strategy that is ALREADY SIGNED, which is the situation the user
+ * is in by the time they reach this card. Switching the active wallet here would not help — the
+ * instance is bound to the wallet that signed it — so the remedy for an unsupported wallet is a
+ * new strategy, and saying otherwise would send someone in a circle.
+ */
+const SETTLED: Record<string, { title: string; detail: string }> = {
+  "wallet-unsupported": {
+    title: "This wallet can't approve automatic buying",
+    detail:
+      "Automatic buys need a Coinbase Smart Wallet. This strategy will keep recording signals you can act on yourself. To buy automatically, create a new strategy with a Coinbase Smart Wallet selected.",
+  },
+  "sell-permission-required": {
+    title: "Selling can't run automatically",
+    detail:
+      "This strategy contains a sell rule, and automatic selling is not available yet. Its sells are recorded as signals for you to act on; its buys can still be approved on a strategy without sells.",
+  },
+  "manual-strategy": {
+    title: "This strategy was signed as signal-only",
+    detail: "Create a new strategy in automatic mode to have it buy for you.",
+  },
+  expired: {
+    title: "This strategy has expired",
+    detail: "Create a new one to keep going.",
+  },
+};
+
 export function SpendingPermission({
   instance,
   call,
@@ -33,13 +63,25 @@ export function SpendingPermission({
   const [error, setError] = useState("");
   const [hash, setHash] = useState<Hex | null>(null);
   const [revoking, setRevoking] = useState(false);
+  /**
+   * A refusal the user cannot retry their way out of.
+   *
+   * `prepare` rejects for reasons that are settled facts about this instance, not transient
+   * failures: the wallet cannot hold a spend permission at all, the plan contains a sell, the
+   * strategy has expired. Left in the generic error line these appeared above a "Review spending
+   * approval" button that would return the same error forever, with nothing on screen naming a
+   * remedy — so they replace the button instead of sitting above it.
+   */
+  const [blocked, setBlocked] = useState<{ title: string; detail: string } | null>(null);
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
     setError("");
     try {
       await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't update spending approval.");
+      const settled = e instanceof ApiError && e.code ? SETTLED[e.code] : undefined;
+      if (settled) setBlocked(settled);
+      else setError(e instanceof Error ? e.message : "Couldn't update spending approval.");
     } finally {
       setBusy(false);
     }
@@ -96,8 +138,14 @@ export function SpendingPermission({
           {error}
         </p>
       )}
+      {blocked && (
+        <div className="permission-blocked" role="alert">
+          <strong>{blocked.title}</strong>
+          <span>{blocked.detail}</span>
+        </div>
+      )}
       <div className="permission-actions">
-        {!permission && (
+        {!permission && !blocked && (
           <button
             type="button"
             className="button secondary"
