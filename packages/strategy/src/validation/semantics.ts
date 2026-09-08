@@ -3,9 +3,33 @@ import type { Kind } from "../evaluation/types.js";
 import { IssueLog, issuesFromZod, PlanInvalid } from "./issues.js";
 import { type Asset, type Machine, type Plan, planSchema } from "./schema.js";
 
-/** Every feed URI the observed market can supply for a catalogue. */
+/**
+ * Every feed URI the observed market can supply for a catalogue.
+ *
+ * The two price feeds per asset were the whole vocabulary, which meant a condition could see
+ * what things cost but never what the user already owned. Sizing could — `pct_equity` and
+ * `pct_position` have always been computed from exactly this portfolio — so the data was
+ * present and simply unreadable from a rule. That asymmetry is what made target-weight
+ * rebalancing inexpressible: you could say "buy 20% of equity" but not "buy only while Apple is
+ * under 20% of equity", and the second is the one that defines the strategy.
+ *
+ * `position:` is a share count and `value:` is that count at the oracle price, because a rule
+ * about portfolio weight needs money on both sides of the comparison.
+ */
 export function availableFeeds(assets: readonly Asset[]): Set<string> {
-  return new Set(assets.flatMap((a) => [`dex:${a.symbol}`, `oracle:${a.symbol}`]));
+  return new Set([
+    ...assets.flatMap((a) => [
+      `dex:${a.symbol}`,
+      `oracle:${a.symbol}`,
+      `position:${a.symbol}`,
+      `value:${a.symbol}`,
+    ]),
+    // Portfolio-wide, so not per asset. `equity` is cash plus the oracle value of every
+    // allowlisted position; `cash` is the USDC that can actually be spent, which is the smaller
+    // and more honest number for anything asking "can I afford this".
+    "equity",
+    "cash",
+  ]);
 }
 
 function duplicates(values: readonly string[]): string[] {

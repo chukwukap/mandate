@@ -123,7 +123,7 @@ export class WorkerChain implements Observations, Executor {
         feeds[feed.uri] = feed.value;
       }
     if (Object.keys(feeds).length !== required.size) throw new Error("Missing market feed");
-    let equity = new Money(
+    const cash = new Money(
       whole(
         await this.client.readContract({
           address: USDC,
@@ -134,6 +134,7 @@ export class WorkerChain implements Observations, Executor {
         6,
       ),
     );
+    let equity = cash;
     const positions: Record<string, string> = {};
     for (const asset of draft.envelope.assets) {
       const balance = await this.client.readContract({
@@ -142,10 +143,18 @@ export class WorkerChain implements Observations, Executor {
         functionName: "balanceOf",
         args: [draft.account as Hex],
       });
-      const value = whole(balance, asset.decimals);
-      positions[asset.token.toLowerCase()] = value;
-      equity = equity.plus(new Money(value).mul(feeds[`oracle:${asset.symbol}`] ?? "NaN"));
+      const held = whole(balance, asset.decimals);
+      positions[asset.token.toLowerCase()] = held;
+      const value = new Money(held).mul(feeds[`oracle:${asset.symbol}`] ?? "NaN");
+      equity = equity.plus(value);
+      // The same numbers sizing has always used, now readable from a condition too. Valued at
+      // the oracle rather than the pool: a rule about portfolio weight should not change its
+      // mind because someone moved a thin pool for one block.
+      feeds[`position:${asset.symbol}`] = held;
+      feeds[`value:${asset.symbol}`] = value.toFixed();
     }
+    feeds.cash = cash.toFixed();
+    feeds.equity = equity.toFixed();
     return { at: Date.now(), feeds, portfolio: { equity: equity.toFixed(), positions } };
   }
   async authorize(context: Context) {
