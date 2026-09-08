@@ -342,7 +342,7 @@ export function OverviewView({ model }: { model: WorkspaceModel }) {
                 <div>
                   <strong>{strategy.name}</strong>
                   <small>
-                    {strategy.symbol ? `${strategy.symbol} · ` : ""}
+                    {strategy.assets?.length ? `${strategy.assets.map((s) => s.replace("c", "")).join(", ")} · ` : ""}
                     {strategy.mode === "auto" ? "Automatic" : "Manual"}
                     {strategy.last_tick_at
                       ? ` · checked ${new Date(strategy.last_tick_at).toLocaleString()}`

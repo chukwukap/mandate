@@ -15,8 +15,8 @@ export type Strategy = {
   account?: string;
   render_text?: string;
   envelope?: { assets: Asset[]; caps: { expires_at: string } };
-  symbol?: string;
-  rule?: string;
+  /** Symbols this strategy watches, on every list row. The full envelope is detail-only. */
+  assets?: string[];
 };
 export type Draft = {
   artifact_id: string;

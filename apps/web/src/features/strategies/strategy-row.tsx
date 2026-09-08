@@ -1,6 +1,7 @@
 import { MoreHorizontal, SlidersHorizontal } from "lucide-react";
 import { Status } from "../../components/status";
 import { currency } from "../../lib/format";
+import { StockLogo } from "../market/stock-logo";
 import type { Strategy } from "./types";
 export function StrategyRow({
   strategy,
@@ -14,16 +15,31 @@ export function StrategyRow({
   return (
     <div className={`strategy-row ${full ? "full" : ""}`} key={strategy.id}>
       <button type="button" className="strategy-main" onClick={() => openDetail(strategy)}>
+        {/* The stocks themselves, not a generic icon. A seven-name basket and a single-stock
+            ladder used to render identically here, which made the list unreadable at a glance
+            for exactly the strategies that most need distinguishing. */}
         <span className="strategy-symbol">
-          <SlidersHorizontal size={17} />
+          {strategy.assets?.length ? (
+            <span className="strategy-assets">
+              {strategy.assets.slice(0, 3).map((symbol) => (
+                <StockLogo key={symbol} symbol={symbol} small />
+              ))}
+              {strategy.assets.length > 3 && <i>+{strategy.assets.length - 3}</i>}
+            </span>
+          ) : (
+            <SlidersHorizontal size={17} />
+          )}
         </span>
         <span>
           <strong>{strategy.name}</strong>
           <small>
-            {full
-              ? (strategy.rule ??
-                `${strategy.mode === "auto" ? "Automatic" : "Signal only"} · ${strategy.orders} orders`)
-              : `${strategy.mode === "auto" ? "Automatic" : "Signal only"} · ${currency(strategy.lifetime)} budget`}
+            {[
+              strategy.mode === "auto" ? "Automatic" : "Signal only",
+              strategy.assets?.length ? strategy.assets.map((s) => s.replace("c", "")).join(", ") : null,
+              full ? `${strategy.orders} orders` : `${currency(strategy.lifetime)} budget`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </small>
         </span>
       </button>

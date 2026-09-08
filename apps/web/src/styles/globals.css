@@ -3002,3 +3002,62 @@ kbd,
   font-weight: 500;
   color: var(--ink);
 }
+
+/* The stocks a strategy watches, shown on its list row. */
+.strategy-assets {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.strategy-assets .asset-logo.small {
+  width: 21px;
+  height: 21px;
+  font-size: 9px;
+}
+/* Overlap them slightly so a seven-name basket still fits the row height. */
+.strategy-assets > *:not(:first-child) {
+  margin-left: -8px;
+}
+.strategy-assets i {
+  margin-left: 2px;
+  font-style: normal;
+  font-size: 9px;
+  color: var(--text-3);
+}
+
+/* Why a strategy has not traded. Three tones, because "waiting for the market to open" and
+   "you have no USDC" need to look different at a glance. */
+.detail-idle {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--sage-line);
+  background: var(--paper);
+}
+.detail-idle strong {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.detail-idle span {
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+.detail-idle.ok {
+  border-color: var(--accent-line-strong);
+  background: var(--sage);
+}
+.detail-idle.ok strong {
+  color: var(--accent-ink);
+}
+.detail-idle.attention {
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+}
+.detail-idle.attention strong {
+  color: var(--danger-ink);
+}

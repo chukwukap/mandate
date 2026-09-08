@@ -35,6 +35,11 @@ export function instanceView(instance: InstanceRow, draft: DraftRow, executionAv
     orders: instance.runtime.totalOrders,
     created_at: instance.createdAt,
     execution_available: executionAvailable,
+    // The symbols only, not the whole envelope: a list row needs to say WHICH stocks a strategy
+    // watches — a seven-name basket and a single-stock ladder were otherwise indistinguishable
+    // in the list — while the addresses, decimals and feeds belong to the detail view. The draft
+    // is already loaded for the caps above, so this costs no extra query.
+    assets: draft.envelope.assets.map((asset) => asset.symbol),
     // Set by `arm` and read by the worker: an armed instance whose attestation has lapsed is
     // paused with failure "eligibility-renewal-required" rather than traded.
     eligibility_expires_at: instance.eligibilityExpiresAt,
