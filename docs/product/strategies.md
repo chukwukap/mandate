@@ -241,14 +241,45 @@ cannot close is a long position with extra steps. The envelope caps and `expires
 risk budget, and users should size accordingly — as money they are content to hold through the
 scenario the strategy did not anticipate.
 
-## Two validators
+## One validator (was two)
 
-There are two `validatePlan` implementations and they are not the same:
+There used to be two `validatePlan` implementations, and the one that bound was not the one the
+tests covered:
 
-- [`strategy.ts:139`](../../packages/strategy/src/strategy.ts) — exported from `@mandate/strategy`
-  and used by the API route and by admission. **This is the one that binds.**
-- [`validation/semantics.ts:31`](../../packages/strategy/src/validation/semantics.ts) — stricter,
-  and additionally rejects `set`, `max_repeats` on an `on_edge` rule, unreachable states, and
-  machines with no transitions.
+- `strategy.ts` — a 509-line copy of the whole engine, exported from `@mandate/strategy` and
+  therefore used by the API route, by admission, and by the AI compiler. Nothing tested it.
+- [`validation/semantics.ts`](../../packages/strategy/src/validation/semantics.ts) — stricter, and
+  additionally rejects `set`, `max_repeats` on an `on_edge` rule, unreachable states, and machines
+  with no transitions. Every test in `packages/strategy/test` exercised this one.
 
-Every plan in the library passes **both**, so nothing here depends on which one runs.
+The divergence was not only in validation. `strategy.ts`'s `review()` produced no `cautions` at
+all, while `index.ts` exported the `ReviewCard` **type** — which declares `cautions` — from the
+modular renderer. Every disclosure listed in this document was written, tested, and then dropped
+before it reached a signer.
+
+`index.ts` now points at the tested implementation throughout and `strategy.ts` is deleted. Every
+plan in the library passed both before the change, so nothing here depended on which one ran.
+
+## What the app's builder emits
+
+The structured builder in the web app produces two of the shapes above, over any subset of the
+seven listed assets:
+
+| Shape | Plan | Notes |
+| --- | --- | --- |
+| A price for each | `levelsPlan` | One `lt`/`gt` node and one machine per selected stock, each with its own threshold. The multi-asset generalisation of [`single-limit-buy`](strategies/single-limit-buy.json). |
+| Cheaper than the reference | `discountPlan` | `safe_div(dex:X, oracle:X, 0)` banded between the chosen discount and a 500 bps floor, per stock. The multi-asset generalisation of [`single-thin-pool-gate`](strategies/single-thin-pool-gate.json). |
+
+Both give every asset its own machine rather than sharing one, for the reason in
+[Mechanics that will surprise you](#mechanics-that-will-surprise-you) — one transition fires
+per machine per tick — and both use a
+self-looping state to keep `on_edge` memory fresh. The remaining shapes in the library — ladders,
+`while_true` accumulation, halts — are reachable through the prompt compiler rather than the form.
+
+Two limits bound a basket, and the stricter one is the machine count:
+
+- `assets`: at most 20
+- `machines`: at most 16 ← the real ceiling, since these shapes emit one machine per asset
+
+The app enforces 16 with a message that names the limit, rather than letting a filled-in form fail
+schema validation at the API.
