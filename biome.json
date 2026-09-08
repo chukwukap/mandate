@@ -22,7 +22,8 @@
       "!**/node_modules",
       "!**/dist",
       "!**/.next",
-      "!packages/database/migrations/meta"
+      "!packages/database/migrations/meta",
+      "!infra/fork/*.json"
     ]
   }
 }

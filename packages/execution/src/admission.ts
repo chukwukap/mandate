@@ -92,6 +92,15 @@ export class Admission {
      * this package holds no logger, and a swallowed security event is the thing being fixed.
      */
     private readonly onInvalidCommitment?: (instanceId: string, error: unknown) => void,
+    /**
+     * Called when authority or observations were unavailable.
+     *
+     * `observation-or-authority-unavailable` is one label over a dozen distinct causes — a dead
+     * RPC, a closed US session, an unapproved permission, a payload that no longer matches the
+     * envelope, a paused oracle. Without this an operator sees a strategy that never fires and
+     * has nothing to look at; the reason was computed and then discarded.
+     */
+    private readonly onUnavailable?: (instanceId: string, error: unknown) => void,
   ) {}
   async run(instance: InstanceRow, draft: DraftRow) {
     let snapshot: Snapshot | undefined;
@@ -123,10 +132,11 @@ export class Admission {
         snapshot = await this.chain.snapshot(draft);
       }
     } catch (error) {
-      failure =
-        error instanceof InvalidCommitment
-          ? "invalid-commitment"
-          : "observation-or-authority-unavailable";
+      if (error instanceof InvalidCommitment) failure = "invalid-commitment";
+      else {
+        failure = "observation-or-authority-unavailable";
+        this.onUnavailable?.(instance.id, error);
+      }
     }
     await this.store.write(instance.userId, async (tx) => {
       const current = await this.store.lockInstance(tx, instance.id);

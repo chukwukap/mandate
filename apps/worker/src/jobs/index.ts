@@ -91,6 +91,11 @@ export function createWorkerJobs(
           { instanceId, reason: error instanceof Error ? error.message : String(error) },
           "Stored strategy failed commitment verification; refusing to evaluate it",
         ),
+      (instanceId, error) =>
+        log.warn(
+          { instanceId, reason: error instanceof Error ? error.message : String(error) },
+          "Strategy not evaluated: authority or observations unavailable",
+        ),
     ),
     lifecycle: new Lifecycle(store, chain, config.receiptTimeoutMs),
     executeEnabled: config.execute,

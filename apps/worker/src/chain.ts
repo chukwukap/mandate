@@ -61,6 +61,25 @@ export function executionSession(now: Date) {
   const minute = Number(get("hour")) * 60 + Number(get("minute"));
   return !["Sat", "Sun"].includes(get("weekday")) && minute >= 575 && minute < 955;
 }
+/**
+ * How long an admitted intent may wait before its first leg is funded.
+ *
+ * Measured from admission — and admission fires every machine in a single pass, so every order
+ * in a basket carries the same creation instant while the spender funds them one at a time,
+ * sharing one nonce. Measured against a forked mainnet with three assets: they reached funding
+ * at +4s, +42s and +70s, and at a 60s deadline the third was cancelled with both its siblings
+ * already filled. A seven-asset basket would have lost five orders the user had authorised, and
+ * lost them silently.
+ *
+ * The bound that actually protects the user is not this one. `guard` re-evaluates the triggering
+ * condition against a fresh snapshot immediately before funding, and the swap leg re-quotes and
+ * enforces the signed slippage cap — so an order funded late still cannot fill on a condition
+ * that has stopped holding or at a price outside what was signed. This is only a backstop
+ * against an intent the worker abandoned entirely, so it is sized to let a full basket through
+ * rather than to police price staleness, which it was never the thing enforcing.
+ */
+const FUNDING_DEADLINE_MS = 600_000;
+
 export class WorkerChain implements Observations, Executor {
   readonly reader: BaseReader;
   readonly client;
@@ -232,7 +251,7 @@ export class WorkerChain implements Observations, Executor {
       order.amountIn !== units(intent.amount, 6).toString()
     )
       throw new Error("Unsupported order");
-    if (funding && Date.now() - order.createdAt.getTime() > 60000)
+    if (funding && Date.now() - order.createdAt.getTime() > FUNDING_DEADLINE_MS)
       throw new Error("Order intent expired before funding");
     if (funding) {
       const period = await this.client.readContract({
