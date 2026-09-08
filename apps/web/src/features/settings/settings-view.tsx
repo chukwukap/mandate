@@ -11,28 +11,10 @@ export function SettingsView({
 }: {
   model: Pick<
     WorkspaceModel,
-    | "router"
-    | "session"
-    | "market"
-    | "setStrategies"
-    | "setExecutions"
-    | "compact"
-    | "setCompact"
-    | "setToast"
-    | "login"
+    "router" | "session" | "market" | "compact" | "setCompact" | "setToast" | "login" | "signOut"
   >;
 }) {
-  const {
-    router,
-    session,
-    market,
-    setStrategies,
-    setExecutions,
-    compact,
-    setCompact,
-    setToast,
-    login,
-  } = model;
+  const { router, session, market, compact, setCompact, login, signOut } = model;
   return (
     <div className="settings-grid">
       <section className="panel settings-panel appearance-panel">
@@ -58,16 +40,9 @@ export function SettingsView({
           <button
             type="button"
             className="button secondary"
-            onClick={
-              session.authenticated
-                ? async () => {
-                    await session.logout();
-                    setStrategies([]);
-                    setExecutions([]);
-                    setToast("Signed out");
-                  }
-                : login
-            }
+            // The same routine the header menu calls. This used to be a second, slightly
+            // different implementation with no error handling of its own.
+            onClick={session.authenticated ? () => void signOut() : login}
           >
             {session.authenticated ? (
               <>

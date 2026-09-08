@@ -4060,3 +4060,103 @@
   align-items: center;
   gap: 0.4rem;
 }
+
+/* Account menu ---------------------------------------------------------------------------- */
+/* The header's wallet chip opens this. Tokens only, so it follows the theme like everything
+   else — an earlier round of this app had panels that stayed light in dark mode. */
+.account-menu {
+  position: relative;
+}
+.desk-workspace .account-menu .wallet-button {
+  gap: 7px;
+}
+.account-caret {
+  opacity: 0.55;
+  transition: transform 0.15s ease;
+}
+.wallet-button.open .account-caret {
+  transform: rotate(180deg);
+}
+.account-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  min-width: 244px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--desk-surface, var(--paper));
+  border: 1px solid var(--desk-line, var(--sage-line));
+  box-shadow: 0 18px 40px -18px rgb(0 0 0 / 45%);
+}
+.account-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 9px 10px;
+  border-bottom: 1px solid var(--desk-line, var(--sage-line));
+  margin-bottom: 4px;
+}
+.account-label {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--desk-muted, var(--text-3));
+}
+.account-identity code {
+  font-size: 10.5px;
+  line-height: 1.5;
+  /* The full address wraps rather than being clipped: this is the one place someone comes to
+     read it in full, so hiding half of it would defeat the point of showing it. */
+  word-break: break-all;
+  color: var(--desk-ink, var(--ink));
+}
+.account-popover button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--desk-ink, var(--ink));
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.account-popover button:hover,
+.account-popover button:focus-visible {
+  background: var(--desk-raised, var(--sage));
+}
+.account-wallets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0 4px;
+  margin: 4px 0;
+  border-top: 1px solid var(--desk-line, var(--sage-line));
+  border-bottom: 1px solid var(--desk-line, var(--sage-line));
+}
+.account-wallets .account-label {
+  padding: 2px 9px 4px;
+}
+/* Keeps the ticks and the bullets on one vertical line, so switching wallets does not make the
+   list jump sideways as the checkmark moves. */
+.account-bullet {
+  width: 15px;
+  height: 15px;
+}
+/* Scoped to beat `.account-popover button`, which is one class more specific than a bare
+   `.account-signout` and was silently painting the destructive item in ordinary ink. */
+.account-popover .account-signout {
+  color: var(--danger-ink);
+}
+.account-popover .account-signout:hover,
+.account-popover .account-signout:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}

@@ -123,6 +123,29 @@ export function useWorkspace() {
     setEditor(true);
   };
   const login = () => (session.configured ? session.login() : setConnect(true));
+  /**
+   * One sign-out, shared by the header menu and the Settings panel.
+   *
+   * Both used to be able to drift, and only one of them cleared the workspace's cached data —
+   * so signing out in the wrong place left the previous user's strategies and executions on
+   * screen. The session layer guarantees this resolves, so there is no failure branch here
+   * beyond telling the user when the wallet extension refused to disconnect on its side.
+   */
+  const signOut = async () => {
+    const { clean } = await session.logout();
+    setStrategies([]);
+    setExecutions([]);
+    if (clean) {
+      setToast("Signed out");
+      router.push("/");
+      return;
+    }
+    // A client-side navigation would keep the React tree — including Privy's in-memory
+    // `authenticated`, which it only lowers after its own logout resolves. The stored session
+    // is gone, so a full load is what makes the app agree with it; anything softer leaves a
+    // signed-out user looking at a signed-in workspace.
+    globalThis.location.assign("/");
+  };
   const toggleStar = (symbol: string) => {
     setFavorites((current) =>
       current.includes(symbol) ? current.filter((s) => s !== symbol) : [...current, symbol],
@@ -187,6 +210,7 @@ export function useWorkspace() {
     watching,
     openEditor,
     login,
+    signOut,
     toggleStar,
     changeStatus,
     openDetail,

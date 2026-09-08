@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
+import { AccountMenu } from "../features/auth/account-menu";
 import { DiscoverView } from "../features/discovery/discover-view";
 import { ActivityView } from "../features/executions/activity-view";
 import { companies, stocks } from "../features/market/catalog";
@@ -280,15 +281,12 @@ export function Workspace() {
             </button>
             <ThemeControl />
             <span className="topbar-divider" />
-            <button
-              className={`button wallet-button ${session.authenticated ? "connected" : ""}`}
-              type="button"
-              onClick={session.authenticated ? () => router.push("/settings") : login}
-              disabled={!session.ready}
-            >
-              <Wallet size={16} />
-              <span>{session.wallet ? shortAddress(session.wallet) : "Log in"}</span>
-            </button>
+            <AccountMenu
+              session={session}
+              onSignOut={() => void model.signOut()}
+              onNavigate={(path) => router.push(path)}
+              onCopied={setToast}
+            />
           </div>
         </header>
         <main id="main">
