@@ -1,7 +1,7 @@
 import type { WorkerConfig } from "@mandate/config";
 import type { Database, WorkerLease, WorkerStore } from "@mandate/database";
-import { Admission, Lifecycle } from "@mandate/execution";
 import type { WorkerChain } from "./chain.js";
+import { createWorkerJobs } from "./jobs/index.js";
 import type { JobLogger } from "./jobs/types.js";
 import { Recovery } from "./recovery/index.js";
 import { type ClaimConnector, Scheduler } from "./scheduler/index.js";
@@ -31,6 +31,17 @@ export interface WorkerOptions {
   db?: Database | undefined;
 }
 
+/**
+ * Used when no logger was supplied. `createWorkerJobs` requires one, and a Worker built without
+ * a logger should still get the same wiring rather than a second, quieter copy of it.
+ */
+const SILENT: JobLogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+};
+
 export class Worker {
   private readonly admission;
   private readonly lifecycle;
@@ -58,22 +69,17 @@ export class Worker {
     options: WorkerOptions = {},
   ) {
     const { log, connector } = options;
-    this.admission = new Admission(
-      store,
-      chain,
-      config.origin,
-      config.execute,
-      config.eligibleCountries,
-      // A strategy that fails to verify reached the database by some path other than the API
-      // accepting a signature; it is the one admission failure that says something about the
-      // system rather than about the market, so it is the one that is logged.
-      (instanceId, error) =>
-        log?.error(
-          { instanceId, reason: error instanceof Error ? error.message : String(error) },
-          "Stored strategy failed commitment verification; refusing to evaluate it",
-        ),
-    );
-    this.lifecycle = new Lifecycle(store, chain, config.receiptTimeoutMs);
+    // One place where the execution collaborators are configured.
+    //
+    // These were built inline here AND in `createWorkerJobs`, identically, which is the
+    // duplication that file's own docstring asks to remove: two constructions of Admission with
+    // the same five arguments will eventually disagree about one of them, and the one that
+    // matters is `config.execute`. Building them there and reading them here means the jobs
+    // module is reachable from main.ts as well, rather than being 867 lines that only its own
+    // test ever ran.
+    const jobs = createWorkerJobs(config, store, chain, log ?? SILENT);
+    this.admission = jobs.admission;
+    this.lifecycle = jobs.lifecycle;
     this.scheduler = connector && log ? new Scheduler({ store, connector, log }) : undefined;
     this.recovery =
       options.db && log && config.execute && config.spender
