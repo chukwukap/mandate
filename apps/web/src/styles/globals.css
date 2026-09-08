@@ -1638,6 +1638,91 @@ h1 {
   box-shadow: 0 0 0 1px #96ad7e1c;
   color: var(--accent-ink);
 }
+/* The asset picker is multi-select. With seven options a user loses count of what is on, and
+   the count is what tells them a basket is a basket rather than a mis-click. */
+.field-count {
+  float: right;
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+.shape-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+.shape-options button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  text-align: left;
+  background: var(--paper);
+  border: 1px solid var(--sage-line);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--text-2);
+}
+.shape-options button:hover {
+  border-color: var(--accent-line-strong);
+}
+.shape-options button.selected {
+  background: var(--sage);
+  border-color: var(--accent-line-strong);
+  box-shadow: 0 0 0 1px #96ad7e1c;
+  color: var(--accent-ink);
+}
+.shape-options strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+.shape-options span {
+  font-size: 9px;
+  line-height: 1.6;
+  font-weight: 400;
+  color: var(--text-3);
+}
+.shape-options button.selected span {
+  color: var(--accent-ink);
+}
+.threshold-rows {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 18px;
+}
+/* One row per selected stock: the mark and ticker on the left, its own price on the right.
+   Stacked rather than columned so a seven-stock basket reads the same as a one-stock one. */
+.editor-form .threshold-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+.editor-form .threshold-row input {
+  margin-top: 0;
+}
+.threshold-asset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+/* The affix offset assumes a label whose text sits above its input. Here the label is beside
+   the input instead, so the fixed offset would float the $ above the field entirely. */
+.threshold-row .input-affix > span {
+  top: 50%;
+  transform: translateY(-50%);
+}
+.input-affix.suffix input {
+  padding-left: 12px;
+  padding-right: 44px;
+}
+.input-affix.suffix > span {
+  left: auto;
+  right: 12px;
+}
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

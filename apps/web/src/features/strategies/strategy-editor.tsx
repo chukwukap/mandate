@@ -12,7 +12,8 @@ import { useState } from "react";
 import { Dialog } from "../../components/dialog";
 import { ApiError } from "../../lib/api";
 import { companies, stocks } from "../market/catalog";
-import { draftInput, type StrategyForm } from "./authoring";
+import { StockLogo } from "../market/stock-logo";
+import { draftInput, MAX_ASSETS, type StrategyForm, scaleAmount } from "./authoring";
 import type { Draft, Strategy } from "./types";
 
 export function StrategyEditor({
@@ -32,9 +33,11 @@ export function StrategyEditor({
 }) {
   const [form, setForm] = useState<StrategyForm>({
     name: "",
-    symbol,
+    symbols: [symbol],
+    shape: "levels",
     direction: "lt",
-    threshold: "",
+    thresholds: {},
+    discountBps: "20",
     amount: "",
     budget: "",
     days: "30",
@@ -61,7 +64,36 @@ export function StrategyEditor({
   const [clarification, setClarification] = useState("");
   const update = <K extends keyof StrategyForm>(key: K, value: StrategyForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
-  const name = form.name.trim() || `${companies[form.symbol]?.name ?? form.symbol} entry`;
+  /**
+   * Toggling, with a floor of one.
+   *
+   * An empty basket has no valid outcome — every path from here ends in "Choose at least one
+   * stock" on submit — so the last selected asset refuses to turn itself off rather than letting
+   * the form reach a state it can only fail from.
+   */
+  const toggle = (ticker: string) =>
+    setForm((current) => {
+      const selected = current.symbols.includes(ticker);
+      if (selected && current.symbols.length === 1) return current;
+      if (!selected && current.symbols.length >= MAX_ASSETS) return current;
+      return {
+        ...current,
+        symbols: selected
+          ? current.symbols.filter((s) => s !== ticker)
+          : [...current.symbols, ticker],
+      };
+    });
+  // Keyed by symbol, so unpicking one stock and picking it again brings its price back rather
+  // than sliding the next stock's price into its place.
+  const setThreshold = (ticker: string, value: string) =>
+    setForm((current) => ({ ...current, thresholds: { ...current.thresholds, [ticker]: value } }));
+  const basketDay = scaleAmount(form.amount, form.symbols.length);
+  const first = form.symbols[0] ?? symbol;
+  const name =
+    form.name.trim() ||
+    (form.symbols.length === 1
+      ? `${companies[first]?.name ?? first} entry`
+      : `${form.symbols.length} stocks`);
   const review = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
@@ -173,57 +205,125 @@ export function StrategyEditor({
           </label>
           <div className="form-section">
             <span className="field-label">
-              {form.authoring === "rule" ? "When the price of" : "Stock"}
+              {form.authoring === "rule" ? "Watch these stocks" : "Stocks"}
+              {form.symbols.length > 1 ? (
+                <span className="field-count">{form.symbols.length} selected</span>
+              ) : null}
             </span>
             <div className="asset-options">
-              {stocks.map((ticker) => (
-                <button
-                  key={ticker}
-                  type="button"
-                  aria-pressed={form.symbol === ticker}
-                  className={form.symbol === ticker ? "selected" : ""}
-                  onClick={() => update("symbol", ticker)}
-                >
-                  <span className={`asset-logo small ${companies[ticker]?.color}`}>
-                    {companies[ticker]?.letter}
-                  </span>
-                  {ticker.replace("c", "")}
-                </button>
-              ))}
+              {stocks.map((ticker) => {
+                const selected = form.symbols.includes(ticker);
+                return (
+                  <button
+                    key={ticker}
+                    type="button"
+                    aria-pressed={selected}
+                    className={selected ? "selected" : ""}
+                    onClick={() => toggle(ticker)}
+                  >
+                    {/* The catalogue's own mark, with the coloured initial as its fallback.
+                        This picker used to hand-render the initial and never reach for the
+                        image at all, which is why every other asset row in the app had a logo
+                        and this one did not. */}
+                    <StockLogo symbol={ticker} small />
+                    {ticker.replace("c", "")}
+                  </button>
+                );
+              })}
             </div>
+            <span className="helper">
+              Pick more than one and each stock gets its own rule, evaluated independently — one
+              triggering never holds up another.
+            </span>
           </div>
           {form.authoring === "rule" ? (
             <>
-              <div className="form-row">
-                <label>
-                  Condition
-                  <div className="select-wrap">
-                    <select
-                      value={form.direction}
-                      onChange={(e) => update("direction", e.target.value as "lt" | "gt")}
-                    >
-                      <option value="lt">Falls below</option>
-                      <option value="gt">Rises above</option>
-                    </select>
-                    <ChevronDown size={16} />
+              <div className="form-section">
+                <span className="field-label">Trigger</span>
+                <div className="shape-options">
+                  <button
+                    type="button"
+                    aria-pressed={form.shape === "levels"}
+                    className={form.shape === "levels" ? "selected" : ""}
+                    onClick={() => update("shape", "levels")}
+                  >
+                    <strong>A price for each</strong>
+                    <span>Buy when a stock crosses the level you set for it.</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={form.shape === "discount"}
+                    className={form.shape === "discount" ? "selected" : ""}
+                    onClick={() => update("shape", "discount")}
+                  >
+                    <strong>Cheaper than the reference</strong>
+                    <span>Buy whichever one the pool is discounting against Chainlink.</span>
+                  </button>
+                </div>
+              </div>
+              {form.shape === "levels" ? (
+                <>
+                  <label>
+                    Condition
+                    <div className="select-wrap">
+                      <select
+                        value={form.direction}
+                        onChange={(e) => update("direction", e.target.value as "lt" | "gt")}
+                      >
+                        <option value="lt">Falls below</option>
+                        <option value="gt">Rises above</option>
+                      </select>
+                      <ChevronDown size={16} />
+                    </div>
+                  </label>
+                  <div className="threshold-rows">
+                    {form.symbols.map((ticker) => (
+                      <label key={ticker} className="threshold-row">
+                        <span className="threshold-asset">
+                          <StockLogo symbol={ticker} small />
+                          {ticker.replace("c", "")}
+                        </span>
+                        <div className="input-affix">
+                          <span>$</span>
+                          <input
+                            required
+                            type="number"
+                            min="0.000001"
+                            step="0.000001"
+                            placeholder="0.00"
+                            aria-label={`Target price for ${companies[ticker]?.name ?? ticker}`}
+                            value={form.thresholds[ticker] ?? ""}
+                            onChange={(e) => setThreshold(ticker, e.target.value)}
+                          />
+                        </div>
+                      </label>
+                    ))}
                   </div>
-                </label>
+                </>
+              ) : (
                 <label>
-                  Target price
-                  <div className="input-affix">
-                    <span>$</span>
+                  Discount to the Chainlink reference
+                  <div className="input-affix suffix">
                     <input
                       required
                       type="number"
-                      min="0.000001"
-                      step="0.000001"
-                      placeholder="0.00"
-                      value={form.threshold}
-                      onChange={(e) => update("threshold", e.target.value)}
+                      min="1"
+                      max="2000"
+                      step="1"
+                      placeholder="20"
+                      value={form.discountBps}
+                      onChange={(e) => update("discountBps", e.target.value)}
                     />
+                    <span>bps</span>
                   </div>
+                  <span className="helper">
+                    100 bps is 1%. The quote used is what a real buy would cost on Aerodrome, fees
+                    and impact included, so it normally sits a little above the reference — 20 bps
+                    is already a genuine dislocation. Anything more than 5% under is treated as a
+                    broken pool and skipped.
+                  </span>
                 </label>
-              </div>
+              )}
               <div className="rule-divider">
                 <ArrowRight size={14} />
                 <span>then buy</span>
@@ -262,6 +362,15 @@ export function StrategyEditor({
                 />
                 <small>USDC</small>
               </div>
+              {/* The single most surprising thing about a basket: this limit is enforced per
+                  order, so N stocks triggering together spend N times it in one day. Saying so
+                  here is cheaper than a user discovering it from their statement. */}
+              {form.symbols.length > 1 && basketDay ? (
+                <span className="helper">
+                  Per stock. All {form.symbols.length} triggering on the same day spends up to $
+                  {basketDay}, which your daily budget and order limit still cap.
+                </span>
+              ) : null}
             </label>
             <label>
               Total budget

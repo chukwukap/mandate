@@ -166,6 +166,147 @@ test("exact signed content is required and drafts cannot be consumed twice", asy
   expect((await app.inject(args)).statusCode).toBe(201);
   expect((await app.inject(args)).statusCode).toBe(409);
 });
+/**
+ * A basket, end to end, in the shape the structured builder emits: one machine per asset, each
+ * buying the asset at its own index. The index is the whole hazard — a plan whose machines and
+ * whose signed asset list drift apart still validates, still signs, and then buys a different
+ * company than the one whose price triggered it.
+ */
+test("a multi-asset strategy signs and arms, with the index mapping inside the signed text", async () => {
+  const symbols = ["AAPLc", "NVDAc", "TSLAc"];
+  const prices = ["300", "150", "250"];
+  const basket = {
+    params: [],
+    nodes: symbols.map((symbol, index) => ({
+      id: `target_${symbol}`,
+      op: "lt",
+      args: [
+        { kind: "feed", feed: `oracle:${symbol}` },
+        { kind: "const", value: prices[index] },
+      ],
+    })),
+    machines: symbols.map((symbol, index) => ({
+      id: `entry_${symbol}`,
+      scope: "portfolio",
+      initial: "watching",
+      states: [
+        {
+          id: "watching",
+          transitions: [
+            {
+              when: `target_${symbol}`,
+              to: "watching",
+              actions: [
+                {
+                  action: "order",
+                  asset: index,
+                  side: "buy",
+                  size: { unit: "quote", value: "10" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })),
+  };
+  const drafted = await app.inject({
+    method: "POST",
+    url: "/v1/strategies/draft",
+    headers,
+    payload: { name: "Three stocks", mode: "auto", plan: basket, caps, assets: symbols },
+  });
+  expect(drafted.statusCode).toBe(201);
+  const body = drafted.json<{
+    artifact_id: string;
+    confirm_message: string;
+    render_text: string;
+    card: { rules: string[]; cautions: string[] };
+  }>();
+
+  // Each rule names the company it buys, resolved through the signed asset list rather than
+  // repeated from the plan — this is what makes an index error visible before signing.
+  expect(body.card.rules).toHaveLength(3);
+  for (const symbol of symbols) expect(body.card.rules.join("\n")).toContain(`of ${symbol}`);
+
+  // The two multi-asset disclosures, and both inside the text the signature covers.
+  const cautions = body.card.cautions.join("\n");
+  expect(cautions).toContain("0=AAPLc, 1=NVDAc, 2=TSLAc");
+  expect(cautions).toContain("3 rules can trigger in the same evaluation");
+  for (const caution of body.card.cautions) expect(body.render_text).toContain(caution);
+
+  const signature = await alice.signMessage({ message: body.confirm_message });
+  const created = await app.inject({
+    method: "POST",
+    url: "/v1/strategies",
+    headers,
+    payload: { artifact_id: body.artifact_id, signature },
+  });
+  expect(created.statusCode).toBe(201);
+
+  // Armed and readable back with all three assets intact, in the order signed.
+  const instance = created.json<{ instance: string }>().instance;
+  const detail = await app.inject({ url: `/v1/instances/${instance}`, headers });
+  expect(detail.statusCode).toBe(200);
+  expect(
+    detail
+      .json<{ envelope: { assets: { symbol: string }[] } }>()
+      .envelope.assets.map((a) => a.symbol),
+  ).toEqual(symbols);
+});
+
+test("an order pointing past the end of the signed asset list is refused, not clamped", async () => {
+  // asset: 3 with three assets signed. Nothing downstream would notice a silent clamp to the
+  // last index; it would simply buy Tesla forever on Apple's signal.
+  const outOfRange = {
+    params: [],
+    nodes: [
+      {
+        id: "cheap",
+        op: "lt",
+        args: [
+          { kind: "feed", feed: "oracle:AAPLc" },
+          { kind: "const", value: "300" },
+        ],
+      },
+    ],
+    machines: [
+      {
+        id: "buy",
+        scope: "portfolio",
+        initial: "watch",
+        states: [
+          {
+            id: "watch",
+            transitions: [
+              {
+                when: "cheap",
+                to: "watch",
+                actions: [
+                  { action: "order", asset: 3, side: "buy", size: { unit: "quote", value: "10" } },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const r = await app.inject({
+    method: "POST",
+    url: "/v1/strategies/draft",
+    headers,
+    payload: {
+      name: "Off by one",
+      mode: "auto",
+      plan: outOfRange,
+      caps,
+      assets: ["AAPLc", "NVDAc", "TSLAc"],
+    },
+  });
+  expect(r.statusCode).toBe(400);
+});
+
 test("cross-user access is denied for detail, history and lifecycle", async () => {
   const { instance } = await create();
   const headers = { authorization: "Bearer bob" };

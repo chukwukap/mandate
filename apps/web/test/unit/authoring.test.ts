@@ -3,9 +3,11 @@ import { draftInput, type StrategyForm } from "../../src/features/strategies/aut
 
 const form: StrategyForm = {
   name: "My entry",
-  symbol: "NVDAc",
+  symbols: ["NVDAc"],
+  shape: "levels",
   direction: "lt",
-  threshold: "220.000001",
+  thresholds: { NVDAc: "220.000001" },
+  discountBps: "20",
   amount: "0.000001",
   budget: "1",
   days: "30",
@@ -48,11 +50,83 @@ describe("strategy authoring boundary", () => {
       ...form,
       authoring: "text",
       prompt: " Sell if the reference rises above 250. ",
-      threshold: "",
+      thresholds: {},
     });
     expect("prompt" in input && input.prompt).toBe("Sell if the reference rises above 250.");
     expect("plan" in input).toBe(false);
     expect(input.caps.lifetime).toBe("1");
     expect(() => draftInput({ ...form, authoring: "text", prompt: " " })).toThrow();
+  });
+});
+
+/**
+ * A basket is the shape people actually ask for — "buy the dip on Apple, NVIDIA and Tesla" —
+ * and every guarantee below is one the engine enforces rather than a preference. They are
+ * asserted here because the failure mode of getting them wrong is silent: a plan that validates,
+ * signs, and then buys the wrong company.
+ */
+describe("multi-token authoring", () => {
+  const basket: StrategyForm = {
+    ...form,
+    symbols: ["AAPLc", "NVDAc", "TSLAc"],
+    thresholds: { AAPLc: "200", NVDAc: "150", TSLAc: "300" },
+  };
+  test("sends the selection as the envelope's assets, in the order picked", () => {
+    expect(draftInput(basket, 0).assets).toEqual(["AAPLc", "NVDAc", "TSLAc"]);
+  });
+  test("addresses each order by its index in that same array", () => {
+    const input = draftInput(basket, 0);
+    if (!("plan" in input)) throw new Error("expected a plan");
+    // An `order` action names its asset by INDEX. If these ever drift apart the strategy stays
+    // valid and buys a different company than the one whose price triggered it.
+    const ordered = input.plan.machines.map((machine) => {
+      const action = machine.states[0]?.transitions[0]?.actions[0];
+      if (action?.action !== "order") throw new Error("expected an order");
+      return input.assets[action.asset];
+    });
+    expect(ordered).toEqual(["AAPLc", "NVDAc", "TSLAc"]);
+  });
+  test("gives every asset its own machine, so a shared tick cannot serialise them", () => {
+    // At most one transition fires per machine per tick. Three assets in one machine would fill
+    // one per cadence interval when the market gaps and all three conditions turn true at once.
+    expect(draftInput(basket, 0)).toHaveProperty("plan.machines.length", 3);
+  });
+  test("keeps each asset's own price rather than reusing one across the basket", () => {
+    const input = draftInput(basket, 0);
+    if (!("plan" in input)) throw new Error("expected a plan");
+    expect(input.plan.nodes.map((node) => node.args[1])).toEqual([
+      { kind: "const", value: "200" },
+      { kind: "const", value: "150" },
+      { kind: "const", value: "300" },
+    ]);
+  });
+  test("names the asset whose price is missing", () => {
+    expect(() => draftInput({ ...basket, thresholds: { AAPLc: "200", TSLAc: "300" } })).toThrow(
+      /NVDAc/,
+    );
+  });
+  test("refuses an empty basket, an unknown ticker, and more machines than a plan can hold", () => {
+    expect(() => draftInput({ ...basket, symbols: [] })).toThrow(/at least one/);
+    expect(() => draftInput({ ...basket, symbols: ["AAPLc", "DOGEc"] })).toThrow(/DOGEc/);
+    expect(() =>
+      draftInput({ ...basket, symbols: Array.from({ length: 17 }, (_, i) => `AAPL${i}c`) }),
+    ).toThrow(/at most 16/);
+  });
+  test("deduplicates, so the same stock picked twice cannot double its own order size", () => {
+    expect(draftInput({ ...basket, symbols: ["AAPLc", "AAPLc", "NVDAc"] }, 0).assets).toEqual([
+      "AAPLc",
+      "NVDAc",
+    ]);
+  });
+  test("the discount shape needs no per-asset price and guards against a dead reference", () => {
+    const input = draftInput({ ...basket, shape: "discount", thresholds: {} }, 0);
+    if (!("plan" in input)) throw new Error("expected a plan");
+    expect(input.plan.machines).toHaveLength(3);
+    // safe_div's third argument is the value used when the oracle reads zero. 0 fails the
+    // sanity floor, so an unusable reference declines to trade instead of reading as a 100%
+    // discount and firing on every asset at once.
+    const basis = input.plan.nodes.find((node) => node.id === "basis_AAPLc");
+    expect(basis?.args[2]).toEqual({ kind: "const", value: "0" });
+    expect(() => draftInput({ ...basket, shape: "discount", discountBps: "0" })).toThrow();
   });
 });

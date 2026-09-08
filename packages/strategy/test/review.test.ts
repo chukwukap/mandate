@@ -317,6 +317,73 @@ test("plan-specific surprises are disclosed, and only where they apply", () => {
     ).toBe(true);
 });
 
+test("a basket discloses that its rules do not hold each other back", () => {
+  // The single most surprising property of a multi-asset strategy. Cooldowns are keyed per
+  // machine and per transition, so every rule in a basket is independent and all of them can be
+  // admitted inside one evaluation — while the authority block says "cooldown per rule", which
+  // reads like a limit on the strategy as a whole.
+  const basket = validatePlan(
+    {
+      nodes: [
+        {
+          id: "cheap_aapl",
+          op: "lt",
+          args: [
+            { kind: "feed", feed: "oracle:AAPLc" },
+            { kind: "const", value: "200" },
+          ],
+        },
+        {
+          id: "cheap_nvda",
+          op: "lt",
+          args: [
+            { kind: "feed", feed: "oracle:NVDAc" },
+            { kind: "const", value: "150" },
+          ],
+        },
+      ],
+      machines: [0, 1].map((index) => ({
+        id: `entry_${index}`,
+        scope: "portfolio",
+        initial: "watching",
+        states: [
+          {
+            id: "watching",
+            transitions: [
+              {
+                when: index === 0 ? "cheap_aapl" : "cheap_nvda",
+                to: "watching",
+                actions: [
+                  {
+                    action: "order",
+                    asset: index,
+                    side: "buy",
+                    size: { unit: "quote", value: "50" },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })),
+    },
+    [AAPL, NVDA],
+  );
+  const rendered = review(basket, envelopeFor([AAPL, NVDA]));
+  const text = rendered.card.cautions.join("\n");
+  expect(text).toContain("2 rules can trigger in the same evaluation");
+  expect(text).toContain("not to the strategy as a whole");
+  // Signed, not merely displayed.
+  expect(rendered.render_text).toContain("2 rules can trigger in the same evaluation");
+
+  // A rule that only notifies spends nothing, so it is not one of the rules being counted.
+  const oneBuyer = review(
+    planFor([threshold("200")], NOTIFY, [AAPL, NVDA]),
+    envelopeFor([AAPL, NVDA]),
+  );
+  expect(oneBuyer.card.cautions.join("\n")).not.toContain("rules can trigger in the same");
+});
+
 test("an expression too deep to read is refused rather than rendered", () => {
   // Nesting expands multiplicatively; the failure belongs at a rejected draft, not
   // at a 64000-character card the user scrolls past.

@@ -38,7 +38,7 @@ export type Headroom = {
  * Advance a period origin to the boundary of the period containing `now`.
  *
  * This is deliberately the same arithmetic `tick()` performs inline
- * (`packages/strategy/src/strategy.ts`), reproduced here because the two run at different
+ * (`packages/strategy/src/enforcement/envelope.ts`), reproduced here because the two run at different
  * moments on the same counters. If this gate rolled the window differently — say by
  * resetting the origin to `now` — an order that `tick()` admitted inside a period could be
  * refused at funding time forever, and the order would livelock in `admitted` while the

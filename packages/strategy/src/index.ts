@@ -8,19 +8,16 @@ export {
   OpenAICompiler,
   PROVIDERS,
 } from "./compiler/index.js";
+export { evaluate, Money, units, whole } from "./evaluation/index.js";
+export type { Intent, Portfolio, Runtime } from "./machines/index.js";
+export { initialRuntime, tick } from "./machines/index.js";
 export type { Authorization, Commitment, Rendered, ReviewCard } from "./review/index.js";
-export { artifactId, authorizationMessage } from "./review/index.js";
-export type { Caps, Envelope, Intent, Plan, Portfolio, Runtime } from "./strategy.js";
+export { artifactId, authorizationMessage, canonical, digest, review } from "./review/index.js";
+export type { Asset, Caps, Envelope, Plan, PlanIssue } from "./validation/index.js";
 export {
-  canonical,
   capsSchema,
-  digest,
-  evaluate,
-  initialRuntime,
+  envelopeSchema,
+  PlanInvalid,
   planSchema,
-  review,
-  tick,
-  units,
   validatePlan,
-  whole,
-} from "./strategy.js";
+} from "./validation/index.js";

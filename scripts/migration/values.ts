@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Hex } from "../../packages/contracts/src/index.js";
 import { Problem } from "../../packages/contracts/src/index.js";
-import { whole } from "../../packages/strategy/src/strategy.js";
+import { whole } from "../../packages/strategy/src/evaluation/money.js";
 
 /**
  * Column decoding for the legacy Rust schema.
@@ -20,7 +20,11 @@ function bytes(value: unknown, subject: string): Uint8Array {
   // fixture may carry the `\x...` text form. All three are legitimate inputs here.
   if (value instanceof Uint8Array) return value;
   if (typeof value === "string") {
-    const hex = value.startsWith("\\x") ? value.slice(2) : value.startsWith("0x") ? value.slice(2) : value;
+    const hex = value.startsWith("\\x")
+      ? value.slice(2)
+      : value.startsWith("0x")
+        ? value.slice(2)
+        : value;
     if (!/^[0-9a-fA-F]*$/.test(hex) || hex.length % 2 !== 0)
       throw new Problem(
         422,
@@ -29,7 +33,8 @@ function bytes(value: unknown, subject: string): Uint8Array {
         `The legacy ${subject} column is not a hex byte string.`,
       );
     const out = new Uint8Array(hex.length / 2);
-    for (let i = 0; i < out.length; i += 1) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    for (let i = 0; i < out.length; i += 1)
+      out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
     return out;
   }
   throw new Problem(
@@ -90,7 +95,12 @@ export function rawAmount(value: unknown, decimals: number, subject: string): st
       "Invalid scale",
       `The legacy ${subject} scale of ${String(decimals)} is not a usable decimal count.`,
     );
-  const text = typeof value === "bigint" ? value.toString() : typeof value === "number" ? String(value) : value;
+  const text =
+    typeof value === "bigint"
+      ? value.toString()
+      : typeof value === "number"
+        ? String(value)
+        : value;
   if (typeof text !== "string" || !/^\d+$/.test(text))
     throw new Problem(
       422,
@@ -137,7 +147,8 @@ export function isoFromUnixSeconds(value: unknown, subject: string): string {
 
 /** A `timestamptz` column as a Date. Drivers already decode it; a string is still accepted. */
 export function instant(value: unknown, subject: string): Date {
-  const date = value instanceof Date ? value : typeof value === "string" ? new Date(value) : undefined;
+  const date =
+    value instanceof Date ? value : typeof value === "string" ? new Date(value) : undefined;
   if (!date || Number.isNaN(date.getTime()))
     throw new Problem(
       422,

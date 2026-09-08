@@ -1,15 +1,14 @@
 import type { Asset } from "../../packages/contracts/src/index.js";
-import { USDC } from "../../packages/evm/src/permissions/index.js";
-import { CHAIN_ID } from "../../packages/evm/src/permissions/index.js";
+import { CHAIN_ID, USDC } from "../../packages/evm/src/permissions/index.js";
+import { digest } from "../../packages/strategy/src/review/canonical.js";
 import { authorizationMessage } from "../../packages/strategy/src/review/commitment.js";
-import type { Caps, Envelope, Plan } from "../../packages/strategy/src/strategy.js";
+import { review } from "../../packages/strategy/src/review/render.js";
+import type { Caps, Envelope, Plan } from "../../packages/strategy/src/validation/index.js";
 import {
   capsSchema,
-  digest,
   planSchema,
-  review,
   validatePlan,
-} from "../../packages/strategy/src/strategy.js";
+} from "../../packages/strategy/src/validation/index.js";
 import { resolveAsset, translateFeed } from "./catalogue.js";
 import type { Substitution } from "./issues.js";
 import { issue, Refused } from "./issues.js";
@@ -177,9 +176,7 @@ export function translateStrategy(
   // The signing deadline never outlives the authority itself: signing a card whose caps have
   // already expired produces an instance that can never admit an order.
   const capsExpiry = Date.parse(envelope.caps.expires_at);
-  const expiresAt = new Date(
-    Math.min(options.now.getTime() + options.signingWindowMs, capsExpiry),
-  );
+  const expiresAt = new Date(Math.min(options.now.getTime() + options.signingWindowMs, capsExpiry));
   substitutions.push({
     field: "draft.expires_at",
     from: "30 minutes (the interactive authoring window)",
@@ -299,7 +296,12 @@ function translateEnvelope(
         ),
       );
     seen.add(token);
-    return resolveAsset(entry.token, entry.decimals, options.catalogue, `${subject} asset ${String(index)}`);
+    return resolveAsset(
+      entry.token,
+      entry.decimals,
+      options.catalogue,
+      `${subject} asset ${String(index)}`,
+    );
   });
 
   let expiresAt = legacy.expiresAt;

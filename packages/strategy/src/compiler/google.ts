@@ -1,4 +1,4 @@
-import type { Asset } from "../strategy.js";
+import type { Asset } from "../validation/index.js";
 import {
   CLARIFY_TOOL,
   type Compiler,

@@ -183,6 +183,18 @@ function cautions(plan: Plan, envelope: Envelope): string[] {
       "Caution: this strategy contains sell rules. Automatic sell authority is not available, so sells are recorded as signals for you to act on; only buys can execute automatically.",
     );
 
+  // Cooldowns are keyed per machine and per transition (`fireKey` in tick.ts), so the rules of a
+  // basket do not space each other out — they are independent by construction, and all of them
+  // can be admitted inside one evaluation. The authority block above says "cooldown per rule",
+  // which a signer can reasonably read as a limit on the strategy as a whole. It is not.
+  const buying = plan.machines.filter((m) =>
+    m.states.some((s) => s.transitions.some((t) => t.actions.some((a) => a.action === "order"))),
+  ).length;
+  if (buying > 1)
+    out.push(
+      `Caution: ${buying} rules can trigger in the same evaluation, each placing its own order of up to ${envelope.caps.per_order} USDC. The cooldown applies to each rule separately, not to the strategy as a whole; only the per-period, order-count and lifetime limits bound the total.`,
+    );
+
   if (envelope.assets.length > 1)
     out.push(
       `Caution: rules address assets by position in the signed list (${envelope.assets.map((a, i) => `${i}=${a.symbol}`).join(", ")}). This list is part of what you are signing and cannot be reordered afterwards.`,

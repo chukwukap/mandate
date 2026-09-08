@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type Asset, type Plan, planSchema, validatePlan } from "../strategy.js";
+import { type Asset, type Plan, planSchema, validatePlan } from "../validation/index.js";
 
 /**
  * Everything a strategy compiler is, except the wire.
@@ -63,6 +63,12 @@ export function systemPrompt(assets: Asset[]): string {
   return `Translate the user's own instructions into a reviewable strategy. Never choose investments or invent prices, amounts or thresholds. Ask for clarification by using ${CLARIFY_TOOL} when essential details are absent or unsupported. Plans use decimal strings and portfolio-scoped machines. Buys use quote or pct_equity sizes; sells use base or pct_position sizes. Never invent feed URIs. Conditions default to on_edge. while_true needs a finite max_repeats. A halt ends execution. There are no calendar, time-series, news, or technical-indicator inputs.
 
 Do NOT implement spend or frequency limits in the plan. How much may be spent per order, per period and over the strategy's lifetime, how many orders a period allows, and the cooldown between them are all part of the signed envelope and are enforced outside the plan. A plan that counts its own fills is duplicating a limit the user already set, and usually fails validation.
+
+When the user names several assets, give EACH asset its own machine with its own id. A machine fires at most ONE transition per tick, so several assets sharing a machine would trade one per cadence interval when their conditions turn true together, filling the rest minutes later at prices nobody chose. A plan may hold at most 16 machines.
+
+Prefer a state whose transition loops back to itself. on_edge memory is kept per state and refreshed only for the state a machine is currently in, so a machine that leaves a state and returns to it carries a stale reading and misses the next crossing entirely.
+
+safe_div takes THREE arguments: numerator, divisor, and the value to use when the divisor is zero. To compare a pool price against its reference, divide dex:SYMBOL by oracle:SYMBOL. Note that dex: is the effective cost of a small buy, fees and price impact already included, so in normal conditions it reads slightly ABOVE oracle: rather than at parity.
 
 The \`set\` action assigns a variable from a NODE, not from a literal: its \`value\` is the id of a node that evaluates to a number. There is no increment operator. Most strategies need no \`set\` at all — reach for it only when a later condition must compare against something computed earlier. Available assets by index: ${JSON.stringify(
     assets.map((a, i) => ({ index: i, symbol: a.symbol })),
