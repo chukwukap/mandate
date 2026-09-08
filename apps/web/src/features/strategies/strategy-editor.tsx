@@ -13,8 +13,36 @@ import { Dialog } from "../../components/dialog";
 import { ApiError } from "../../lib/api";
 import { companies, stocks } from "../market/catalog";
 import { StockLogo } from "../market/stock-logo";
-import { draftInput, MAX_ASSETS, type StrategyForm, scaleAmount } from "./authoring";
+import { draftInput, ladderRungs, MAX_ASSETS, type StrategyForm, scaleAmount } from "./authoring";
 import type { Draft, Strategy } from "./types";
+
+const SHAPES = [
+  {
+    id: "levels",
+    title: "A price for each",
+    blurb: "Buy when a stock crosses the level you set for it.",
+  },
+  {
+    id: "discount",
+    title: "Cheaper than the reference",
+    blurb: "Buy whichever one the pool is discounting against Chainlink.",
+  },
+  {
+    id: "recurring",
+    title: "Recurring buys",
+    blurb: "The same amount on a fixed schedule, whatever the price.",
+  },
+  {
+    id: "ladder",
+    title: "Step ladder",
+    blurb: "Buy more, and larger, each time it falls another step.",
+  },
+  {
+    id: "rebalance",
+    title: "Keep balanced",
+    blurb: "Top up whichever holding has fallen behind the others.",
+  },
+] as const;
 
 export function StrategyEditor({
   symbol,
@@ -38,6 +66,11 @@ export function StrategyEditor({
     direction: "lt",
     thresholds: {},
     discountBps: "20",
+    cadenceHours: "24",
+    ladderStart: "",
+    ladderStepPct: "3",
+    ladderMultiple: "1.5",
+    ladderRungs: "4",
     amount: "",
     budget: "",
     days: "30",
@@ -88,6 +121,21 @@ export function StrategyEditor({
   const setThreshold = (ticker: string, value: string) =>
     setForm((current) => ({ ...current, thresholds: { ...current.thresholds, [ticker]: value } }));
   const basketDay = scaleAmount(form.amount, form.symbols.length);
+  /**
+   * The ladder as it will actually be bought. Derived rather than stored so it cannot disagree
+   * with what `draftInput` sends, and null while the inputs are still being typed — a preview
+   * that shows "NaN" mid-keystroke is worse than one that waits.
+   */
+  const preview = (() => {
+    if (form.shape !== "ladder" || form.authoring !== "rule") return null;
+    try {
+      const rungs = ladderRungs(form);
+      const total = rungs.reduce((sum, r) => sum + Number(r.amount), 0);
+      return { rungs, length: rungs.length, total: total.toFixed(2) };
+    } catch {
+      return null;
+    }
+  })();
   const first = form.symbols[0] ?? symbol;
   const name =
     form.name.trim() ||
@@ -241,27 +289,135 @@ export function StrategyEditor({
               <div className="form-section">
                 <span className="field-label">Trigger</span>
                 <div className="shape-options">
-                  <button
-                    type="button"
-                    aria-pressed={form.shape === "levels"}
-                    className={form.shape === "levels" ? "selected" : ""}
-                    onClick={() => update("shape", "levels")}
-                  >
-                    <strong>A price for each</strong>
-                    <span>Buy when a stock crosses the level you set for it.</span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={form.shape === "discount"}
-                    className={form.shape === "discount" ? "selected" : ""}
-                    onClick={() => update("shape", "discount")}
-                  >
-                    <strong>Cheaper than the reference</strong>
-                    <span>Buy whichever one the pool is discounting against Chainlink.</span>
-                  </button>
+                  {SHAPES.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      aria-pressed={form.shape === option.id}
+                      className={form.shape === option.id ? "selected" : ""}
+                      onClick={() => update("shape", option.id)}
+                    >
+                      <strong>{option.title}</strong>
+                      <span>{option.blurb}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
-              {form.shape === "levels" ? (
+              {form.shape === "recurring" ? (
+                <label>
+                  Buy every
+                  <div className="input-affix suffix">
+                    <input
+                      required
+                      type="number"
+                      min="1"
+                      max="8760"
+                      step="1"
+                      value={form.cadenceHours}
+                      onChange={(e) => update("cadenceHours", e.target.value)}
+                    />
+                    <span>hours</span>
+                  </div>
+                  <span className="helper">
+                    24 is daily, 168 is weekly. This becomes the cooldown on your signed limits —
+                    the rule itself is always willing to buy, and the cooldown is what paces it.
+                  </span>
+                </label>
+              ) : form.shape === "rebalance" ? (
+                <span className="helper">
+                  Each stock is topped up whenever it falls below an equal share of your portfolio
+                  {form.symbols.length > 1
+                    ? ` — ${(100 / form.symbols.length).toFixed(0)}% each`
+                    : ""}
+                  . Buying is all this can do, so it corrects drift by adding to the laggards; it
+                  cannot trim a winner, and it goes quiet once your cash is spent.
+                </span>
+              ) : form.shape === "ladder" ? (
+                <>
+                  <div className="form-row">
+                    <label>
+                      First step under
+                      <div className="input-affix">
+                        <span>$</span>
+                        <input
+                          required
+                          type="number"
+                          min="0.000001"
+                          step="0.000001"
+                          placeholder="0.00"
+                          value={form.ladderStart}
+                          onChange={(e) => update("ladderStart", e.target.value)}
+                        />
+                      </div>
+                    </label>
+                    <label>
+                      Number of steps
+                      <input
+                        required
+                        type="number"
+                        min="1"
+                        max="24"
+                        step="1"
+                        value={form.ladderRungs}
+                        onChange={(e) => update("ladderRungs", e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="form-row">
+                    <label>
+                      Each step lower by
+                      <div className="input-affix suffix">
+                        <input
+                          required
+                          type="number"
+                          min="0.1"
+                          max="50"
+                          step="0.1"
+                          value={form.ladderStepPct}
+                          onChange={(e) => update("ladderStepPct", e.target.value)}
+                        />
+                        <span>%</span>
+                      </div>
+                    </label>
+                    <label>
+                      Each step bigger by
+                      <div className="input-affix suffix">
+                        <input
+                          required
+                          type="number"
+                          min="1"
+                          max="5"
+                          step="0.1"
+                          value={form.ladderMultiple}
+                          onChange={(e) => update("ladderMultiple", e.target.value)}
+                        />
+                        <span>×</span>
+                      </div>
+                    </label>
+                  </div>
+                  {/* The total is the number that matters most and the one a user is least
+                      likely to work out from four inputs. Shown before signing, not after. */}
+                  {preview && (
+                    <div className="ladder-preview">
+                      <span className="field-label">
+                        {preview.length} steps, ${preview.total} in total
+                      </span>
+                      <ol>
+                        {preview.rungs.map((rung) => (
+                          <li key={rung.price}>
+                            <span>under ${Number(rung.price).toFixed(2)}</span>
+                            <strong>${rung.amount}</strong>
+                          </li>
+                        ))}
+                      </ol>
+                      <span className="helper">
+                        Nothing sells this back. The ladder stops after the last step and holds what
+                        it bought.
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : form.shape === "levels" ? (
                 <>
                   <label>
                     Condition

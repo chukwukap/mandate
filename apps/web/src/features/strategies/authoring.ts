@@ -1,5 +1,5 @@
 import { stocks } from "../market/catalog";
-import { discountPlan, levelsPlan } from "./plan";
+import { discountPlan, ladderPlan, levelsPlan, rebalancePlan, recurringPlan } from "./plan";
 
 /**
  * A plan gets one state machine per selected asset, and `planSchema` caps machines at 16 while
@@ -14,7 +14,16 @@ export type StrategyForm = {
   /** A basket. One entry is the common case, not a special case. */
   symbols: string[];
   /** Which rule shape the structured builder emits. Ignored when authoring from text. */
-  shape: "levels" | "discount";
+  shape: "levels" | "discount" | "recurring" | "ladder" | "rebalance";
+  /** Recurring only: hours between buys. This becomes the envelope's cooldown, which is the
+   *  mechanism — the engine has no clock, so the cap is what paces the rule. */
+  cadenceHours: string;
+  /** Ladder only. The first rung triggers under `ladderStart`; each next rung is `ladderStepPct`
+   *  further down and `ladderMultiple` times larger. */
+  ladderStart: string;
+  ladderStepPct: string;
+  ladderMultiple: string;
+  ladderRungs: string;
   direction: "lt" | "gt";
   /** Per-symbol target price for the `levels` shape. Keyed by symbol, not by index, so
    *  deselecting one asset cannot silently shift another asset's price onto it. */
@@ -89,7 +98,40 @@ function name(form: StrategyForm, symbols: string[]) {
   return `${symbols.slice(0, 2).join(" + ")}${symbols.length > 2 ? ` +${symbols.length - 2}` : ""} strategy`;
 }
 
+/**
+ * The rungs a ladder will actually buy, derived from the four numbers a user types.
+ *
+ * Exported because the editor previews them: a scale-in whose total spend is not shown before
+ * signing is a strategy whose most important number is hidden. Sizes are rounded to the cent —
+ * a multiple of 1.5 over five rungs otherwise produces amounts no one would choose to sign.
+ */
+export function ladderRungs(form: StrategyForm) {
+  const count = integer(form.ladderRungs, 1, 24, "Number of steps");
+  const stepPct = Number(form.ladderStepPct);
+  const multiple = Number(form.ladderMultiple);
+  if (!Number.isFinite(stepPct) || stepPct <= 0 || stepPct > 50)
+    throw new Error("Step size must be between 0 and 50 percent.");
+  if (!Number.isFinite(multiple) || multiple < 1 || multiple > 5)
+    throw new Error("Size multiple must be between 1 and 5.");
+  amount(form.ladderStart, "First step price");
+  amount(form.amount, "First step amount");
+  const start = Number(form.ladderStart);
+  const first = Number(form.amount);
+  return Array.from({ length: count }, (_, i) => ({
+    price: (start * (1 - stepPct / 100) ** i).toFixed(6),
+    amount: (first * multiple ** i).toFixed(2),
+  }));
+}
+
 function rulePlan(form: StrategyForm, symbols: string[]) {
+  if (form.shape === "recurring") return recurringPlan(symbols, form.amount);
+  if (form.shape === "rebalance") {
+    // Equal weight. Anything else needs a per-asset control, and an equal-weight basket is both
+    // the common case and the one a user can check at a glance.
+    const target = Math.floor(10_000 / symbols.length);
+    return rebalancePlan(symbols, String(target), form.amount);
+  }
+  if (form.shape === "ladder") return ladderPlan(symbols[0] as string, ladderRungs(form));
   if (form.shape === "discount") {
     const bps = integer(form.discountBps, 1, 2_000, "Discount");
     return discountPlan(symbols, String(bps), form.amount);
@@ -102,7 +144,21 @@ function rulePlan(form: StrategyForm, symbols: string[]) {
 
 export function draftInput(form: StrategyForm, now = Date.now()) {
   const symbols = selection(form);
-  const perOrder = amount(form.amount, "Per-order limit");
+  if (form.authoring === "rule" && form.shape === "ladder" && symbols.length !== 1)
+    throw new Error("A step ladder follows one stock at a time. Choose a single stock.");
+  /**
+   * A ladder's per-order cap is its LARGEST rung, not its first.
+   *
+   * `per_order` is enforced per order by the envelope, and a scale-in deliberately buys more
+   * each step. Sizing the cap from the opening amount would let rung one through and refuse
+   * every rung after it — the strategy would look armed, fire once, and quietly do nothing on
+   * exactly the falls it was built for.
+   */
+  const perOrderAmount =
+    form.authoring === "rule" && form.shape === "ladder"
+      ? (ladderRungs(form).at(-1)?.amount ?? form.amount)
+      : form.amount;
+  const perOrder = amount(perOrderAmount, "Per-order limit");
   const total = amount(form.budget, "Total budget");
   const perDay = amount(form.dailyBudget || form.budget, "Daily budget");
   if (perOrder > perDay || perDay > total)
@@ -120,11 +176,16 @@ export function draftInput(form: StrategyForm, now = Date.now()) {
       : { plan: rulePlan(form, symbols) }),
     caps: {
       lifetime: form.budget,
-      per_order: form.amount,
+      per_order: perOrderAmount,
       per_period: form.dailyBudget || form.budget,
       period_secs: 86400,
       max_orders_per_period: integer(form.maxOrders, 1, 10000, "Daily order limit"),
-      cooldown_secs: integer(form.cooldownMinutes, 0, 525600, "Cooldown") * 60,
+      // For a recurring plan the cadence IS the cooldown: the plan's condition is always true,
+      // so this cap is the only thing deciding how often it buys.
+      cooldown_secs:
+        form.authoring === "rule" && form.shape === "recurring"
+          ? integer(form.cadenceHours, 1, 8760, "Buy every") * 3600
+          : integer(form.cooldownMinutes, 0, 525600, "Cooldown") * 60,
       expires_at: new Date(now + integer(form.days, 1, 365, "Duration") * 86400000).toISOString(),
       slippage_bps: integer(form.slippageBps, 1, 500, "Slippage limit"),
     },

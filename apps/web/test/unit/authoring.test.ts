@@ -8,6 +8,11 @@ const form: StrategyForm = {
   direction: "lt",
   thresholds: { NVDAc: "220.000001" },
   discountBps: "20",
+  cadenceHours: "24",
+  ladderStart: "300",
+  ladderStepPct: "3",
+  ladderMultiple: "1.5",
+  ladderRungs: "4",
   amount: "0.000001",
   budget: "1",
   days: "30",
@@ -128,5 +133,96 @@ describe("multi-token authoring", () => {
     const basis = input.plan.nodes.find((node) => node.id === "basis_AAPLc");
     expect(basis?.args[2]).toEqual({ kind: "const", value: "0" });
     expect(() => draftInput({ ...basket, shape: "discount", discountBps: "0" })).toThrow();
+  });
+});
+
+/**
+ * The bot-shaped strategies. Each is checked for the one property that makes it that strategy
+ * rather than a rule that happens to resemble it.
+ */
+describe("recurring, ladder and rebalance shapes", () => {
+  const base: StrategyForm = { ...form, symbols: ["AAPLc", "NVDAc"], thresholds: {} };
+
+  test("a recurring plan is paced by the cooldown, because the engine has no clock", () => {
+    const input = draftInput({ ...base, shape: "recurring", cadenceHours: "24" }, 0);
+    // The cadence is not in the plan at all — it is the cap. That is the mechanism.
+    expect(input.caps.cooldown_secs).toBe(86_400);
+    if (!("plan" in input)) throw new Error("expected a plan");
+    // Always-true condition, repeating rather than edge-triggered: an edge fires once, which
+    // would be a single purchase rather than a schedule.
+    expect(input.plan.nodes).toHaveLength(1);
+    for (const machine of input.plan.machines)
+      expect(machine.states[0]?.transitions[0]?.fires).toBe("while_true");
+    expect(draftInput({ ...base, shape: "recurring", cadenceHours: "1" }, 0).caps.cooldown_secs).toBe(3600);
+    expect(() => draftInput({ ...base, shape: "recurring", cadenceHours: "0" })).toThrow();
+  });
+
+  test("the cooldown field still governs every other shape", () => {
+    expect(draftInput({ ...base, shape: "discount", cooldownMinutes: "30" }, 0).caps.cooldown_secs).toBe(1800);
+  });
+
+  test("a ladder steps down in price and up in size, and ends terminal", () => {
+    const input = draftInput(
+      { ...base, symbols: ["AAPLc"], shape: "ladder", ladderStart: "300", ladderStepPct: "10",
+        ladderMultiple: "2", ladderRungs: "3", amount: "25",
+        dailyBudget: "175", budget: "175" },
+      0,
+    );
+    if (!("plan" in input)) throw new Error("expected a plan");
+    expect(input.plan.nodes.map((n) => n.args[1])).toEqual([
+      { kind: "const", value: "300.000000" },
+      { kind: "const", value: "270.000000" },
+      { kind: "const", value: "243.000000" },
+    ]);
+    const sizes = input.plan.machines[0]?.states.flatMap((s) =>
+      s.transitions.flatMap((tr) => tr.actions.map((a) => ("size" in a ? a.size.value : ""))),
+    );
+    expect(sizes).toEqual(["25.00", "50.00", "100.00"]);
+    // The last rung goes somewhere with no transitions. Nothing can sell this back, so the
+    // ladder must stop rather than loop.
+    const terminal = input.plan.machines[0]?.states.at(-1);
+    expect(terminal?.transitions).toEqual([]);
+  });
+
+  test("a ladder refuses a basket, because its rungs address one stock", () => {
+    expect(() =>
+      draftInput({ ...base, shape: "ladder", ladderStart: "300" }),
+    ).toThrow(/one stock at a time/);
+  });
+
+  test("the per-order cap is the largest rung, so no rung can be refused by it", () => {
+    const input = draftInput(
+      { ...base, symbols: ["AAPLc"], shape: "ladder", ladderStart: "300", ladderStepPct: "10",
+        ladderMultiple: "2", ladderRungs: "3", amount: "25", dailyBudget: "175", budget: "175" },
+      0,
+    );
+    // 25, 50, 100 — the cap has to clear 100 or the deepest rungs never fill.
+    expect(input.caps.per_order).toBe("100.00");
+  });
+
+  test("a ladder refuses nonsense scaling rather than signing it", () => {
+    const ladder = { ...base, symbols: ["AAPLc"], shape: "ladder" as const, ladderStart: "300" };
+    expect(() => draftInput({ ...ladder, ladderStepPct: "0" })).toThrow(/Step size/);
+    expect(() => draftInput({ ...ladder, ladderStepPct: "80" })).toThrow(/Step size/);
+    expect(() => draftInput({ ...ladder, ladderMultiple: "0.5" })).toThrow(/multiple/);
+    expect(() => draftInput({ ...ladder, ladderMultiple: "9" })).toThrow(/multiple/);
+  });
+
+  test("rebalancing splits equally and gates on cash rather than equity", () => {
+    const input = draftInput({ ...base, symbols: ["AAPLc", "NVDAc", "TSLAc"], shape: "rebalance" }, 0);
+    if (!("plan" in input)) throw new Error("expected a plan");
+    const target = input.plan.nodes.find((n) => n.id === "under_AAPLc");
+    expect(target?.args[1]).toEqual({ kind: "const", value: "0.333300" });
+    // Equity counts stock and stock cannot be spent, so the affordability test reads `cash`.
+    expect(input.plan.nodes.find((n) => n.id === "funded_AAPLc")?.args[0]).toEqual({
+      kind: "feed",
+      feed: "cash",
+    });
+    // An empty account must read as fully weighted, not as underweight — the fallback decides
+    // whether a zero-equity wallet buys everything or nothing.
+    expect(input.plan.nodes.find((n) => n.id === "weight_AAPLc")?.args[2]).toEqual({
+      kind: "const",
+      value: "1",
+    });
   });
 });

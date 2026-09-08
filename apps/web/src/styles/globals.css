@@ -2972,3 +2972,33 @@ kbd,
   margin-top: 1px;
   color: var(--green-ink);
 }
+
+/* Ladder preview: what the four inputs actually add up to, before anything is signed. */
+.ladder-preview {
+  margin: 12px 0 18px;
+  padding: 12px;
+  border: 1px solid var(--sage-line);
+  border-radius: 9px;
+  background: var(--paper);
+}
+.ladder-preview ol {
+  list-style: none;
+  margin: 9px 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+.ladder-preview li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--text-2);
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--sage);
+}
+.ladder-preview li strong {
+  font-weight: 500;
+  color: var(--ink);
+}
