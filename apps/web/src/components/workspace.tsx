@@ -11,6 +11,8 @@ import {
   Compass,
   LayoutGrid,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   PieChart,
   Plus,
   Search,
@@ -102,6 +104,8 @@ export function Workspace() {
     query,
     setQuery,
     compact,
+    collapsed,
+    setCollapsed,
     mobile,
     setMobile,
     editor,
@@ -167,7 +171,9 @@ export function Workspace() {
     </div>
   );
   return (
-    <div className={`workspace desk-workspace ${compact ? "compact" : ""}`}>
+    <div
+      className={`workspace desk-workspace ${compact ? "compact" : ""} ${collapsed ? "sidebar-collapsed" : ""}`}
+    >
       <a href="#main" className="skip-link">
         Skip to content
       </a>
@@ -204,7 +210,7 @@ export function Workspace() {
               aria-current={section === item.section ? "page" : undefined}
             >
               <item.icon size={18} />
-              {item.label}
+              <span className="nav-label">{item.label}</span>
               {item.label === "Strategies" && strategies.length > 0 && (
                 <span className="nav-count">{strategies.length}</span>
               )}
@@ -220,12 +226,13 @@ export function Workspace() {
           }}
         >
           <Plus size={17} />
-          New strategy<span>↗</span>
+          <span className="nav-label">New strategy</span>
+          <span className="nav-hint">↗</span>
         </button>
         <div className="sidebar-bottom">
           <button type="button" className="nav-item" onClick={() => setHelp(true)}>
             <CircleHelp size={18} />
-            Help & shortcuts
+            <span className="nav-label">Help & shortcuts</span>
             <ArrowUpRight size={14} className="trailing" />
           </button>
           <Link
@@ -234,8 +241,20 @@ export function Workspace() {
             onClick={() => setMobile(false)}
           >
             <Settings2 size={18} />
-            Settings
+            <span className="nav-label">Settings</span>
           </Link>
+          <button
+            type="button"
+            className="nav-item sidebar-toggle"
+            onClick={() => setCollapsed((value) => !value)}
+            aria-pressed={collapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={`${collapsed ? "Expand" : "Collapse"} sidebar (⌘B)`}
+          >
+            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            <span className="nav-label">Collapse</span>
+            <kbd>⌘B</kbd>
+          </button>
           <div className="sidebar-divider" />
           <button
             type="button"

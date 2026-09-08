@@ -28,7 +28,7 @@ export function useWorkspace() {
   const [filter, setFilter] = useState("All stocks");
   const [strategyFilter, setStrategyFilter] = useState("All");
   const [query, setQuery] = useState("");
-  const { favorites, setFavorites, compact, setCompact } = prefs;
+  const { favorites, setFavorites, compact, setCompact, collapsed, setCollapsed } = prefs;
   const [mobile, setMobile] = useState(false);
   const [editor, setEditor] = useState(false);
   const createRequested = params.get("create") === "1";
@@ -79,10 +79,15 @@ export function useWorkspace() {
         event.preventDefault();
         setSearch((value) => !value);
       }
+      // ⌘B folds the sidebar, the shortcut VS Code and Notion both use for the same thing.
+      if ((event.metaKey || event.ctrlKey) && event.key === "b") {
+        event.preventDefault();
+        setCollapsed((value) => !value);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [setCollapsed]);
   /**
    * The reference price for one symbol, stale or not.
    *
@@ -180,6 +185,8 @@ export function useWorkspace() {
     setQuery,
     favorites,
     compact,
+    collapsed,
+    setCollapsed,
     setCompact,
     mobile,
     setMobile,

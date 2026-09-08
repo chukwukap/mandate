@@ -9,7 +9,7 @@
   padding: 35px 20px 18px;
   border-right: 1px solid #304338;
 }
-.desk-workspace .workspace-body {
+.desk-workspace .main-shell {
   margin-left: 222px;
 }
 .desk-workspace .brand {
@@ -3322,7 +3322,7 @@
     z-index: 60;
     overflow-y: auto;
   }
-  .desk-workspace .workspace-body {
+  .desk-workspace .main-shell {
     margin-left: 0;
   }
   .desk-workspace .topbar {
@@ -4159,4 +4159,135 @@
 .account-popover .account-signout:focus-visible {
   background: var(--danger-soft);
   color: var(--danger-ink);
+}
+
+/* Collapsible sidebar ----------------------------------------------------------------------- */
+/* Expanded is 222px with labels; collapsed is a 68px icon rail, the way Linear and Notion fold
+   theirs. Width and the body's margin animate together so the content reflows rather than
+   jumping. Labels are folded away visually but stay in the tree, so each link keeps its name for
+   assistive tech; `title` on the toggle carries the shortcut. */
+.desk-workspace .sidebar,
+.desk-workspace .main-shell {
+  transition:
+    width 0.22s var(--ease),
+    margin-left 0.22s var(--ease),
+    padding 0.22s var(--ease);
+}
+.desk-workspace .nav-label {
+  white-space: nowrap;
+  overflow: hidden;
+  transition:
+    opacity 0.15s,
+    max-width 0.22s var(--ease);
+  max-width: 160px;
+}
+.desk-workspace .sidebar-toggle {
+  margin-top: 4px;
+}
+.desk-workspace .sidebar-toggle kbd {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid #4b5c44;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 9.5px;
+  color: #a3b29f;
+}
+.desk-workspace.sidebar-collapsed .sidebar {
+  width: 68px;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.desk-workspace.sidebar-collapsed .main-shell {
+  margin-left: 68px;
+}
+.desk-workspace.sidebar-collapsed .nav-label,
+.desk-workspace.sidebar-collapsed .nav-hint,
+.desk-workspace.sidebar-collapsed .nav-caption,
+.desk-workspace.sidebar-collapsed .brand-period,
+.desk-workspace.sidebar-collapsed .workspace-switch .network-dot,
+.desk-workspace.sidebar-collapsed .account-button > span:not(.account-avatar),
+.desk-workspace.sidebar-collapsed .account-button > svg,
+.desk-workspace.sidebar-collapsed .sidebar-toggle kbd,
+.desk-workspace.sidebar-collapsed .nav-item .trailing {
+  opacity: 0;
+  max-width: 0;
+  width: 0;
+  margin: 0;
+  pointer-events: none;
+}
+/* The wordmark folds to its mark. The brand link is `<span>mark</span>mandate<span>.</span>`,
+   so the text node has no wrapper to hide; a zero font-size on the link with the mark restored
+   is the one way to fold just the word. */
+.desk-workspace.sidebar-collapsed .brand {
+  font-size: 0;
+  justify-content: center;
+}
+.desk-workspace.sidebar-collapsed .brand > span:first-child {
+  width: 31px;
+  height: 31px;
+  font-size: 0;
+}
+.desk-workspace.sidebar-collapsed .brand > span:first-child svg {
+  display: block;
+  width: 28px;
+  height: 28px;
+}
+.desk-workspace.sidebar-collapsed .workspace-switch {
+  padding: 6px;
+  justify-content: center;
+}
+.desk-workspace.sidebar-collapsed .workspace-switch > span:not(.workspace-avatar) {
+  display: none;
+}
+.desk-workspace.sidebar-collapsed .nav-item,
+.desk-workspace.sidebar-collapsed .sidebar-new,
+.desk-workspace.sidebar-collapsed .account-button {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+}
+.desk-workspace.sidebar-collapsed .sidebar-new {
+  padding: 12px 0;
+}
+/* The strategies count becomes a corner badge on its icon rather than a pill after a label
+   that is no longer there. */
+.desk-workspace.sidebar-collapsed .nav-item {
+  position: relative;
+}
+.desk-workspace.sidebar-collapsed .nav-count {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  margin: 0;
+  padding: 0 4px;
+  min-width: 15px;
+  height: 15px;
+  line-height: 15px;
+  font-size: 9px;
+  text-align: center;
+  border-radius: 999px;
+  background: #d7e5bc;
+  color: #253d29;
+}
+/* Below 760px the sidebar is a slide-in drawer, and a drawer is always full width. */
+@media (max-width: 760px) {
+  .desk-workspace.sidebar-collapsed .sidebar {
+    width: 245px;
+    padding: 30px 20px 20px;
+  }
+  .desk-workspace.sidebar-collapsed .main-shell {
+    margin-left: 0;
+  }
+  .desk-workspace.sidebar-collapsed .nav-label,
+  .desk-workspace.sidebar-collapsed .nav-caption,
+  .desk-workspace.sidebar-collapsed .nav-hint {
+    opacity: 1;
+    max-width: 160px;
+    width: auto;
+  }
+  .desk-workspace .sidebar-toggle {
+    display: none;
+  }
 }
