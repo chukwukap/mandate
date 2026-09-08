@@ -153,19 +153,32 @@ describe("recurring, ladder and rebalance shapes", () => {
     expect(input.plan.nodes).toHaveLength(1);
     for (const machine of input.plan.machines)
       expect(machine.states[0]?.transitions[0]?.fires).toBe("while_true");
-    expect(draftInput({ ...base, shape: "recurring", cadenceHours: "1" }, 0).caps.cooldown_secs).toBe(3600);
+    expect(
+      draftInput({ ...base, shape: "recurring", cadenceHours: "1" }, 0).caps.cooldown_secs,
+    ).toBe(3600);
     expect(() => draftInput({ ...base, shape: "recurring", cadenceHours: "0" })).toThrow();
   });
 
   test("the cooldown field still governs every other shape", () => {
-    expect(draftInput({ ...base, shape: "discount", cooldownMinutes: "30" }, 0).caps.cooldown_secs).toBe(1800);
+    expect(
+      draftInput({ ...base, shape: "discount", cooldownMinutes: "30" }, 0).caps.cooldown_secs,
+    ).toBe(1800);
   });
 
   test("a ladder steps down in price and up in size, and ends terminal", () => {
     const input = draftInput(
-      { ...base, symbols: ["AAPLc"], shape: "ladder", ladderStart: "300", ladderStepPct: "10",
-        ladderMultiple: "2", ladderRungs: "3", amount: "25",
-        dailyBudget: "175", budget: "175" },
+      {
+        ...base,
+        symbols: ["AAPLc"],
+        shape: "ladder",
+        ladderStart: "300",
+        ladderStepPct: "10",
+        ladderMultiple: "2",
+        ladderRungs: "3",
+        amount: "25",
+        dailyBudget: "175",
+        budget: "175",
+      },
       0,
     );
     if (!("plan" in input)) throw new Error("expected a plan");
@@ -185,15 +198,25 @@ describe("recurring, ladder and rebalance shapes", () => {
   });
 
   test("a ladder refuses a basket, because its rungs address one stock", () => {
-    expect(() =>
-      draftInput({ ...base, shape: "ladder", ladderStart: "300" }),
-    ).toThrow(/one stock at a time/);
+    expect(() => draftInput({ ...base, shape: "ladder", ladderStart: "300" })).toThrow(
+      /one stock at a time/,
+    );
   });
 
   test("the per-order cap is the largest rung, so no rung can be refused by it", () => {
     const input = draftInput(
-      { ...base, symbols: ["AAPLc"], shape: "ladder", ladderStart: "300", ladderStepPct: "10",
-        ladderMultiple: "2", ladderRungs: "3", amount: "25", dailyBudget: "175", budget: "175" },
+      {
+        ...base,
+        symbols: ["AAPLc"],
+        shape: "ladder",
+        ladderStart: "300",
+        ladderStepPct: "10",
+        ladderMultiple: "2",
+        ladderRungs: "3",
+        amount: "25",
+        dailyBudget: "175",
+        budget: "175",
+      },
       0,
     );
     // 25, 50, 100 — the cap has to clear 100 or the deepest rungs never fill.
@@ -209,7 +232,10 @@ describe("recurring, ladder and rebalance shapes", () => {
   });
 
   test("rebalancing splits equally and gates on cash rather than equity", () => {
-    const input = draftInput({ ...base, symbols: ["AAPLc", "NVDAc", "TSLAc"], shape: "rebalance" }, 0);
+    const input = draftInput(
+      { ...base, symbols: ["AAPLc", "NVDAc", "TSLAc"], shape: "rebalance" },
+      0,
+    );
     if (!("plan" in input)) throw new Error("expected a plan");
     const target = input.plan.nodes.find((n) => n.id === "under_AAPLc");
     expect(target?.args[1]).toEqual({ kind: "const", value: "0.333300" });

@@ -56,9 +56,8 @@ function forgetSession() {
     // The CookieStore API the lint prefers is absent in Safari and Firefox, and this is the
     // fallback that runs once the normal path has already failed — it cannot depend on the
     // better-supported thing being supported.
-    for (const name of PRIVY_COOKIES)
-      // biome-ignore lint/suspicious/noDocumentCookie: expiring a cookie needs document.cookie
-      document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
+    // biome-ignore lint/suspicious/noDocumentCookie: expiring a cookie needs document.cookie
+    for (const name of PRIVY_COOKIES) document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
   } catch {}
   for (const store of [globalThis.localStorage, globalThis.sessionStorage]) {
     try {
