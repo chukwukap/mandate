@@ -175,7 +175,10 @@ export class WorkerChain implements Observations, Executor {
     )
       throw new Error("Eligibility renewal required");
     const now = Math.floor(Date.now() / 1000);
-    if (Date.parse(draft.envelope.caps.expires_at) <= Date.now() || !executionSession(new Date()))
+    if (
+      Date.parse(draft.envelope.caps.expires_at) <= Date.now() ||
+      !(this.config.ignoreSession || executionSession(new Date()))
+    )
       throw new Error("Execution window closed");
     if (permission?.status !== "active" || !permission.signature)
       throw new Error("Missing permission");

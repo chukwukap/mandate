@@ -16,30 +16,45 @@ import { StockLogo } from "../market/stock-logo";
 import { draftInput, ladderRungs, MAX_ASSETS, type StrategyForm, scaleAmount } from "./authoring";
 import type { Draft, Strategy } from "./types";
 
+/**
+ * The five rule shapes, each with the name it is known by elsewhere.
+ *
+ * `also` exists because the plain-English titles are not what someone arrives looking for. A
+ * person who wants a martingale searches for "martingale", and naming the shape only "Step
+ * ladder" made an implemented strategy look absent to the person who asked for it. The trade is
+ * deliberate: the TITLE stays honest about what the thing does, and the subtitle carries the
+ * word people know — with the missing half named right there, so the familiar term never
+ * implies an exit this system cannot perform.
+ */
 const SHAPES = [
   {
     id: "levels",
     title: "A price for each",
+    also: "Limit buy",
     blurb: "Buy when a stock crosses the level you set for it.",
   },
   {
     id: "discount",
     title: "Cheaper than the reference",
+    also: "Basis trade",
     blurb: "Buy whichever one the pool is discounting against Chainlink.",
   },
   {
     id: "recurring",
     title: "Recurring buys",
+    also: "DCA",
     blurb: "The same amount on a fixed schedule, whatever the price.",
   },
   {
     id: "ladder",
     title: "Step ladder",
-    blurb: "Buy more, and larger, each time it falls another step.",
+    also: "Martingale-style scale-in",
+    blurb: "Buy more, and larger, each time it falls another step. No automatic exit.",
   },
   {
     id: "rebalance",
     title: "Keep balanced",
+    also: "Rebalancing",
     blurb: "Top up whichever holding has fallen behind the others.",
   },
 ] as const;
@@ -287,7 +302,10 @@ export function StrategyEditor({
           {form.authoring === "rule" ? (
             <>
               <div className="form-section">
-                <span className="field-label">Trigger</span>
+                <span className="field-label">
+                  Choose a strategy
+                  <span className="field-count">pick one</span>
+                </span>
                 <div className="shape-options">
                   {SHAPES.map((option) => (
                     <button
@@ -297,7 +315,10 @@ export function StrategyEditor({
                       className={form.shape === option.id ? "selected" : ""}
                       onClick={() => update("shape", option.id)}
                     >
-                      <strong>{option.title}</strong>
+                      <strong>
+                        {option.title}
+                        <em>{option.also}</em>
+                      </strong>
                       <span>{option.blurb}</span>
                     </button>
                   ))}

@@ -3121,3 +3121,24 @@ kbd,
   line-height: 1.65;
   color: var(--text-2);
 }
+
+/* The familiar name for each shape, beside the honest one. */
+.shape-options strong {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+.shape-options strong em {
+  flex: none;
+  font-style: normal;
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-4);
+}
+.shape-options button.selected strong em {
+  color: var(--accent-ink);
+  opacity: 0.75;
+}

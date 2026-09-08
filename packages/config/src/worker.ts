@@ -19,6 +19,16 @@ const schema = z.object({
   WORKER_MAX_BATCH: z.coerce.number().int().min(1).max(100).default(10),
   WORKER_CONFIRMATIONS: z.coerce.number().int().min(2).max(64).default(3),
   WORKER_RECEIPT_TIMEOUT_MS: z.coerce.number().int().min(60000).max(86400000).default(1800000),
+  /**
+   * Trade outside US market hours. Development only — see below.
+   *
+   * The session window exists so that stale overnight and holiday closing prices cannot admit an
+   * order. On a forked chain that reason does not apply: the reference carries a live timestamp,
+   * and the independent 300-second freshness check still governs every tick. Without this, the
+   * whole execution path can only be exercised between 09:35 and 15:55 ET on a weekday, which
+   * makes testing depend on the time of day.
+   */
+  WORKER_IGNORE_SESSION: z.enum(["0", "1"]).default("0"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 export function loadWorkerConfig(env: Record<string, string | undefined> = process.env) {
@@ -55,6 +65,9 @@ export function loadWorkerConfig(env: Record<string, string | undefined> = proce
     maxBatch: value.WORKER_MAX_BATCH,
     confirmations: value.WORKER_CONFIRMATIONS,
     receiptTimeoutMs: value.WORKER_RECEIPT_TIMEOUT_MS,
+    // Forced off in production, the same way devCountry is in the API config. A safety control
+    // that can be switched off by an environment variable in production is not a safety control.
+    ignoreSession: value.NODE_ENV !== "production" && value.WORKER_IGNORE_SESSION === "1",
     logLevel: value.LOG_LEVEL,
   };
 }

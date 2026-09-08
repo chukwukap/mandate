@@ -199,6 +199,7 @@ test("a production worker configuration is loaded whole", () => {
   );
   expect(config).toEqual({
     env: "production",
+    ignoreSession: false,
     databaseUrl: required.DATABASE_URL,
     rpcUrl: "https://base-mainnet.example.com/v2/rpc-key",
     origin: "https://app.example.com",
@@ -221,4 +222,29 @@ test("a production worker configuration is loaded whole", () => {
    */
   expect(Object.keys(config)).toContain("privateKey");
   expect(JSON.stringify(config)).toContain(KEY);
+});
+
+test("the session override cannot be switched on in production", () => {
+  const base = {
+    DATABASE_URL: "postgresql://u:p@localhost:5432/mandate",
+    APP_ORIGIN: "https://app.example.com",
+    BASE_RPC_URL: "https://base-mainnet.example.com/v2/rpc-key",
+    ELIGIBLE_COUNTRIES: "GB",
+    WORKER_IGNORE_SESSION: "1",
+  };
+  // The whole point of the flag is that it is unavailable exactly where it would be dangerous.
+  // A safety control an environment variable can disable in production is not a safety control.
+  expect(loadWorkerConfig({ ...base, NODE_ENV: "production" }).ignoreSession).toBe(false);
+  expect(
+    loadWorkerConfig({ ...base, NODE_ENV: "development", APP_ORIGIN: "http://localhost:3000" })
+      .ignoreSession,
+  ).toBe(true);
+  expect(
+    loadWorkerConfig({
+      ...base,
+      NODE_ENV: "development",
+      APP_ORIGIN: "http://localhost:3000",
+      WORKER_IGNORE_SESSION: "0",
+    }).ignoreSession,
+  ).toBe(false);
 });
