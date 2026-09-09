@@ -37,9 +37,14 @@ export async function databaseReady(db: Database) {
     await db.execute(sql`select id, runtime from mandate_v2.instances limit 0`);
     await db.execute(sql`select id, inputs from mandate_v2.evaluations limit 0`);
     await db.execute(sql`select id, tx_hash from mandate_v2.executions limit 0`);
-    // The journal, not the permissions table: migration 0006 dropped the latter, and probing
-    // it here reported every migrated database as unmigrated.
-    await db.execute(sql`select id, leg, hash from mandate_v2.transactions limit 0`);
+    // The API cannot read signed transaction payloads. Inspect the journal's structure through
+    // the catalogue so readiness works with both API and worker permissions.
+    const journal = await db.execute<{ present: boolean }>(sql`
+      select count(*) = 3 as present from pg_attribute
+      where attrelid = to_regclass('mandate_v2.transactions')
+        and attname in ('id', 'leg', 'hash') and not attisdropped
+    `);
+    if (journal.rows[0]?.present !== true) return false;
     return true;
   } catch {
     return false;

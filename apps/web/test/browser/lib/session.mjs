@@ -4,7 +4,7 @@ import { attachWallet } from "./wallet.mjs";
 
 /** anvil account #1. Funded on the fork by apps/api/fork/fund-user.ts; a plain EOA by design. */
 export const TEST_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
-export const ORIGIN = "http://localhost:3000";
+export const ORIGIN = process.env.DEMO_ORIGIN ?? "http://localhost:3000";
 const REPO = new URL("../../../../..", import.meta.url).pathname.replace(/\/$/, "");
 
 /**

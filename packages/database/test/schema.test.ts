@@ -81,6 +81,21 @@ test("every migration on disk is registered with the migrator", async () => {
   // Indices are the migrator's ordering; a duplicate or a gap applies files out of sequence.
   expect(journal.entries.map((entry) => entry.idx)).toEqual(files.map((_, index) => index));
 });
+test("API readiness does not require access to signed transaction payloads", async () => {
+  await db.exec(
+    "reset role; revoke all on mandate_v2.transactions from api_test; set role api_test",
+  );
+  try {
+    await expect(db.query("select id from mandate_v2.transactions limit 0")).rejects.toMatchObject({
+      code: "42501",
+    });
+    expect(await databaseReady(drizzle(db, { schema }) as unknown as Database)).toBe(true);
+  } finally {
+    await db.exec(
+      "reset role; grant select, insert, update, delete on mandate_v2.transactions to api_test; set role api_test",
+    );
+  }
+});
 test("a different user cannot read or consume another user's draft", async () => {
   await db.query("select set_config('mandate.user_id', $1, false)", [bob]);
   expect((await db.query("select id from mandate_v2.drafts")).rows).toHaveLength(0);

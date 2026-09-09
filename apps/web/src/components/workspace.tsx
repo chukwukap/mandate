@@ -273,6 +273,20 @@ export function Workspace() {
         </div>
       </aside>
       <div className="main-shell">
+        {process.env.NEXT_PUBLIC_DEMO_MODE === "1" && (
+          <div
+            role="status"
+            style={{
+              padding: "8px 20px",
+              textAlign: "center",
+              background: "#fff3cd",
+              color: "#594600",
+              fontSize: 13,
+            }}
+          >
+            Demo environment · Isolated Base fork · Test funds only
+          </div>
+        )}
         <header className="topbar">
           <div className="breadcrumb">
             <button

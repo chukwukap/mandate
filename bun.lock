@@ -76,6 +76,7 @@
         "@mandate/execution": "workspace:*",
         "@mandate/observability": "workspace:*",
         "@mandate/strategy": "workspace:*",
+        "@privy-io/node": "0.34.0",
         "decimal.js": "10.6.0",
         "drizzle-orm": "0.45.2",
         "pg": "8.23.0",

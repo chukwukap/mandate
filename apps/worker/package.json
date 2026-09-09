@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Market polling and durable strategy/execution jobs. Runs on Node.js.",
   "dependencies": {
+    "@privy-io/node": "0.34.0",
     "@anthropic-ai/sdk": "0.124.0",
     "@mandate/auth": "workspace:*",
     "@mandate/config": "workspace:*",

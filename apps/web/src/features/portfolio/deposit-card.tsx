@@ -36,10 +36,12 @@ export function DepositCard({
   return (
     <section className="deposit-card" aria-labelledby="deposit-title">
       <div className="deposit-head">
-        <h2 id="deposit-title">Fund your wallet</h2>
+        <h2 id="deposit-title">
+          {process.env.NEXT_PUBLIC_DEMO_MODE === "1" ? "Demo wallet" : "Fund your wallet"}
+        </h2>
         <span className="base-label">
           <i />
-          USDC on Base
+          {process.env.NEXT_PUBLIC_DEMO_MODE === "1" ? "Test USDC · Base fork" : "USDC on Base"}
         </span>
       </div>
       <div className="deposit-address">
@@ -63,8 +65,9 @@ export function DepositCard({
           </strong>
         </div>
         <p>
-          Send USDC on Base to this address. It is your wallet: strategies buy from it, and you can
-          withdraw any time.
+          {process.env.NEXT_PUBLIC_DEMO_MODE === "1"
+            ? "This demo uses test funds on an isolated Base fork. Do not send real funds to this address for the demo."
+            : "Send USDC on Base to this address. It is your wallet: strategies buy from it, and you can withdraw any time."}
         </p>
       </div>
     </section>
