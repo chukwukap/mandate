@@ -67,9 +67,9 @@ export type WorkerJobs = JobDependencies & {
  * there is one place where the execution collaborators are configured.
  *
  * `executeEnabled` mirrors `config.execute`, which `loadWorkerConfig` only allows to be
- * true when a worker private key, a spender address and an explicit non-US
+ * true when the Privy signer credentials and an explicit non-US
  * eligible-country allowlist are all configured. That the key actually controls that
- * spender address is checked where the key is loaded, in `WorkerChain`'s constructor.
+ * signer is built where the credentials are loaded, in `WorkerChain`'s constructor.
  */
 export function createWorkerJobs(
   config: WorkerConfig,

@@ -21,7 +21,7 @@ import type { Leg } from "../lifecycle.js";
  */
 
 /** The full sequence, in the order the lifecycle can walk it. */
-export const LEG_SEQUENCE = ["fund", "approve", "swap", "reset", "refund"] as const;
+export const LEG_SEQUENCE = ["approve", "swap"] as const;
 
 /**
  * Conservative upper bounds on gas per leg, in units.
@@ -33,11 +33,8 @@ export const LEG_SEQUENCE = ["fund", "approve", "swap", "reset", "refund"] as co
  * transfer does not.
  */
 export const LEG_GAS_LIMITS: Readonly<Record<Leg, bigint>> = {
-  fund: 250_000n,
   approve: 70_000n,
   swap: 500_000n,
-  reset: 50_000n,
-  refund: 80_000n,
 };
 
 /**

@@ -1,12 +1,11 @@
 /**
  * A library of authored strategies covering the cases that are worth a test: a simple
- * conditional buy, one that trips its signed envelope, one whose onchain permission has
- * expired, one pointed at an asset no pool can fill, an edge-triggered rule that must fire
- * once rather than every tick, and two that must fail validation with something a user can
- * act on.
+ * conditional buy, one that trips its signed envelope, one past its own expiry, one pointed at
+ * an asset no pool can fill, an edge-triggered rule that must fire once rather than every
+ * tick, and two that must fail validation with something a user can act on.
  *
  * Each fixture is data plus the outcome it expects, and `strategies.test.ts` proves the
- * expectation against the real validator, tick and funding gate. Deep relative imports rather
+ * expectation against the real validator and tick. Deep relative imports rather
  * than `@mandate/*`: `tests/` has no `node_modules`, so a bare workspace specifier does not
  * resolve from here.
  */
@@ -22,8 +21,6 @@ export {
   T0,
   TIGHT_ENVELOPE,
 } from "./envelopes.js";
-export type { PermissionFixture } from "./permissions.js";
-export { evidenceOf, PERMISSIONS, permissionOf, SIGNED_ALLOWANCE } from "./permissions.js";
 export {
   CONDITIONAL_BUY,
   EDGE_TRIGGERED,

@@ -1,7 +1,6 @@
 import {
   executionStatusSchema,
   modeSchema,
-  permissionStatusSchema,
   sideSchema,
   statusSchema,
   transactionLegSchema,
@@ -12,7 +11,6 @@ import type {
   ExecutionStatus,
   InstanceStatus,
   Mode,
-  PermissionStatus,
   Side,
   TransactionLeg,
   TransactionStatus,
@@ -51,7 +49,6 @@ export const MODES: readonly Mode[] = members(modeSchema);
 export const INSTANCE_STATUSES: readonly InstanceStatus[] = members(statusSchema);
 export const SIDES: readonly Side[] = members(sideSchema);
 export const WALLET_KINDS: readonly WalletKind[] = members(walletKindSchema);
-export const PERMISSION_STATUSES: readonly PermissionStatus[] = members(permissionStatusSchema);
 export const EXECUTION_STATUSES: readonly ExecutionStatus[] = members(executionStatusSchema);
 export const TRANSACTION_LEGS: readonly TransactionLeg[] = members(transactionLegSchema);
 export const TRANSACTION_STATUSES: readonly TransactionStatus[] = members(transactionStatusSchema);
@@ -75,8 +72,6 @@ export const isInstanceStatus = (value: string): value is InstanceStatus =>
   isMember(INSTANCE_STATUSES, value);
 export const isSide = (value: string): value is Side => isMember(SIDES, value);
 export const isWalletKind = (value: string): value is WalletKind => isMember(WALLET_KINDS, value);
-export const isPermissionStatus = (value: string): value is PermissionStatus =>
-  isMember(PERMISSION_STATUSES, value);
 export const isExecutionStatus = (value: string): value is ExecutionStatus =>
   isMember(EXECUTION_STATUSES, value);
 export const isTransactionLeg = (value: string): value is TransactionLeg =>

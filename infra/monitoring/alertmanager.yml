@@ -55,8 +55,6 @@ inhibit_rules:
     equal: [leg]
   - source_matchers: ['alertname="MandateEvaluationLagCritical"']
     target_matchers: ['alertname="MandateEvaluationLagHigh"']
-  - source_matchers: ['alertname="MandateSpendPermissionExpiringImminently"']
-    target_matchers: ['alertname="MandateSpendPermissionExpiringSoon"']
   - source_matchers: ['alertname="MandateReferenceFeedUnusable"']
     target_matchers: ['alertname="MandateReferenceFeedApproachingUnusable"']
     # Per symbol: AAPLc being unusable says nothing about GOOGLc approaching it.

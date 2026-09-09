@@ -35,6 +35,7 @@ export async function boot() {
   const app = await buildApp({
     config,
     users: repository,
+    wallets: { embedded: async () => null },
     // The only substitution. Everything downstream — the wallet check, the signature
     // verification, the row-level security context — runs on the real account below.
     auth: {

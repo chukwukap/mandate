@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { useSession } from "../auth/session-provider";
 
 type Session = ReturnType<typeof useSession>;
@@ -39,7 +39,11 @@ export function usePortfolio(
   session: Session,
   call: <T>(path: string, body?: unknown) => Promise<T>,
 ) {
-  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
+  const identity = `${session.userId ?? ""}:${session.wallet?.toLowerCase() ?? ""}`;
+  const currentIdentity = useRef(identity);
+  currentIdentity.current = identity;
+  const [reading, setReading] = useState<{ identity: string; value: Portfolio } | null>(null);
+  const portfolio = readyPortfolio(reading, identity, session.wallet);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -49,20 +53,27 @@ export function usePortfolio(
     if (!ready) return;
     setLoading(true);
     try {
-      setPortfolio(await call<Portfolio>("/v1/portfolio"));
+      const value = await call<Portfolio>(
+        `/v1/portfolio?wallet=${encodeURIComponent(session.wallet ?? "")}`,
+      );
+      if (currentIdentity.current !== identity) return;
+      if (value.wallet.toLowerCase() !== session.wallet?.toLowerCase())
+        throw new Error("Portfolio wallet mismatch");
+      setReading({ identity, value });
       setError(null);
     } catch {
       // The previous reading stays on screen. A balance a minute old is a better answer than an
       // empty panel, and emptying it on one failed poll reads as "you sold everything".
-      setError("Balances are unavailable right now.");
+      if (currentIdentity.current === identity) setError("Balances are unavailable right now.");
     } finally {
-      setLoading(false);
+      if (currentIdentity.current === identity) setLoading(false);
     }
-  }, [ready, call]);
+  }, [ready, call, identity, session.wallet]);
 
   useEffect(() => {
+    setError(null);
     if (!ready) {
-      setPortfolio(null);
+      setReading(null);
       return;
     }
     void refresh();
@@ -73,4 +84,15 @@ export function usePortfolio(
   }, [ready, refresh]);
 
   return { portfolio, error, loading, refresh, ready };
+}
+
+function readyPortfolio(
+  reading: { identity: string; value: Portfolio } | null,
+  identity: string,
+  wallet: string | null,
+): Portfolio | null {
+  return reading?.identity === identity &&
+    reading.value.wallet.toLowerCase() === wallet?.toLowerCase()
+    ? reading.value
+    : null;
 }

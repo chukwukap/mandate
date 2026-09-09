@@ -4,7 +4,6 @@ import {
   UNIT_OPTIONS,
   WriteConflict,
   withTenant,
-  writePermissionGrant,
 } from "../../../packages/database/src/transactions/index.js";
 import {
   asTenant,
@@ -16,7 +15,7 @@ import {
   pause,
   sqlStateOf,
 } from "./harness.js";
-import { forceInstance, type InstanceSeed, seedInstance, seedPermission } from "./seed.js";
+import { forceInstance, type InstanceSeed, seedInstance } from "./seed.js";
 
 /**
  * What two sessions do to each other.
@@ -170,12 +169,20 @@ suite("serialization failures under repeatable read", () => {
     };
   }
 
+  /**
+   * The unit under test: the repository's own mode write, joined to a caller's transaction.
+   *
+   * `setMode` is what POST /v1/me/automation and arm call. It takes the instance row lock,
+   * which is exactly the lock the worker's tick holds, so it is the API write most likely to
+   * meet a stale snapshot.
+   */
+  const flip = (tx: Parameters<Parameters<typeof withTenant>[3]>[0], instanceId: string) =>
+    tx.execute(
+      `update mandate_v2.instances set mode = 'auto', updated_at = now() where id = '${instanceId}' returning mode`,
+    );
+
   test("the unit is retried and its second attempt commits", async () => {
     const seed = await armedInstance();
-    const permission = await seedPermission(pg, alice, seed, {
-      status: "prepared",
-      signature: null,
-    });
     const commit = await holdInstanceLock(seed.instance.id);
     const retries: { attempt: number; sqlState: string }[] = [];
 
@@ -183,17 +190,13 @@ suite("serialization failures under repeatable read", () => {
       pg.db,
       alice,
       { ...UNIT_OPTIONS, backoffMs: () => 0, onRetry: (info) => retries.push(info) },
-      (tx) =>
-        writePermissionGrant(tx, {
-          userId: alice,
-          instanceId: seed.instance.id,
-          permissionId: permission.id,
-          expectedHash: permission.hash,
-          status: "active",
-          signature: `0x${"ab".repeat(65)}`,
-          instance: { mode: "auto" },
-          now: new Date(),
-        }),
+      async (tx) => {
+        const rows = await tx.execute<{ mode: string }>(
+          `select mode from mandate_v2.instances where id = '${seed.instance.id}' for update`,
+        );
+        await flip(tx, seed.instance.id);
+        return rows.rows[0];
+      },
     );
     await pause(SETTLE_MS);
     await commit();
@@ -202,33 +205,25 @@ suite("serialization failures under repeatable read", () => {
     // 40001, not 40P01: nobody deadlocked, the snapshot simply went stale. The unit is safe to
     // repeat because everything it did lives inside `tx`, which is the contract on withTransaction.
     expect(retries).toEqual([{ attempt: 2, sqlState: "40001" }]);
-    expect(result.permission.status).toBe("active");
-    expect(result.instance.mode).toBe("auto");
+    expect(result?.mode).toBe("auto");
   }, 20_000);
 
-  test("a spent retry budget answers 503 write-conflict, never a half-written grant", async () => {
+  test("a spent retry budget answers 503 write-conflict, never a half-written row", async () => {
     const seed = await armedInstance();
-    const permission = await seedPermission(pg, alice, seed, {
-      status: "prepared",
-      signature: null,
-    });
     const commit = await holdInstanceLock(seed.instance.id);
 
     const unit = withTenant(
       pg.db,
       alice,
       { ...UNIT_OPTIONS, maxAttempts: 1, backoffMs: () => 0 },
-      (tx) =>
-        writePermissionGrant(tx, {
-          userId: alice,
-          instanceId: seed.instance.id,
-          permissionId: permission.id,
-          expectedHash: permission.hash,
-          status: "active",
-          signature: `0x${"ab".repeat(65)}`,
-          instance: { mode: "auto" },
-          now: new Date(),
-        }),
+      async (tx) => {
+        await tx.execute(
+          `select mode from mandate_v2.instances where id = '${seed.instance.id}' for update`,
+        );
+        await tx.execute(
+          `update mandate_v2.instances set mode = 'manual', status = 'paused', updated_at = now() where id = '${seed.instance.id}'`,
+        );
+      },
     );
     await pause(SETTLE_MS);
     await commit();
@@ -245,40 +240,26 @@ suite("serialization failures under repeatable read", () => {
     expect(conflict.code).toBe("write-conflict");
     expect(conflict.sqlState).toBe("40001");
     expect(conflict.attempts).toBe(1);
-    // The driver error is deliberately not attached, so nothing can log the bound parameters —
-    // which on this path include the permission signature.
+    // The driver error is deliberately not attached, so nothing can log the bound parameters.
     expect((conflict as { cause?: unknown }).cause).toBeUndefined();
 
     const [row] = await asTenant(pg, alice, (query) =>
-      query<{ status: string; signature: string | null }>(
-        "select status, signature from mandate_v2.permissions where id = $1",
-        [permission.id],
+      query<{ mode: string; status: string }>(
+        "select mode, status from mandate_v2.instances where id = $1",
+        [seed.instance.id],
       ),
     );
-    expect(row).toMatchObject({ status: "prepared", signature: null });
+    expect(row).toMatchObject({ mode: "auto", status: "armed" });
   }, 20_000);
 
-  test("a lifecycle transition racing a grant waits instead of deadlocking", async () => {
+  test("a lifecycle transition racing a mode change waits instead of deadlocking", async () => {
     const seed = await armedInstance();
-    const permission = await seedPermission(pg, alice, seed, {
-      status: "prepared",
-      signature: null,
-    });
-    // Both paths take `instances` before `permissions`. Reversing either one turns this into a
-    // deadlock that PostgreSQL resolves by killing one side at random (40P01).
-    const grant = withTenant(pg.db, alice, { ...UNIT_OPTIONS, backoffMs: () => 0 }, (tx) =>
-      writePermissionGrant(tx, {
-        userId: alice,
-        instanceId: seed.instance.id,
-        permissionId: permission.id,
-        expectedHash: permission.hash,
-        status: "signed",
-        signature: `0x${"ab".repeat(65)}`,
-        now: new Date(),
-      }),
-    );
+    // Both paths take the same single row lock. A second table in either one, taken in the
+    // other order, is what would turn this into a deadlock PostgreSQL resolves by killing one
+    // side at random (40P01).
+    const mode = pg.repo.setMode(alice, seed.instance.id, "manual", new Date());
     const transition = other.repo.transition(alice, seed.instance.id, "pause", new Date());
-    const outcomes = await Promise.allSettled([grant, transition]);
+    const outcomes = await Promise.allSettled([mode, transition]);
     for (const outcome of outcomes) {
       if (outcome.status === "fulfilled") continue;
       expect(sqlStateOf(outcome.reason)).not.toBe("40P01");

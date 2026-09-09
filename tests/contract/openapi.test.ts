@@ -36,17 +36,13 @@ const PATHS = [
   "/v1/instances/{id}/executions/summary",
   "/v1/instances/{id}/kill",
   "/v1/instances/{id}/pause",
-  "/v1/instances/{id}/permission",
-  "/v1/instances/{id}/permission/activate",
-  "/v1/instances/{id}/permission/revoke",
   "/v1/market",
   "/v1/market/candles",
   "/v1/market/quote",
   "/v1/me",
+  "/v1/me/automation",
   "/v1/me/wallets",
   "/v1/portfolio",
-  "/v1/permissions",
-  "/v1/permissions/prepare",
   "/v1/strategies",
   "/v1/strategies/draft",
 ] as const;
@@ -165,10 +161,8 @@ describe("what the document says about request shapes", () => {
     const bodied = [
       "/v1/strategies",
       "/v1/strategies/draft",
-      "/v1/permissions",
-      "/v1/permissions/prepare",
       "/v1/market/quote",
-      "/v1/instances/{id}/permission/activate",
+      "/v1/me/automation",
     ];
     for (const path of bodied) {
       const schema = doc.paths[path]?.post?.requestBody?.content["application/json"]?.schema;

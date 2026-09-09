@@ -155,6 +155,10 @@ export function reorged(fixture: ReceiptFixture): boolean {
   return fixture.canonicalBlockHash !== fixture.receipt.blockHash;
 }
 
+// Historical receipt evidence remains readable after migration 0006. This address is
+// fixture data only; new wallet executions never submit funding or refund legs.
+const LEGACY_SPENDER = "0x2222222222222222222222222222222222222222" as const;
+
 const HEAD = 41_000_000n;
 const block = (offset: bigint): bigint => HEAD - offset;
 const blockHash = (label: string): Hex => `0x${label.padEnd(64, "b")}`;
@@ -183,7 +187,7 @@ function receipt(params: {
     blockNumber: block(params.offset),
     blockHash: blockHash(params.blockLabel),
     transactionIndex: 7,
-    from: params.from ?? ACCOUNTS.spender,
+    from: params.from ?? LEGACY_SPENDER,
     to: params.to,
     gasUsed: 148_912n,
     logs: params.logs ?? [],
@@ -198,13 +202,13 @@ export const RECEIPTS: readonly ReceiptFixture[] = [
     receipt: receipt({
       hash: `0x${"a1".repeat(32)}`,
       offset: 6n,
-      to: ACCOUNTS.spender,
+      to: LEGACY_SPENDER,
       blockLabel: "0xfund",
       logs: [
         transferLog({
           token: USDC,
           from: ACCOUNTS.user,
-          to: ACCOUNTS.spender,
+          to: LEGACY_SPENDER,
           value: ORDER.amountInUsdc,
         }),
       ],
@@ -238,12 +242,12 @@ export const RECEIPTS: readonly ReceiptFixture[] = [
     receipt: receipt({
       hash: `0x${"a3".repeat(32)}`,
       offset: 4n,
-      to: ACCOUNTS.spender,
+      to: LEGACY_SPENDER,
       blockLabel: "0xswap",
       logs: [
         transferLog({
           token: USDC,
-          from: ACCOUNTS.spender,
+          from: LEGACY_SPENDER,
           to: ACCOUNTS.stranger,
           value: ORDER.amountInUsdc,
         }),
@@ -268,7 +272,7 @@ export const RECEIPTS: readonly ReceiptFixture[] = [
     receipt: receipt({
       hash: `0x${"a4".repeat(32)}`,
       offset: 4n,
-      to: ACCOUNTS.spender,
+      to: LEGACY_SPENDER,
       blockLabel: "0xunder",
       logs: [
         transferLog({
@@ -292,7 +296,7 @@ export const RECEIPTS: readonly ReceiptFixture[] = [
     receipt: receipt({
       hash: `0x${"a5".repeat(32)}`,
       offset: 6n,
-      to: ACCOUNTS.spender,
+      to: LEGACY_SPENDER,
       blockLabel: "0xwrong",
       logs: [
         transferLog({
@@ -317,7 +321,7 @@ export const RECEIPTS: readonly ReceiptFixture[] = [
       hash: `0x${"a6".repeat(32)}`,
       status: "reverted",
       offset: 4n,
-      to: ACCOUNTS.spender,
+      to: LEGACY_SPENDER,
       blockLabel: "0xrevert",
     }),
     nonce: 43,
@@ -355,7 +359,7 @@ export const RECEIPTS: readonly ReceiptFixture[] = [
     receipt: receipt({
       hash: `0x${"a9".repeat(32)}`,
       offset: 0n,
-      to: ACCOUNTS.spender,
+      to: LEGACY_SPENDER,
       blockLabel: "0xhead",
       logs: [
         transferLog({
@@ -379,13 +383,13 @@ export const RECEIPTS: readonly ReceiptFixture[] = [
     receipt: receipt({
       hash: `0x${"aa".repeat(32)}`,
       offset: 6n,
-      to: ACCOUNTS.spender,
+      to: LEGACY_SPENDER,
       blockLabel: "0xorphan",
       logs: [
         transferLog({
           token: USDC,
           from: ACCOUNTS.user,
-          to: ACCOUNTS.spender,
+          to: LEGACY_SPENDER,
           value: ORDER.amountInUsdc,
         }),
       ],
@@ -408,7 +412,7 @@ export const RECEIPTS: readonly ReceiptFixture[] = [
       logs: [
         transferLog({
           token: USDC,
-          from: ACCOUNTS.spender,
+          from: LEGACY_SPENDER,
           to: ACCOUNTS.user,
           value: ORDER.amountInUsdc,
         }),
@@ -426,4 +430,27 @@ export function receiptOf(id: string): ReceiptFixture {
   const fixture = RECEIPTS.find((entry) => entry.id === id);
   if (!fixture) throw new Error(`No receipt fixture ${id}`);
   return fixture;
+}
+
+/** Synthetic direct-wallet variant of the historical receipt scenarios. */
+export function directReceiptOf(id: string): ReceiptFixture {
+  const fixture = receiptOf(id);
+  if (fixture.leg !== "approve" && fixture.leg !== "swap")
+    throw new Error(`Direct wallets do not submit ${fixture.leg}`);
+  if (!fixture.receipt) return fixture;
+  return {
+    ...fixture,
+    receipt: {
+      ...fixture.receipt,
+      from: ACCOUNTS.user,
+      logs: fixture.receipt.logs.map((log) => ({
+        ...log,
+        topics: log.topics.map((topic, index) =>
+          index === 1 && topic === topicAddress(LEGACY_SPENDER)
+            ? topicAddress(ACCOUNTS.user)
+            : topic,
+        ),
+      })),
+    },
+  };
 }

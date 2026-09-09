@@ -191,9 +191,9 @@ describe("the status a caller gets, per failure", () => {
     const badBody = await problemOf(
       await call(api, {
         method: "POST",
-        url: "/v1/permissions/prepare",
+        url: "/v1/me/automation",
         token: alice.token,
-        payload: { instance: "not-a-uuid" },
+        payload: { wallet: "not-an-address" },
       }),
       400,
     );
@@ -221,22 +221,18 @@ describe("the status a caller gets, per failure", () => {
   });
 
   test("409 with a code a client can branch on, not a generic rejection", async () => {
-    // A manual strategy cannot be granted a spend permission. The code names the reason so the
-    // UI can offer the fix ("create a new signed draft in automatic mode") rather than showing
-    // a red box.
-    const manual = await commitStrategy(api, alice, { mode: "manual" });
+    const strategy = await commitStrategy(api, alice, { mode: "auto" });
     const body = await problemOf(
       await call(api, {
         method: "POST",
-        url: "/v1/permissions/prepare",
+        url: `/v1/instances/${strategy.instance}/arm`,
         token: alice.token,
         wallet: alice.wallet,
-        payload: { instance: manual.instance },
       }),
       409,
     );
-    expect(body.code).toBe("manual-strategy");
-    expect(body.detail).toContain("automatic mode");
+    expect(body.code).toBe("automation-required");
+    expect(body.detail).toContain("automatic buying");
   });
 
   test("the three wallet failures are three different codes, and none of them is a 404", async () => {

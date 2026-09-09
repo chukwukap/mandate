@@ -3,17 +3,13 @@ import {
   type BalanceReader,
   type ChainReader,
   type Hex,
-  type Identity,
   type MarketFeed,
-  type PermissionCheck,
-  type PermissionPayload,
   type Position,
   Problem,
   type Quote,
   type WalletBalances,
 } from "../../../packages/contracts/src/index.js";
 import { assessRound } from "../../../packages/evm/src/feeds/staleness.js";
-import { permissionHash } from "../../../packages/evm/src/permissions/index.js";
 import { minOut, selectRoute } from "../../../packages/evm/src/venues/sanity.js";
 import { Money, units, whole } from "../../../packages/strategy/src/evaluation/money.js";
 import {
@@ -51,15 +47,6 @@ import { RECEIPTS, type ReceiptFixture } from "./receipts.js";
  * data in, real decisions out.
  */
 
-/** Everything the fake knows about one spend permission. */
-export type PermissionState = {
-  readonly payload: PermissionPayload;
-  readonly approved: boolean;
-  readonly revoked: boolean;
-  /** The signature that verifies against this payload. Any other signature is rejected. */
-  readonly signature?: Hex;
-};
-
 /** A message signature the fake will accept. Matched on all three fields, case-insensitively. */
 export type MessageSignature = {
   readonly address: Hex;
@@ -87,9 +74,7 @@ export type FakeChainOptions = {
   readonly rounds?: ReadonlyMap<string, RecordedRound>;
   readonly balances?: BalanceSheet;
   readonly receipts?: readonly ReceiptFixture[];
-  readonly permissions?: readonly PermissionState[];
   readonly signatures?: readonly MessageSignature[];
-  readonly walletKinds?: Readonly<Record<string, Identity["walletKind"]>>;
   readonly faults?: ChainFaults;
 };
 
@@ -99,9 +84,6 @@ export type ChainCalls = {
   market: number;
   quote: { symbol: string; side: "buy" | "sell"; amount: string }[];
   verifyMessage: number;
-  verifyPermission: number;
-  permissionStatus: number;
-  walletKind: number;
 };
 
 /** The size `GET /v1/market` probes tradability with, mirrored so `dex:` prices line up. */
@@ -119,17 +101,12 @@ export class FakeChainClient implements ChainReader, BalanceReader {
     market: 0,
     quote: [],
     verifyMessage: 0,
-    verifyPermission: 0,
-    permissionStatus: 0,
-    walletKind: 0,
   };
   private readonly assets: readonly FixtureAsset[];
   private readonly rounds: Map<string, RecordedRound>;
   private readonly sheet: BalanceSheet;
   private readonly receipts: readonly ReceiptFixture[];
-  private readonly permissions = new Map<string, PermissionState>();
   private readonly signatures: readonly MessageSignature[];
-  private readonly walletKinds: Readonly<Record<string, Identity["walletKind"]>>;
   private faults: ChainFaults;
   private clock: number;
 
@@ -140,9 +117,7 @@ export class FakeChainClient implements ChainReader, BalanceReader {
     this.sheet = options.balances ?? new Map(DEFAULT_BALANCES);
     this.receipts = options.receipts ?? RECEIPTS;
     this.signatures = options.signatures ?? [];
-    this.walletKinds = options.walletKinds ?? {};
     this.faults = options.faults ?? {};
-    for (const permission of options.permissions ?? []) this.grant(permission);
   }
 
   /** Milliseconds since epoch, as this fake sees them. */
@@ -170,19 +145,6 @@ export class FakeChainClient implements ChainReader, BalanceReader {
   /** Replace one asset's recorded round without disturbing the rest of the market. */
   setRound(feed: Hex, round: RecordedRound): this {
     this.rounds.set(feed.toLowerCase(), round);
-    return this;
-  }
-
-  grant(permission: PermissionState): this {
-    this.permissions.set(permissionHash(permission.payload).toLowerCase(), permission);
-    return this;
-  }
-
-  /** Revoke onchain, the way a user clicking "revoke" does: approved stays true, revoked flips. */
-  revoke(payload: PermissionPayload): this {
-    const key = permissionHash(payload).toLowerCase();
-    const existing = this.permissions.get(key);
-    this.permissions.set(key, { ...(existing ?? { payload, approved: true }), revoked: true });
     return this;
   }
 
@@ -240,33 +202,6 @@ export class FakeChainClient implements ChainReader, BalanceReader {
         entry.message === message &&
         entry.signature.toLowerCase() === signature.toLowerCase(),
     );
-  }
-
-  /**
-   * A permission signature verifies only against the payload it was registered for.
-   *
-   * Registration is keyed by the EIP-712 digest, so mutating any field of the payload — a
-   * larger allowance, a different spender — produces a different hash and the signature stops
-   * verifying. That is the property the funding gate depends on, and a fake that answered
-   * `true` unconditionally would hide the one check that makes a stored row untrustworthy.
-   */
-  async verifyPermission(payload: PermissionPayload, signature: Hex): Promise<boolean> {
-    this.calls.verifyPermission += 1;
-    const state = this.permissions.get(permissionHash(payload).toLowerCase());
-    return (
-      state?.signature !== undefined && state.signature.toLowerCase() === signature.toLowerCase()
-    );
-  }
-
-  async walletKind(address: Hex): Promise<Identity["walletKind"]> {
-    this.calls.walletKind += 1;
-    return this.walletKinds[address.toLowerCase()] ?? "base_account";
-  }
-
-  async permissionStatus(payload: PermissionPayload): Promise<PermissionCheck> {
-    this.calls.permissionStatus += 1;
-    const state = this.permissions.get(permissionHash(payload).toLowerCase());
-    return { approved: state?.approved ?? false, revoked: state?.revoked ?? false };
   }
 
   /**

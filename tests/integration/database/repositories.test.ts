@@ -10,7 +10,7 @@ import {
   type Postgres,
   withoutTenant,
 } from "./harness.js";
-import { caps, forceInstance, seedDraft, seedInstance, seedPermission } from "./seed.js";
+import { caps, seedDraft, seedInstance } from "./seed.js";
 
 /**
  * `Repository` against the role and the policies it actually runs under.
@@ -166,21 +166,30 @@ suite("lifecycle transitions", () => {
     expect(row?.next_tick_at.getTime()).toBe(now.getTime());
   });
 
-  test("an automatic instance cannot be armed without an active permission", async () => {
+  test("setMode is the only way into auto, and leaving it pauses an armed instance", async () => {
     const seed = await seedInstance(pg, alice, { mode: "auto" });
-    await forceInstance(pg, alice, seed.instance.id, { mode: "auto" });
-    await expect(
-      pg.repo.transition(alice, seed.instance.id, "arm", new Date(), "GB"),
-    ).rejects.toMatchObject({ status: 409, code: "permission-required" });
+    const [before] = await asTenant(pg, alice, (query) =>
+      query<{ mode: string; status: string }>(
+        "select mode, status from mandate_v2.instances where id = $1",
+        [seed.instance.id],
+      ),
+    );
+    // A draft that asked for auto still creates a manual instance: the delegation, checked
+    // by the API against Privy, is what turns it on.
+    expect(before).toMatchObject({ mode: "manual", status: "paused" });
 
-    // A permission that exists but has already lapsed is the same refusal, not a pass.
-    await seedPermission(pg, alice, seed, {
-      status: "active",
-      end: Math.floor(Date.now() / 1000) - 10,
-    });
+    const on = await pg.repo.setMode(alice, seed.instance.id, "auto", new Date());
+    expect(on.mode).toBe("auto");
+    await pg.repo.transition(alice, seed.instance.id, "arm", new Date(), "GB");
+
+    // Withdrawing consent must not leave an armed rule the worker can no longer sign for.
+    const off = await pg.repo.setMode(alice, seed.instance.id, "manual", new Date());
+    expect(off).toMatchObject({ mode: "manual", status: "paused" });
+
+    await pg.repo.transition(alice, seed.instance.id, "kill", new Date());
     await expect(
-      pg.repo.transition(alice, seed.instance.id, "arm", new Date(), "GB"),
-    ).rejects.toMatchObject({ status: 409, code: "permission-required" });
+      pg.repo.setMode(alice, seed.instance.id, "auto", new Date()),
+    ).rejects.toMatchObject({ status: 409, code: "terminal-instance" });
   });
 
   test("a terminal instance refuses arm and pause and absorbs kill without writing", async () => {
@@ -213,7 +222,9 @@ suite("lifecycle transitions", () => {
   test("another tenant's instance is a 404 from every repository read", async () => {
     const seed = await seedInstance(pg, alice);
     await expect(pg.repo.detail(bob, seed.instance.id)).rejects.toMatchObject({ status: 404 });
-    await expect(pg.repo.permission(bob, seed.instance.id)).rejects.toMatchObject({ status: 404 });
+    await expect(pg.repo.setMode(bob, seed.instance.id, "auto", new Date())).rejects.toMatchObject({
+      status: 404,
+    });
     await expect(pg.repo.history(bob, seed.instance.id, "executions", 10)).rejects.toMatchObject({
       status: 404,
     });
@@ -249,24 +260,5 @@ suite("authority immutability", () => {
       ]),
     );
     await expect(attempt).rejects.toMatchObject({ code: "23514" });
-  });
-
-  test("a permission signature is write-once", async () => {
-    const seed = await seedInstance(pg, alice, { mode: "auto" });
-    const permission = await seedPermission(pg, alice, seed, { status: "signed" });
-    const attempt = asTenant(pg, alice, (query) =>
-      query("update mandate_v2.permissions set signature = $2 where id = $1", [
-        permission.id,
-        `0x${"cd".repeat(65)}`,
-      ]),
-    );
-    await expect(attempt).rejects.toMatchObject({ code: "23514" });
-    // Status still moves: that is the one field the grant lifecycle is allowed to change.
-    await asTenant(pg, alice, (query) =>
-      query(
-        "update mandate_v2.permissions set status = 'active', updated_at = now() where id = $1",
-        [permission.id],
-      ),
-    );
   });
 });

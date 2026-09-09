@@ -208,73 +208,9 @@ BEGIN
 END
 $$;
 
--- ---------------------------------------------------------------------------
--- Spend permissions
--- ---------------------------------------------------------------------------
-
--- Census of spend permissions by stored status.
-CREATE OR REPLACE FUNCTION mandate_v2.metrics_permissions()
-RETURNS TABLE (status text, permissions double precision)
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
-BEGIN
-  RETURN QUERY
-    SELECT p.status, count(*)::double precision
-    FROM mandate_v2.permissions p
-    GROUP BY p.status;
-END
-$$;
-
--- Onchain spend authority behind strategies that are still armed.
---
--- Scoped to armed instances on purpose. A permission expiring on a paused strategy is not an
--- event; a permission expiring under a strategy that is still evaluating rules every twelve
--- seconds means every order it admits from that moment is refused at the funding gate, and
--- the user sees a strategy that looks alive and does nothing.
---
--- `payload->>'end'` is uint48 unix seconds, written once at prepare time and protected by an
--- immutability trigger, so it is the authoritative expiry -- `status` is only this server's
--- observation of the chain and can lag it.
---
--- `stranded` is the state that is already broken rather than approaching: armed, but with no
--- permission row in `active` at all (revoked onchain, expired, or never signed).
-CREATE OR REPLACE FUNCTION mandate_v2.metrics_permission_authority()
-RETURNS TABLE (
-  armed double precision,
-  stranded double precision,
-  expiring_1h double precision,
-  expiring_24h double precision,
-  expiring_72h double precision)
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
-BEGIN
-  RETURN QUERY
-    WITH armed_auto AS (
-      SELECT i.id
-      FROM mandate_v2.instances i
-      WHERE i.status = 'armed' AND i.mode = 'auto'
-    ),
-    authority AS (
-      SELECT
-        a.id,
-        max((p.payload ->> 'end')::bigint) FILTER (WHERE p.status = 'active') AS ends_at
-      FROM armed_auto a
-      LEFT JOIN mandate_v2.permissions p ON p.instance_id = a.id
-      GROUP BY a.id
-    )
-    SELECT
-      count(*)::double precision,
-      count(*) FILTER (WHERE ends_at IS NULL)::double precision,
-      count(*) FILTER (
-        WHERE ends_at IS NOT NULL
-          AND ends_at - extract(epoch FROM now()) BETWEEN 0 AND 3600)::double precision,
-      count(*) FILTER (
-        WHERE ends_at IS NOT NULL
-          AND ends_at - extract(epoch FROM now()) BETWEEN 0 AND 86400)::double precision,
-      count(*) FILTER (
-        WHERE ends_at IS NOT NULL
-          AND ends_at - extract(epoch FROM now()) BETWEEN 0 AND 259200)::double precision
-    FROM authority;
-END
-$$;
+-- Remove retired functions when upgrading an existing metrics installation.
+DROP FUNCTION IF EXISTS mandate_v2.metrics_permissions();
+DROP FUNCTION IF EXISTS mandate_v2.metrics_permission_authority();
 
 -- ---------------------------------------------------------------------------
 -- Worker leadership

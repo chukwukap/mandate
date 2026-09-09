@@ -203,7 +203,11 @@ test("a receipt's status is not the same thing as settlement", () => {
   const funded = fund.receipt;
   if (!funded) throw new Error("fund-confirmed must carry a receipt");
   expect(
-    creditedTo(funded, { token: USDC, recipient: ACCOUNTS.spender, from: ACCOUNTS.user }),
+    creditedTo(funded, {
+      token: USDC,
+      recipient: "0x2222222222222222222222222222222222222222",
+      from: ACCOUNTS.user,
+    }),
   ).toBe(ORDER.amountInUsdc);
   expect(confirmationsOf(fund)).toBe(7);
   expect(reorged(fund)).toBe(false);
@@ -212,7 +216,9 @@ test("a receipt's status is not the same thing as settlement", () => {
   const stranger = receiptOf("fund-to-stranger").receipt;
   if (!stranger) throw new Error("fund-to-stranger must carry a receipt");
   expect(stranger.status).toBe("success");
-  expect(creditedTo(stranger, { token: USDC, recipient: ACCOUNTS.spender })).toBe(0n);
+  expect(
+    creditedTo(stranger, { token: USDC, recipient: "0x2222222222222222222222222222222222222222" }),
+  ).toBe(0n);
 
   // Success, and under the signed floor.
   const under = receiptOf("swap-underfilled").receipt;
@@ -364,36 +370,21 @@ test("balances are read at each token's own scale", () => {
   expect(chain.balance(USDC, ACCOUNTS.user)).toBe(2_500_000_000n);
   expect(chain.balanceOf(AAPL.token, ACCOUNTS.user)).toBe("5");
   expect(chain.balance(AAPL.token, ACCOUNTS.user)).toBe(500_000_000n);
-  // The spender holds nothing between orders; a resting balance there means a stranded fund.
-  expect(chain.balance(USDC, ACCOUNTS.spender)).toBe(0n);
+  // Unrelated accounts have no seeded funds.
+  expect(chain.balance(USDC, ACCOUNTS.stranger)).toBe(0n);
   expect(chain.balanceOf(AAPL.token, ACCOUNTS.stranger)).toBe("0");
 });
 
-test("a permission signature verifies against its payload and nothing else", async () => {
-  const payload = {
-    account: ACCOUNTS.user,
-    spender: ACCOUNTS.spender,
-    token: USDC,
-    allowance: "250000000",
-    period: 86_400,
-    start: Math.floor(CLOCKS.tradingHours / 1000) - 60,
-    end: Math.floor(CLOCKS.tradingHours / 1000) + 86_400,
-    salt: "1",
-    extraData: "0x" as const,
-  };
+test("a strategy signature is bound to its wallet and exact message", async () => {
+  const message = "Mandate strategy commitment";
   const signature = `0x${"cd".repeat(65)}` as const;
   const chain = new FakeChainClient({
-    permissions: [{ payload, approved: true, revoked: false, signature }],
+    signatures: [{ address: ACCOUNTS.user, message, signature }],
   });
-  expect(await chain.verifyPermission(payload, signature)).toBe(true);
-  expect(await chain.permissionStatus(payload)).toEqual({ approved: true, revoked: false });
-  // Widen the allowance and the digest changes, so the signature stops verifying and the
-  // permission is unknown onchain. That is the whole security property of the grant.
-  const widened = { ...payload, allowance: "999000000" };
-  expect(await chain.verifyPermission(widened, signature)).toBe(false);
-  expect(await chain.permissionStatus(widened)).toEqual({ approved: false, revoked: false });
-  chain.revoke(payload);
-  expect(await chain.permissionStatus(payload)).toEqual({ approved: true, revoked: true });
+  expect(await chain.verifyMessage(ACCOUNTS.user, message, signature)).toBe(true);
+  expect(await chain.verifyMessage(ACCOUNTS.stranger, message, signature)).toBe(false);
+  expect(await chain.verifyMessage(ACCOUNTS.user, `${message} altered`, signature)).toBe(false);
+  expect(await chain.verifyMessage(ACCOUNTS.user, message, "0x00")).toBe(false);
 });
 
 test("a fixture round can be aged without rewriting the market", () => {

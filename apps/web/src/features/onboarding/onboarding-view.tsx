@@ -175,8 +175,8 @@ export function OnboardingView() {
                   <span>
                     <strong>Your keys, throughout</strong>
                     <small>
-                      Mandate never holds your funds. Automatic execution runs on a spend permission
-                      you grant and can revoke on chain at any time.
+                      Mandate never holds your funds. Automatic buys come from your own wallet, and
+                      you can turn them off at any time.
                     </small>
                   </span>
                 </div>
@@ -249,7 +249,7 @@ export function OnboardingView() {
                     <Zap size={20} />
                     <span>
                       <strong>Automatic buys</strong>
-                      <span>Needs a compatible smart wallet and spending approval.</span>
+                      <span>Buys from your wallet. Turn it on once, no per-strategy approval.</span>
                     </span>
                     <span className="choice-dot" />
                   </button>
@@ -279,7 +279,7 @@ export function OnboardingView() {
                     <p>
                       {session.wallet
                         ? "Connected. Your next step is to set your price and budget."
-                        : "Connecting does not authorize a trade or give Mandate spending access."}
+                        : "Connecting does not authorize a trade or turn on automatic buying."}
                     </p>
                   </div>
                   {session.wallet && <Check size={18} />}

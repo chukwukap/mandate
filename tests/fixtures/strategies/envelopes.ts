@@ -74,7 +74,7 @@ export const TIGHT_ENVELOPE = envelope({
   caps: caps({ lifetime: "1000", per_order: "250", per_period: "300" }),
 });
 
-/** Already past its `expires_at` at `T0`. The permission may still be live; the mandate is not. */
+/** Already past its `expires_at` at `T0`. The wallet may still be delegated; the mandate is not. */
 export const EXPIRED_ENVELOPE = envelope({
   caps: caps({ expires_at: isoAt(T0 - 3_600_000) }),
 });

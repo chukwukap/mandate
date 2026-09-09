@@ -77,9 +77,9 @@ export function ReviewCard({
 
       {/*
         Two separate grants, named separately, because they are not the same decision. Signing
-        the rule is free, off chain, and moves nothing. Approving the spend permission is the one
-        that lets money leave later without the user present — and it used to appear as a
-        trailing clause reading "Automatic mode needs a separate spending approval".
+        the rule is free, off chain, and moves nothing. Automatic buying is the one that lets
+        money leave later without the user present — turned on once for the wallet, not per
+        strategy, so the review has to say that this signature alone does not turn it on.
       */}
       <section className="review-block grants">
         <h4>
@@ -93,14 +93,14 @@ export function ReviewCard({
           </li>
           {automatic ? (
             <li>
-              <strong>Approving a spending limit.</strong> A separate onchain step after this, which
-              lets Mandate spend up to the limits above until they expire. You can revoke it at any
-              time from your wallet.
+              <strong>Buying from your wallet automatically.</strong> Within the limits above, until
+              they expire. Turn on automatic buying once for your wallet — no per-strategy approval
+              — and turn it off any time in Settings.
             </li>
           ) : (
             <li>
-              <strong>Nothing else.</strong> This strategy only notifies you. No money can move
-              until you approve a spending limit, which this does not do.
+              <strong>Nothing else.</strong> This strategy only notifies you. It never buys, whether
+              or not automatic buying is on for your wallet.
             </li>
           )}
         </ol>

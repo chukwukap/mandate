@@ -12,8 +12,7 @@ import {
   zeroAddress,
 } from "viem";
 import { clFactoryAbi, clPoolAbi, quoterV2Abi, swapRouterAbi } from "../abis/index.js";
-import { QUOTER, TICK_SPACINGS } from "../addresses/index.js";
-import { CHAIN_ID, USDC } from "../permissions/index.js";
+import { CHAIN_ID, QUOTER, TICK_SPACINGS, USDC } from "../addresses/index.js";
 import {
   minOut,
   type RouteCandidate,

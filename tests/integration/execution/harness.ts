@@ -20,11 +20,10 @@ import {
   CHAIN_ID,
   ORDER,
   type ReceiptFixture,
-  receiptOf,
   SLIPSTREAM_SWAP_ROUTER,
-  SPEND_MANAGER,
   USDC,
 } from "../../fixtures/chain/index.js";
+import { directReceiptOf } from "../../fixtures/chain/receipts.js";
 
 /**
  * The execution pipeline composed against a node that keeps state and a journal that enforces
@@ -67,8 +66,6 @@ export const EFFECTIVE_GAS_PRICE_WEI = 5_000_000n;
  */
 export const L1_FEE_WEI = 1_200_000_000_000n;
 
-/** The spender key every fixture receipt is signed by. Public address; there is no key here. */
-export const SPENDER: Hex = ACCOUNTS.spender;
 /** The strategy account: origin of the input, recipient of the shares. */
 export const ACCOUNT: Hex = ACCOUNTS.user;
 
@@ -96,11 +93,8 @@ export { CONFIRMATIONS } from "../../fixtures/chain/index.js";
  * contract is still visible.
  */
 export const CALLS: Readonly<Record<Leg, SubmissionCall>> = {
-  fund: { to: SPEND_MANAGER, data: "0x1a1c1e5f" },
   approve: { to: USDC, data: "0x095ea7b3" },
   swap: { to: SLIPSTREAM_SWAP_ROUTER, data: "0x04e45aaf" },
-  reset: { to: USDC, data: "0x095ea7b300" },
-  refund: { to: USDC, data: "0xa9059cbb" },
 };
 
 /** The request the worker would build for one leg of the order above. */
@@ -109,7 +103,7 @@ export function request(leg: Leg, overrides: Partial<SubmissionRequest> = {}): S
     executionId: ORDER_ID,
     userId: OWNER_ID,
     leg,
-    signer: SPENDER,
+    signer: ACCOUNT,
     call: CALLS[leg],
     ...overrides,
   };
@@ -189,14 +183,6 @@ function receiptRecord(
     logs: recorded.logs,
   };
 }
-
-/** What the funding leg must prove moved: exactly the authorised USDC, out of the user's own account. */
-export const FUND_EVIDENCE: TransferEvidence = {
-  token: USDC,
-  recipient: SPENDER,
-  amount: ORDER.amountInUsdc.toString(),
-  from: ACCOUNT,
-};
 
 /**
  * What the swap leg must prove: at least the signed floor, delivered to the user.
@@ -362,7 +348,7 @@ export class FixtureNode implements SubmissionChain {
     const pending = this.pool.shift();
     if (!pending) throw new Error("Nothing is in the pool to mine");
     this.headBlock += 1n;
-    const receipt = receiptRecord(receiptOf(options.as), {
+    const receipt = receiptRecord(directReceiptOf(options.as), {
       transactionHash: pending.hash,
       blockNumber: this.headBlock,
       blockHash: `0x${this.headBlock.toString(16).padStart(64, "0")}`,

@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { Problem } from "../../packages/contracts/src/index.js";
+import { BASE_CAIP2 } from "./catalogue.js";
 import { issue, Refused } from "./issues.js";
 import type { LegacyUser } from "./legacy.js";
-import { BASE_CAIP2 } from "./catalogue.js";
 
 /**
  * Who a legacy user becomes here.

@@ -36,8 +36,8 @@ export type ExecutionStatus = (typeof EXECUTION_STATUSES)[number];
  *
  * `signal` is its own outcome and not a failure: in manual mode the strategy fired and the
  * system deliberately did not trade on the user's behalf. `cancelled` is also not a loss — it
- * specifically means no funds ever left the account, because the lifecycle only cancels before
- * the funding leg exists.
+ * specifically means no funds ever left the wallet, because the lifecycle only cancels before
+ * the swap is signed, and an approval on its own moves nothing.
  */
 export const OUTCOMES = {
   signal: {
@@ -69,9 +69,12 @@ export const OUTCOMES = {
   },
   cancelled: {
     outcome: "cancelled",
-    headline: "Stopped before funding",
+    headline: "Stopped before buying",
     detail: "The order was dropped before any money left your account.",
   },
+  // Retired with the custodial design: the swap now moves USDC out of the wallet only in the
+  // transaction that delivers the shares, so nothing is ever held elsewhere to return. Kept so
+  // orders written under the old lifecycle still render truthfully.
   refunded: {
     outcome: "refunded",
     headline: "Returned to you",
@@ -106,9 +109,35 @@ export function outcomeOf(status: string) {
  * still shows the user something true instead of nothing.
  */
 export const EXECUTION_REASONS: Record<string, { code: string; message: string }> = {
+  "Approval reverted": {
+    code: "approval-reverted",
+    message: "Approving the router to take the input reverted onchain. Nothing was spent.",
+  },
+  "Swap reverted": {
+    code: "swap-reverted",
+    message:
+      "The swap reverted onchain, so nothing left your wallet. The next tick may place a fresh order if the rule still holds.",
+  },
+  "Strategy no longer armed": {
+    code: "not-armed",
+    message:
+      "The strategy was paused, halted or expired before the swap was signed, so the order was dropped.",
+  },
+  "Cannot establish safe execution": {
+    code: "unsafe-execution",
+    message: "A safe swap could not be prepared. Execution stopped pending review.",
+  },
+  "Admission checks failed before signing": {
+    code: "preconditions-failed",
+    message:
+      "A precondition stopped holding before signing — the wallet's delegation, the market session, the route or the strategy condition. Nothing was spent.",
+  },
+  // The strings below were written by the retired custodial lifecycle, in which a spender
+  // wallet pulled the input first. No worker writes them any more; they stay so an order from
+  // that era still reads as what happened to it rather than as "other".
   "Funding reverted": {
     code: "funding-reverted",
-    message: "Pulling the input from your spend permission reverted onchain. Nothing was spent.",
+    message: "Pulling the input from your account reverted onchain. Nothing was spent.",
   },
   "Previously settled receipt changed": {
     code: "receipt-changed",
@@ -128,11 +157,6 @@ export const EXECUTION_REASONS: Record<string, { code: string; message: string }
     code: "unwind-reverted",
     message: "Returning the input reverted onchain. Execution stopped pending review.",
   },
-  "Strategy no longer armed": {
-    code: "not-armed",
-    message:
-      "The strategy was paused, halted or expired before the order was funded, so it was dropped.",
-  },
   "Cannot establish safe execution or refund": {
     code: "unsafe-execution",
     message:
@@ -141,7 +165,7 @@ export const EXECUTION_REASONS: Record<string, { code: string; message: string }
   "Admission checks failed before funding": {
     code: "preconditions-failed",
     message:
-      "A precondition stopped holding before funding — the permission, the market session, the route or the strategy condition. Nothing was spent.",
+      "A precondition stopped holding before funding — the authority, the market session, the route or the strategy condition. Nothing was spent.",
   },
   "Execution unavailable; returning funded input": {
     code: "returning-input",
@@ -180,7 +204,7 @@ export const EVALUATION_REASONS: Record<string, { code: string; message: string 
   "observation-or-authority-unavailable": {
     code: "observation-unavailable",
     message:
-      "Prices, the spend permission or the venue could not be verified, so the tick was skipped.",
+      "Prices, the wallet's delegation or the venue could not be verified, so the tick was skipped.",
   },
   "invalid-commitment": {
     code: "invalid-commitment",
@@ -412,13 +436,18 @@ export type ExecutionDetail = ExecutionListItem & {
     price: FillPricing;
   };
   cost: {
-    /** What actually left the user's account. Gas is not part of it — see `gas.borne_by`. */
+    /** The USDC the swap consumed. Gas is separate — it is ETH, and `gas` says whose. */
     input: TokenAmount;
     gas: {
       complete: boolean;
       legs: number;
       paid_by: string | null;
-      borne_by: "executor";
+      /**
+       * Every leg is signed by the user's own wallet, so its ETH pays the gas. Named rather
+       * than assumed because the previous design had an operator wallet pay it, and a client
+       * built against that would net the wrong number.
+       */
+      borne_by: "wallet";
       note: string;
     } & GasCost;
   } | null;
@@ -448,7 +477,7 @@ export type DetailInput = {
 };
 
 const GAS_NOTE =
-  "Gas is paid in ETH by the executor's wallet, not from your spend permission, which moves exactly the input amount. It is shown so you can see the real cost of running the order; it is not deducted from your funds.";
+  "Gas is paid in ETH from your wallet, which signs every transaction of the order. It is separate from the USDC input, which moves exactly the swap amount; it is shown so you can see the real cost of running the order.";
 
 export function executionDetail(input: DetailInput): ExecutionDetail {
   const { row, envelope, journal, settlements } = input;
@@ -515,7 +544,7 @@ export function executionDetail(input: DetailInput): ExecutionDetail {
             complete,
             legs,
             paid_by: journal.find((t) => t.status !== "signed")?.signer ?? null,
-            borne_by: "executor",
+            borne_by: "wallet",
             note: GAS_NOTE,
           },
         }

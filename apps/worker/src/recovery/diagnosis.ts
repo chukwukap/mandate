@@ -95,7 +95,7 @@ function unverifiable(legs: readonly LegFacts[]) {
   return settledLegs(legs).find((l) => l.observed === "unavailable");
 }
 
-function has(legs: readonly LegFacts[], leg: Leg, status: string) {
+function _has(legs: readonly LegFacts[], leg: Leg, status: string) {
   return legs.some((l) => l.transaction.leg === leg && l.transaction.status === status);
 }
 
@@ -103,8 +103,8 @@ function has(legs: readonly LegFacts[], leg: Leg, status: string) {
  * True when nonces beyond everything this worker ever journaled have been consumed, or when
  * the node holds something pending that no journal row explains.
  *
- * Either means the key is not exclusively ours, which invalidates the assumption every
- * other decision here rests on. An incomplete journal read (owner paging hit its bound) is
+ * Either means the wallet is not only ours to drive — the user may have sent something from
+ * it themselves — which invalidates the assumption every other decision here rests on. An incomplete journal read (owner paging hit its bound) is
  * treated as "cannot tell", not as "foreign".
  */
 export function foreignActivity(facts: ChainFacts) {
@@ -121,13 +121,12 @@ export function foreignActivity(facts: ChainFacts) {
  * facts. No RPC, no database, no clock beyond `facts.now`.
  *
  * Order of precedence is deliberate, most dangerous first:
- *  1. the journal's signer is not the configured spender — nothing else can be trusted;
+ *  1. the journal's signer is not the strategy's own wallet — nothing else can be trusted;
  *  2. a settled receipt changed;
  *  3. an in-flight leg's fate;
  *  4. an unverifiable observation;
- *  5. foreign use of the key;
- *  6. money sitting in the spender wallet;
- *  7. everything reconciles.
+ *  5. the wallet was used outside this journal;
+ *  6. everything reconciles.
  */
 export function diagnose(
   _order: { status: string; stage: string },
@@ -151,7 +150,7 @@ export function diagnose(
       settle: null,
       clearable: false,
       detail:
-        "Journal signer does not match the configured spender address; no chain fact can be attributed to this worker.",
+        "Journal signer is not the strategy's wallet; no chain fact can be attributed to this worker.",
     };
 
   const changed = contradiction(facts.legs);
@@ -178,18 +177,12 @@ export function diagnose(
       // THE CRASH REPAIR. The bytes were journaled before broadcast, so the transaction was
       // never lost; what a crash between broadcast and the status write loses is the
       // RECORD of its receipt. Writing it is the one journal mutation migration 0005 allows.
-      const settledClean =
-        signed.observed === "confirmed" || !["reset", "refund"].includes(signed.transaction.leg);
       return {
         ...at(signed),
         code: signed.observed === "confirmed" ? "settled-confirmed" : "settled-reverted",
         decision: "none",
         settle: { transactionId: signed.transaction.id, status: signed.observed },
-        clearable:
-          settledClean &&
-          !unverifiable(facts.legs) &&
-          !foreignActivity(facts) &&
-          !returnFailed(facts.legs),
+        clearable: !unverifiable(facts.legs) && !foreignActivity(facts),
         detail: `Leg ${signed.transaction.leg} settled ${signed.observed} on chain but was journaled as still signed; recording the receipt.`,
       };
     }
@@ -259,33 +252,7 @@ export function diagnose(
       settle: null,
       clearable: false,
       detail:
-        "The spender key has consumed nonces this worker never journaled, or holds an unexplained pending transaction.",
-    };
-
-  if (returnFailed(facts.legs))
-    return {
-      ...at(facts.legs.find((l) => returnLeg(l) && l.transaction.status === "reverted")),
-      code: "stranded-input",
-      decision: "escalate",
-      settle: null,
-      clearable: false,
-      detail:
-        "The allowance reset or the refund reverted, so funded USDC is held by the spender with its automatic return path already failed.",
-    };
-
-  if (
-    has(facts.legs, "fund", "confirmed") &&
-    !has(facts.legs, "swap", "confirmed") &&
-    !has(facts.legs, "refund", "confirmed")
-  )
-    return {
-      ...at(undefined),
-      code: "stranded-input",
-      decision: "none",
-      settle: null,
-      clearable: true,
-      detail:
-        "Funding confirmed with no confirmed swap or refund; the journal is consistent, so the return path can resume.",
+        "The wallet has consumed nonces this worker never journaled, or holds an unexplained pending transaction. The user may have sent from it themselves.",
     };
 
   return {
@@ -296,19 +263,4 @@ export function diagnose(
     clearable: true,
     detail: "Every journaled leg re-observes exactly as recorded and nothing is in flight.",
   };
-}
-
-function returnLeg(l: LegFacts) {
-  return l.transaction.leg === "reset" || l.transaction.leg === "refund";
-}
-
-/**
- * A reverted `reset` or `refund` must never be cleared back to Lifecycle.
- *
- * Lifecycle's own rule is `refund or reset reverted -> recovery_required`. Clearing such an
- * order would have Lifecycle write it straight back on the next poll, and the two would
- * take turns rewriting the row on every 2-second cycle for as long as the worker runs.
- */
-function returnFailed(legs: readonly LegFacts[]) {
-  return legs.some((l) => returnLeg(l) && l.transaction.status === "reverted");
 }

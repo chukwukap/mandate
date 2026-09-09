@@ -407,7 +407,13 @@ export function Workspace() {
             setEditor(false);
             if (strategy) setStrategies((current) => [strategy, ...current]);
             else void fetchOwned();
-            setToast("Strategy saved. Ready when you are.");
+            // An auto strategy on an undelegated wallet arms as signals; say so now rather than
+            // letting the user discover it from a row that never buys.
+            setToast(
+              strategy?.needs_automation
+                ? "Strategy saved. Turn on automatic buying to let it buy."
+                : "Strategy saved. Ready when you are.",
+            );
           }}
         />
       )}
@@ -469,8 +475,8 @@ export function Workspace() {
               <section>
                 <h3>Keep control.</h3>
                 <p>
-                  Signal mode never moves funds. Automatic buys need a separate wallet permission.
-                  Pausing a strategy doesn't revoke that permission.
+                  Signal mode never moves funds. Automatic buys come from your wallet once you turn
+                  automatic buying on, and you can turn it off in Settings at any time.
                 </p>
               </section>
             </div>

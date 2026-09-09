@@ -10,8 +10,7 @@ import {
   zeroAddress,
 } from "viem";
 import { base } from "viem/chains";
-import { ASSETS, QUOTER, TICK_SPACINGS } from "../src/addresses/index.js";
-import { USDC } from "../src/permissions/index.js";
+import { ASSETS, QUOTER, TICK_SPACINGS, USDC } from "../src/addresses/index.js";
 import {
   impliedPrice,
   minOut,

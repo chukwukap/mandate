@@ -31,7 +31,7 @@ export interface RecoveryLogger {
 }
 
 /**
- * What the chain says about the spender key right now.
+ * What the chain says about the strategy's wallet right now.
  *
  * `latest` is the transaction count at the latest block: every nonce strictly below it has
  * been consumed by a mined transaction. `pending` additionally counts what this node holds
@@ -62,13 +62,6 @@ export type SignerJournal = {
 
 /** A decoded call. `unknown` is a real answer, not a failure: an operator still learns the target. */
 export type KnownCall =
-  | {
-      readonly kind: "permission-spend";
-      readonly account: Hex;
-      readonly spender: Hex;
-      readonly token: Hex;
-      readonly value: string;
-    }
   | {
       readonly kind: "erc20-approve";
       readonly token: Hex;
@@ -158,8 +151,6 @@ export type DiagnosisCode =
   | "foreign-signer-activity"
   /** A leg recorded as settled no longer re-observes to its recorded status. */
   | "receipt-changed"
-  /** Funding confirmed with neither a confirmed swap nor a confirmed return. */
-  | "stranded-input"
   /** Every leg re-observes exactly as recorded and nothing is in flight. */
   | "journal-consistent"
   /** Chain facts were unavailable, or the journal contradicts the configured signer. */
@@ -185,7 +176,7 @@ export type ChainFacts = {
   readonly journal: SignerJournal | null;
   /** Populated only when a nonce looked anomalous and was worth searching for. */
   readonly located: LocatedTransaction | null;
-  /** True when the journal's signer disagrees with the configured spender address. */
+  /** True when a journal row was signed by something other than the strategy's own wallet. */
   readonly signerMismatch: boolean;
   readonly now: number;
 };
@@ -206,41 +197,6 @@ export type Diagnosis = {
   /** True only when, after `settle` is applied, the order may leave `recovery_required`. */
   readonly clearable: boolean;
   readonly detail: string;
-};
-
-export type StrandedOrder = {
-  readonly executionId: string;
-  readonly userId: string;
-  readonly instanceId: string;
-  /** The strategy account the input was pulled from and must be returned to. */
-  readonly account: string;
-  readonly status: string;
-  readonly stage: string;
-  /** Exact USDC base units (6 decimals) pulled by the confirmed `fund` leg. */
-  readonly amount: bigint;
-  readonly resetConfirmed: boolean;
-  readonly refundReverted: boolean;
-};
-
-export type StrandedLedger = {
-  readonly orders: readonly StrandedOrder[];
-  /** Sum of `orders[].amount`. Exact integer arithmetic; never a float. */
-  readonly owed: bigint;
-  /** The spender wallet's real USDC balance, or null when the read failed. */
-  readonly balance: bigint | null;
-  /** Residual USDC allowance from the spender to the Aerodrome router. */
-  readonly routerAllowance: bigint | null;
-  readonly verdict: "balanced" | "short" | "surplus" | "unknown";
-  /**
-   * Orders whose input the worker may return. Empty on a `short` or `unknown` verdict:
-   * paying the first claimant out of a shared wallet spends a second user's money.
-   */
-  readonly returnable: readonly StrandedOrder[];
-  readonly refusal: string | null;
-  /** Per-instance budget reserved for orders that never settled. Reported, never credited. */
-  readonly overReserved: readonly { readonly instanceId: string; readonly amount: bigint }[];
-  /** False when owner paging hit its bound; `owed` is then a lower bound. */
-  readonly complete: boolean;
 };
 
 /** Log-safe scalars only. Amounts travel as strings: USDC base units exceed no bound here,

@@ -1,10 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { CHAIN_ID } from "../../packages/evm/src/permissions/index.js";
+import { CHAIN_ID } from "../../packages/evm/src/addresses/index.js";
 import {
   type ContractApi,
   call,
   newIdentity,
-  SPENDER_ADDRESS,
   startContractApi,
   type TestIdentity,
 } from "./harness.js";
@@ -55,7 +54,12 @@ describe("GET /v1/me", () => {
     // to a chain this API will not execute on, so the chain id is part of the identity answer.
     expect(body.chain_id).toBe(CHAIN_ID);
     expect(body.chain_id).toBe(8453);
-    expect(body.automation_supported).toBe(Boolean(SPENDER_ADDRESS));
+    expect(body.automation).toEqual({
+      supported: false,
+      signer_id: null,
+      wallet: null,
+      delegated: false,
+    });
   });
 
   test("no session identifier is published, because a 200 does not prove the session is live", async () => {
@@ -181,13 +185,10 @@ describe("GET /v1/me/wallets", () => {
       const body = parsed(walletsSchema, response.json());
       expect(body.items.map((item) => item.address)).toEqual([...carol.wallets]);
       for (const item of body.items) {
-        // `can_authorize_spending` is true only for a Base account, and it is a cached onchain
-        // observation rather than an authorization: the notice says so, and
-        // POST /v1/permissions/prepare re-reads walletKind at the moment it matters.
-        expect(item.can_authorize_spending).toBe(item.kind === "base_account");
-        expect(item.checked).toBe(item.kind !== null);
+        expect(item.embedded).toBe(false);
+        expect(item.delegated).toBe(false);
       }
-      expect(body.notice).toContain("re-checked against the chain");
+      expect(body.signer_id).toBeNull();
     } finally {
       await api2.close();
     }

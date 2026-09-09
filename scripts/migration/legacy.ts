@@ -3,7 +3,15 @@ import { BASE_CAIP2 } from "./catalogue.js";
 import type { SqlClient } from "./sql.js";
 import { makeSessionReadOnly } from "./sql.js";
 import type { LegacyEnvelope, LegacyStrategy } from "./translate.js";
-import { address, instant, integer, isoFromUnixSeconds, optionalInstant, rawAmount, text } from "./values.js";
+import {
+  address,
+  instant,
+  integer,
+  isoFromUnixSeconds,
+  optionalInstant,
+  rawAmount,
+  text,
+} from "./values.js";
 
 /**
  * The read side: everything this tool knows how to see in the Rust deployment's schema.

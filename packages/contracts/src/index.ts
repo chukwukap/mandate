@@ -41,19 +41,7 @@ export type Quote = {
   expires_at: string;
   reference: string;
 };
-export type PermissionPayload = {
-  account: Hex;
-  spender: Hex;
-  token: Hex;
-  allowance: string;
-  period: number;
-  start: number;
-  end: number;
-  salt: string;
-  extraData: Hex;
-};
 export type Call = { to: Hex; data: Hex; value: string; chain_id: number };
-export type PermissionCheck = { approved: boolean; revoked: boolean };
 export type Identity = {
   user: string;
   wallet: Hex;
@@ -104,9 +92,6 @@ export interface BalanceReader {
 // Applications depend on capabilities; test implementations never acquire signing keys.
 export interface ChainReader {
   verifyMessage(address: Hex, message: string, signature: Hex): Promise<boolean>;
-  verifyPermission(payload: PermissionPayload, signature: Hex): Promise<boolean>;
-  walletKind(address: Hex): Promise<Identity["walletKind"]>;
-  permissionStatus(payload: PermissionPayload): Promise<PermissionCheck>;
   market(): Promise<MarketFeed[]>;
   quote(asset: Asset, side: "buy" | "sell", amount: string, slippageBps: number): Promise<Quote>;
   ready(): Promise<boolean>;

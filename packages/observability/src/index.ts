@@ -10,6 +10,11 @@ const secretNames = [
   "databaseUrl",
   "anthropicKey",
   "privyAppSecret",
+  // The worker's Privy credential is nested: `config.privy.{appSecret, authorizationKey}`. The
+  // authorization key signs from every wallet users have delegated, which makes it the single
+  // most damaging string this process holds.
+  "appSecret",
+  "authorizationKey",
   "accessToken",
   "rawTransaction",
   "typed_data",
@@ -37,7 +42,7 @@ const secretNames = [
  * Pino has no unbounded-depth wildcard, so this is a bounded sweep rather than a guarantee.
  * Three levels covers every shape this codebase logs — a handler logging an injected service that
  * holds a config that holds a key. The real defence is still not putting secrets in log objects;
- * this is the net under that, and SpenderKey in @mandate/execution keeps its material in a
+ * this is the net under that, and `Redactor` in @mandate/execution keeps what it scrubs in a
  * `#private` field precisely so it cannot be reached by any of this.
  */
 const DEPTH = 3;

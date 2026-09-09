@@ -5,8 +5,15 @@ import { execSync } from "node:child_process";
  * what the screen implies was written.
  */
 export const DB = "postgresql://mandate_admin@127.0.0.1:5432/mandate_fork";
-/** The injected test wallet's address (see session.mjs), lower-cased as the API stores it. */
-export const ACCOUNT = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
+/**
+ * The account strategies are written against: the user's Privy EMBEDDED wallet, not the
+ * injected wallet they signed in with. Privy creates it on first login, so its address is only
+ * known once a session exists; `login()` sets it here and every later lookup reads it.
+ */
+export let ACCOUNT = "0x0000000000000000000000000000000000000000";
+export function setAccount(address) {
+  ACCOUNT = address.toLowerCase();
+}
 
 export const sql = (q) =>
   execSync(`psql "${DB}" -tAc "${q.replace(/"/g, '\\"')}"`, { encoding: "utf8" }).trim();

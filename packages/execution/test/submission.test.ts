@@ -26,7 +26,7 @@ function entry(overrides: Partial<JournalEntry> = {}): JournalEntry {
   return {
     id: overrides.id ?? "t1",
     executionId: overrides.executionId ?? "order-a",
-    leg: overrides.leg ?? "fund",
+    leg: overrides.leg ?? "approve",
     signer: overrides.signer ?? SIGNER,
     nonce: overrides.nonce ?? 7,
     hash: overrides.hash ?? `0x${"aa".repeat(32)}`,
@@ -42,7 +42,7 @@ const facts = (over: Partial<Parameters<typeof planNonce>[0]> = {}) =>
     pending: 7,
     entries: [],
     executionId: "order-a",
-    leg: "fund",
+    leg: "approve",
     ...over,
   });
 
@@ -140,27 +140,31 @@ test("a revert reason is decoded, bounded, or honestly reported as unresolved", 
   expect(revertReason(errorStringData("a\nbc"))).toBe("a b c");
 });
 
-test("funding is refused unless the key can also pay to unwind the order", () => {
+test("an approval is refused unless the wallet can also pay for the swap it enables", () => {
   const maxFeePerGas = 100_000_000n; // 0.1 gwei, a normal Base fee
-  const fundReserve = gasReserve({ leg: "fund", maxFeePerGas });
-  const refundReserve = gasReserve({ leg: "refund", maxFeePerGas });
-  expect(remainingLegs("fund")).toEqual(["fund", "approve", "swap", "reset", "refund"]);
-  expect(remainingLegs("refund")).toEqual(["refund"]);
-  expect(fundReserve).toBeGreaterThan(refundReserve);
+  const approveReserve = gasReserve({ leg: "approve", maxFeePerGas });
+  const swapReserve = gasReserve({ leg: "swap", maxFeePerGas });
+  expect(remainingLegs("approve")).toEqual(["approve", "swap"]);
+  expect(remainingLegs("swap")).toEqual(["swap"]);
+  expect(approveReserve).toBeGreaterThan(swapReserve);
 
-  // Enough for the funding transaction alone is exactly the balance that strands a user:
-  // the pull succeeds and then nothing can move the money in either direction.
-  const oneTransaction = LEG_GAS_LIMITS.fund * maxFeePerGas + L1_FEE_ALLOWANCE_WEI;
-  const budget = checkGas({ leg: "fund", balance: oneTransaction, maxFeePerGas });
+  // Enough for the swap alone is exactly the balance that leaves an order half done: the
+  // approval succeeds, the wallet cannot then pay for the swap, and the user is left with a
+  // router allowance and no shares until they top up.
+  const swapAlone = LEG_GAS_LIMITS.swap * maxFeePerGas + L1_FEE_ALLOWANCE_WEI;
+  const budget = checkGas({ leg: "approve", balance: swapAlone, maxFeePerGas });
   expect(budget.sufficient).toBe(false);
-  expect(budget.shortfall).toBe(fundReserve - oneTransaction);
-  expect(budget.legs).toHaveLength(5);
-  // The same balance is plenty once the only remaining obligation is the refund itself.
-  expect(checkGas({ leg: "refund", balance: oneTransaction, maxFeePerGas }).sufficient).toBe(true);
+  expect(budget.shortfall).toBe(approveReserve - swapAlone);
+  expect(budget.legs).toHaveLength(2);
+  // The same balance is plenty once the approval has landed and only the swap remains.
+  expect(checkGas({ leg: "swap", balance: swapAlone, maxFeePerGas }).sufficient).toBe(true);
+  // The swap is the expensive leg: Slipstream crosses ticks and the B20 token runs its
+  // transfer policy on every move, neither of which an approval does.
+  expect(LEG_GAS_LIMITS.swap).toBeGreaterThan(LEG_GAS_LIMITS.approve);
 });
 
 test("an unreadable fee is never read as free gas", () => {
-  expect(gasReserve({ leg: "fund", maxFeePerGas: 0n })).toBeGreaterThan(0n);
+  expect(gasReserve({ leg: "approve", maxFeePerGas: 0n })).toBeGreaterThan(0n);
 });
 
 type HarnessOptions = {
@@ -236,7 +240,7 @@ function harness(options: HarnessOptions = {}) {
   const request = {
     executionId: "order-a",
     userId: "user-a",
-    leg: "fund" as const,
+    leg: "approve" as const,
     signer: SIGNER,
     call: CALL,
   };
@@ -373,7 +377,7 @@ test("a broadcast that fails on transport keeps the bytes for the next cycle", a
   expect(h.rows).toHaveLength(1);
 });
 
-test("a key that cannot afford the unwind never starts the sequence", async () => {
+test("a wallet that cannot afford both legs never starts the sequence", async () => {
   const h = harness({ balance: 1n });
   const result = await h.submitter.submit(h.request);
   expect(result.status).toBe("refused");

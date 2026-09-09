@@ -5,7 +5,6 @@ export type {
   DraftRow,
   ExecutionRow,
   InstanceRow,
-  PermissionRow,
   TransactionRow,
 } from "./schema/index.js";
 export * as schema from "./schema/index.js";

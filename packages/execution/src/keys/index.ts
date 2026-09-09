@@ -1,15 +1,8 @@
 /**
- * Spender key custody.
+ * Secret hygiene for the worker's logs.
  *
- * Two halves that belong together: `custody.ts` states what holding this key actually means
- * for a user's money, and `spender.ts` + `redaction.ts` keep the key itself from leaking
- * into a log, an error or a crash report. Neither is useful without the other — a perfectly
- * guarded key still sits in front of a custodial window, and an honest disclosure does not
- * help if the key ends up in a stack trace.
+ * The worker no longer holds a wallet key — users' Privy embedded wallets sign their own orders
+ * through a delegated signer — but it still handles a Privy authorization key and signed
+ * transaction bytes, and neither may reach a log, an error or a crash report.
  */
-
-export type { Custody, CustodyHolder, CustodyLeg } from "./custody.js";
-export { CUSTODY_DISCLOSURE, CUSTODY_SEQUENCE, custodial, custody } from "./custody.js";
 export { NO_SECRETS, REDACTED, Redactor } from "./redaction.js";
-export type { DeriveAddress, SpenderKeyOptions } from "./spender.js";
-export { SpenderKey, takeEnvKey } from "./spender.js";

@@ -116,40 +116,57 @@ test("a strategy becomes an armed instance, and only its owner can see or move i
   expect(after.json<{ status: string }>().status).toBe("halted");
 }, 60_000);
 
-test("a spend permission is prepared against the instance it was asked for", async () => {
-  const committed = await commitStrategy(api, alice, { mode: "auto" });
-
-  const prepared = await call(api, {
-    method: "POST",
-    url: "/v1/permissions/prepare",
-    token: alice.token,
-    wallet: alice.wallet,
-    payload: { instance: committed.instance },
+test("wallet automation activates only its owner's strategies and pauses on removal", async () => {
+  let delegated = false;
+  const direct = await startContractApi({
+    identities: [alice, mallory],
+    config: { PRIVY_KEY_QUORUM_ID: "test-signer" },
+    wallets: {
+      embedded: async (did, address) =>
+        did === alice.privyDid && address === alice.wallet
+          ? { id: "test-wallet", address: alice.wallet, delegated }
+          : null,
+    },
   });
-  expect(prepared.statusCode).toBe(200);
-
-  const body = prepared.json<{
-    status: string;
-    instance: string;
-    typed_data: { domain: { chainId: number }; message: { account: string } };
-  }>();
-  expect(body.status).toBe("prepared");
-  // The permission must name the instance it was asked for and the wallet that asked. A mismatch
-  // here is a user signing an allowance for something they were not looking at.
-  expect(body.instance).toBe(committed.instance);
-  expect(body.typed_data.message.account.toLowerCase()).toBe(alice.wallet.toLowerCase());
-  expect(body.typed_data.domain.chainId).toBe(8453);
-
-  // Mallory cannot prepare a permission against Alice's instance, which would put Alice's
-  // strategy behind Mallory's allowance.
-  const stolen = await call(api, {
-    method: "POST",
-    url: "/v1/permissions/prepare",
-    token: mallory.token,
-    wallet: mallory.wallet,
-    payload: { instance: committed.instance },
-  });
-  expect([403, 404]).toContain(stolen.statusCode);
+  try {
+    const committed = await commitStrategy(direct, alice, { mode: "auto" });
+    const arm = () =>
+      call(direct, {
+        method: "POST",
+        url: `/v1/instances/${committed.instance}/arm`,
+        token: alice.token,
+        wallet: alice.wallet,
+      });
+    expect((await arm()).statusCode).toBe(409);
+    const foreign = await call(direct, {
+      method: "POST",
+      url: "/v1/me/automation",
+      token: mallory.token,
+      wallet: mallory.wallet,
+      payload: { wallet: alice.wallet },
+    });
+    expect(foreign.statusCode).toBe(403);
+    delegated = true;
+    const sync = () =>
+      call(direct, {
+        method: "POST",
+        url: "/v1/me/automation",
+        token: alice.token,
+        wallet: alice.wallet,
+        payload: { wallet: alice.wallet },
+      });
+    expect((await sync()).statusCode).toBe(200);
+    expect((await arm()).json()).toMatchObject({ mode: "auto", status: "armed" });
+    delegated = false;
+    expect((await sync()).statusCode).toBe(200);
+    const paused = await call(direct, {
+      url: `/v1/instances/${committed.instance}`,
+      token: alice.token,
+    });
+    expect(paused.json()).toMatchObject({ mode: "manual", status: "paused" });
+  } finally {
+    await direct.close();
+  }
 }, 60_000);
 
 test("an unauthenticated caller reaches the public market and nothing else", async () => {

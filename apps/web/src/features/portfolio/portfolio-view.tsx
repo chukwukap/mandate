@@ -1,10 +1,12 @@
 "use client";
 import { ArrowUpRight, Loader2, Plus, RefreshCw, Wallet } from "lucide-react";
+import { useState } from "react";
 import { shortAddress } from "../../lib/format";
 import type { WorkspaceModel } from "../../providers/use-workspace";
 import { companies } from "../market/catalog";
 import { StockLogo } from "../market/stock-logo";
 import { money } from "../trading/market-data";
+import { DepositCard } from "./deposit-card";
 import { type Holding, usePortfolio } from "./use-portfolio";
 
 /**
@@ -33,8 +35,55 @@ function byValue(a: Holding, b: Holding) {
 }
 
 export function PortfolioView({ model }: { model: WorkspaceModel }) {
-  const { session, login, openEditor, call } = model;
+  const { session, login, openEditor, call, setToast } = model;
   const { portfolio, error, loading, refresh, ready } = usePortfolio(session, call);
+  const [creatingWallet, setCreatingWallet] = useState(false);
+  const createWallet = async () => {
+    if (creatingWallet) return;
+    setCreatingWallet(true);
+    try {
+      await session.createTradingWallet();
+    } catch {
+      setToast("Your trading wallet couldn't be created. Please try again.");
+    } finally {
+      setCreatingWallet(false);
+    }
+  };
+  /**
+   * Where to send money, above everything else on the page.
+   *
+   * The embedded wallet is the strategy account, so it is the address shown even when the user
+   * is looking at a linked external wallet's balances. The balance on the card is only claimed
+   * when the reading below is for that same address; otherwise it says nothing rather than
+   * showing one wallet's cash under another wallet's address.
+   */
+  const depositAddress = session.embeddedWallet;
+  const deposit = depositAddress ? (
+    <DepositCard
+      address={depositAddress}
+      balance={
+        portfolio && portfolio.wallet.toLowerCase() === depositAddress.toLowerCase()
+          ? portfolio.cash
+          : null
+      }
+      notify={setToast}
+    />
+  ) : session.authenticated ? (
+    <section className="deposit-card" aria-label="Trading wallet setup">
+      <div className="deposit-head">
+        <h2>Your trading wallet</h2>
+      </div>
+      <p>Create your embedded wallet to receive USDC on Base and use it for your strategies.</p>
+      <button
+        type="button"
+        className="button primary"
+        disabled={!session.ready || creatingWallet}
+        onClick={() => void createWallet()}
+      >
+        {creatingWallet ? "Creating wallet…" : "Create trading wallet"}
+      </button>
+    </section>
+  ) : null;
 
   // Kept above every early return so a failed poll never replaces a reading that is already on
   // screen — a balance a minute old is a better answer than an empty panel.
@@ -89,6 +138,7 @@ export function PortfolioView({ model }: { model: WorkspaceModel }) {
     return (
       <>
         {banner}
+        {deposit}
         <section className="panel">
           {error ? (
             <div className="table-empty">No reading yet. Try again when you're ready.</div>
@@ -107,6 +157,7 @@ export function PortfolioView({ model }: { model: WorkspaceModel }) {
   return (
     <>
       {banner}
+      {deposit}
       <div className="stat-row">
         <div>
           <span>Portfolio value</span>

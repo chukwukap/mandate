@@ -22,10 +22,11 @@ export type TokenMetadata = {
 
 /** Synthetic addresses. Deliberately unmistakable, so no fixture can be read as a real wallet. */
 export const ACCOUNTS = {
-  /** The strategy owner: signs the plan, grants the permission, receives the shares. */
+  /**
+   * The strategy owner's embedded wallet: it signs the plan, holds the USDC, signs every leg
+   * through the delegation, and receives the shares. There is no other wallet in an order.
+   */
   user: "0x1111111111111111111111111111111111111111",
-  /** The worker's spender key. Pulls USDC, swaps, and must never hold a position. */
-  spender: "0x2222222222222222222222222222222222222222",
   /** An unrelated account, for evidence that must NOT be credited to the user. */
   stranger: "0x3333333333333333333333333333333333333333",
 } as const satisfies Record<string, Hex>;
@@ -109,11 +110,10 @@ export function balanceString(sheet: BalanceSheet, holder: string, token: string
 }
 
 /**
- * The default sheet: a funded user, an empty spender.
+ * The default sheet: a funded user.
  *
- * The spender holding nothing is the invariant worth keeping. It pulls USDC and spends it in
- * the same order; a non-zero resting balance there means a previous order was funded and never
- * swapped or refunded, which is the state `RecoveryRequired` exists for.
+ * Everything an order moves starts and ends in this one wallet. USDC leaves it only inside the
+ * swap that delivers the shares, so there is no second balance to keep an eye on between legs.
  */
 export const DEFAULT_BALANCES: BalanceSheet = balanceSheet([
   { holder: ACCOUNTS.user, token: USDC, amount: "2500" },

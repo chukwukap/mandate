@@ -17,12 +17,8 @@ import { type ReceiptRecord, transactionCost } from "./receipts.js";
  * Two accounting facts are stated separately here rather than netted, because netting them
  * would make both wrong:
  *
- *  1. GAS IS THE OPERATOR'S COST, NOT THE USER'S. Fees are paid in ETH by the spender key
- *     and are never charged back (`docs/runbooks/worker-local.md`). Folding gas into a
- *     user's cost basis overstates what they paid; dropping it entirely hides what it costs
- *     to run the strategy. Both numbers exist below, and neither is silently converted into
- *     the other's currency — that would need an ETH/USD price, which is a market
- *     observation and not something an accounting function should invent.
+ *  1. The user's wallet pays gas in ETH. USDC input and ETH fees stay separate;
+ *     combining them would require an observed ETH/USD price.
  *  2. A BUY HAS NO REALISED P&L. What a completed buy realises is a cost basis and an
  *     execution quality. Any profit figure before the position is sold is a mark to market,
  *     which needs a current price, is unrealised, and is labelled as such in the type.
@@ -48,8 +44,6 @@ export type RealiseInput = {
   readonly side: "buy" | "sell";
   /** The user's strategy account: the origin of the input and the recipient of the output. */
   readonly account: string;
-  /** The server-controlled spender wallet the input transits. See `../keys/custody.ts`. */
-  readonly spender: string;
   readonly assetToken: string;
   /**
    * The asset's real scale. EVERY B20 equity is 8 decimals. Passing 18 here misprices the
@@ -149,9 +143,10 @@ export function realisedPrice(params: {
  */
 export function realise(input: RealiseInput): RealisedOrder {
   const quoteDecimals = input.quoteDecimals ?? QUOTE_DECIMALS;
-  const fund = successful(legReceipt(input.legs, "fund"));
+  // One settling leg. The user's own wallet signs the swap, so the input moves from the
+  // account into the pool in the same transaction that delivers the output; there is no
+  // funding leg to credit a spender and nothing to refund.
   const swap = successful(legReceipt(input.legs, "swap"));
-  const refund = successful(legReceipt(input.legs, "refund"));
 
   // On a buy the funding leg moves the quote token; on a sell it moves the asset. The
   // "input token" is whichever side the user is giving up, and reading the wrong one
@@ -159,11 +154,11 @@ export function realise(input: RealiseInput): RealisedOrder {
   const inputToken = input.side === "buy" ? input.quoteToken : input.assetToken;
   const outputToken = input.side === "buy" ? input.assetToken : input.quoteToken;
 
-  const accountSpent = fund ? sent(fund.logs, inputToken, input.account) : 0n;
-  const spenderCredited = fund ? received(fund.logs, inputToken, input.spender) : 0n;
-  const swapInput = swap ? sent(swap.logs, inputToken, input.spender) : 0n;
+  const swapInput = swap ? sent(swap.logs, inputToken, input.account) : 0n;
+  const accountSpent = swapInput;
+  const spenderCredited = 0n;
   const filled = swap ? received(swap.logs, outputToken, input.account) : 0n;
-  const returned = refund ? received(refund.logs, inputToken, input.account) : 0n;
+  const returned = 0n;
 
   const gasByLeg: Partial<Record<Leg, bigint>> = {};
   let gasWei = 0n;
@@ -175,13 +170,9 @@ export function realise(input: RealiseInput): RealisedOrder {
 
   const status: RealisedStatus = swap
     ? "filled"
-    : refund
-      ? "refunded"
-      : fund
-        ? "stranded"
-        : input.legs.length > 0
-          ? "not-funded"
-          : "unsettled";
+    : input.legs.length > 0
+      ? "not-funded"
+      : "unsettled";
 
   // Price uses what the SWAP consumed, not what funding pulled. The two differ when the
   // router leaves dust behind, and the price the user got is the one the pool charged.
@@ -195,7 +186,10 @@ export function realise(input: RealiseInput): RealisedOrder {
     swapInput,
     filled,
     returned,
-    residual: spenderCredited - swapInput - returned,
+    // Nothing transits a service wallet any more, so nothing of this order can be left in one.
+    // Deriving this from the (always zero) spender figures would report every clean fill as
+    // -swapInput, which the field's contract defines as the cross-order contamination alarm.
+    residual: 0n,
     price: realisedPrice({
       quoteAmount,
       assetAmount,
@@ -353,13 +347,13 @@ export function describeRealised(order: RealisedOrder, assetDecimals: number): s
   const quote = (raw: bigint) => whole(raw, QUOTE_DECIMALS);
   switch (order.status) {
     case "filled":
-      return `Filled ${whole(order.filled, assetDecimals)} shares for ${quote(order.swapInput)} USDC at ${order.price ?? "an undetermined price"}; the spender paid ${order.gasWei} wei of gas.`;
+      return `Filled ${whole(order.filled, assetDecimals)} shares for ${quote(order.swapInput)} USDC at ${order.price ?? "an undetermined price"}; your wallet paid ${order.gasWei} wei of gas.`;
     case "refunded":
       return `No trade: ${quote(order.accountSpent)} USDC was pulled and ${quote(order.returned)} returned; the spender paid ${order.gasWei} wei of gas and nothing is charged to the account.`;
     case "stranded":
       return `${quote(order.accountSpent)} USDC left the account and has neither been swapped nor returned; the spender is holding ${quote(order.residual)} USDC for this order.`;
     case "not-funded":
-      return "Nothing left the account; the funding transaction did not settle.";
+      return "No swap settled; any transaction gas was paid from your wallet.";
     default:
       return "No transaction for this order has settled.";
   }

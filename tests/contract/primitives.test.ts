@@ -103,7 +103,6 @@ describe("the closed vocabularies", () => {
     expect(contracts.INSTANCE_STATUSES).toEqual([...schemas.statusSchema.options]);
     expect(contracts.SIDES).toEqual([...schemas.sideSchema.options]);
     expect(contracts.WALLET_KINDS).toEqual([...schemas.walletKindSchema.options]);
-    expect(contracts.PERMISSION_STATUSES).toEqual([...schemas.permissionStatusSchema.options]);
     expect(contracts.EXECUTION_STATUSES).toEqual([...schemas.executionStatusSchema.options]);
     expect(contracts.TRANSACTION_LEGS).toEqual([...schemas.transactionLegSchema.options]);
     expect(contracts.TRANSACTION_STATUSES).toEqual([...schemas.transactionStatusSchema.options]);
@@ -132,10 +131,6 @@ describe("the closed vocabularies", () => {
       );
     for (const status of contracts.INSTANCE_STATUSES)
       expect(["scheduled", "idle", "terminal"]).toContain(contracts.instanceDisposition(status));
-    for (const status of contracts.PERMISSION_STATUSES)
-      expect(["unsigned", "signed", "spendable", "terminal"]).toContain(
-        contracts.permissionDisposition(status),
-      );
   });
 
   test("`no onchain spend` is drawn tightly and is not the same set as `settled`", () => {
@@ -159,12 +154,9 @@ describe("the closed vocabularies", () => {
     expect(contracts.isSettledExecutionStatus("signal")).toBe(false);
   });
 
-  test("the unwind legs are exactly the two that may run after a user has paused", () => {
-    expect([...contracts.FORWARD_LEGS]).toEqual(["fund", "approve", "swap"]);
-    expect([...contracts.UNWIND_LEGS]).toEqual(["reset", "refund"]);
-    // Refusing to refund a paused strategy would strand the user's money in the spender wallet,
-    // so unwinding must proceed exactly when the forward path may not.
-    for (const leg of contracts.UNWIND_LEGS) expect(contracts.isUnwindLeg(leg)).toBe(true);
+  test("direct wallet execution has only approval and swap, with no custodial unwind", () => {
+    expect([...contracts.FORWARD_LEGS]).toEqual(["approve", "swap"]);
+    expect([...contracts.UNWIND_LEGS]).toEqual([]);
     for (const leg of contracts.FORWARD_LEGS) expect(contracts.isUnwindLeg(leg)).toBe(false);
   });
 });
@@ -206,14 +198,17 @@ describe("the vocabularies and the database CHECK constraints", () => {
     // If this map comes back empty the regex stopped matching, and every assertion below would
     // pass vacuously. Fail loudly instead.
     expect(checks.size).toBeGreaterThanOrEqual(5);
+    // Historical journals retain the retired legs, but new executions cannot submit them.
+    expect(checks.get("transaction_leg_valid")?.sort()).toEqual(
+      ["fund", "approve", "swap", "reset", "refund"].sort(),
+    );
+    expect(contracts.TRANSACTION_LEGS).toEqual(["approve", "swap"]);
     const pairs: [string, readonly string[]][] = [
       ["execution_status_valid", contracts.EXECUTION_STATUSES],
       ["instance_status_valid", contracts.INSTANCE_STATUSES],
       ["instance_mode_valid", contracts.MODES],
       ["draft_mode_valid", contracts.MODES],
-      ["permission_status_valid", contracts.PERMISSION_STATUSES],
       ["transaction_status_valid", contracts.TRANSACTION_STATUSES],
-      ["transaction_leg_valid", contracts.TRANSACTION_LEGS],
     ];
     for (const [constraint, members] of pairs) {
       const enforced = checks.get(constraint);
@@ -262,12 +257,11 @@ describe("the money and time bounds", () => {
   });
 
   test("seconds are bounded by uint48, which is what the manager contract packs them into", () => {
-    expect(accepts(schemas.unixSecondsSchema, contracts.MAX_UINT48)).toBe(true);
+    expect(accepts(schemas.unixSecondsSchema, 2 ** 48 - 1)).toBe(true);
     // One past the bound encodes perfectly well in JSON and reverts onchain, which is the worst
     // place to find out: the user has already signed.
-    expect(accepts(schemas.unixSecondsSchema, contracts.MAX_UINT48 + 1)).toBe(false);
-    expect(contracts.MAX_UINT48).toBe(2 ** 48 - 1);
-    expect(contracts.MAX_ALLOWANCE).toBe(2n ** 160n - 1n);
+    expect(accepts(schemas.unixSecondsSchema, 2 ** 48 - 1 + 1)).toBe(false);
+    expect(2 ** 48 - 1).toBe(2 ** 48 - 1);
   });
 
   test("a timestamp accepts both a Date and an offset string and always emits a string", () => {
@@ -303,16 +297,6 @@ describe("the money and time bounds", () => {
     expect(contracts.outputDecimals("sell", contracts.EQUITY_DECIMALS)).toBe(6);
     expect(contracts.denominations("buy")).toEqual({ input: "quote", output: "base" });
     expect(contracts.denominations("sell")).toEqual({ input: "base", output: "quote" });
-  });
-
-  test("the permission window boundaries match the manager and the repository", () => {
-    const payload = { start: 1_000, end: 2_000 };
-    expect(contracts.permissionWindow(payload, 999)).toBe("not_started");
-    // `start` is inclusive and `end` is exclusive, matching the manager contract and matching
-    // the repository, which treats `end * 1000 <= now` as expired.
-    expect(contracts.permissionWindow(payload, 1_000)).toBe("open");
-    expect(contracts.permissionWindow(payload, 1_999)).toBe("open");
-    expect(contracts.permissionWindow(payload, 2_000)).toBe("expired");
   });
 });
 

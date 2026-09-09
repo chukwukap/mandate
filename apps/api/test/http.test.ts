@@ -29,6 +29,7 @@ async function setup(overrides: Partial<ApiDependencies> = {}) {
       },
     },
     users: { resolvePrivyUser: async () => ({ id: "local-user" }) },
+    wallets: { embedded: async () => null },
     databaseReady: async () => true,
     chainReady: async () => true,
     ...overrides,

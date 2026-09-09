@@ -46,7 +46,6 @@ const REQUIRED_TABLES = [
   "users",
   "drafts",
   "instances",
-  "permissions",
   "evaluations",
   "executions",
   "transactions",
@@ -274,7 +273,6 @@ export async function discardTenant(pg: Postgres, userId: string): Promise<void>
     "delete from mandate_v2.evaluations where user_id = $1",
     // Only orders with nothing in the journal. The rest are load-bearing history now.
     "delete from mandate_v2.executions e where e.user_id = $1 and not exists (select 1 from mandate_v2.transactions t where t.execution_id = e.id)",
-    "delete from mandate_v2.permissions where user_id = $1",
     "delete from mandate_v2.instances i where i.user_id = $1 and not exists (select 1 from mandate_v2.executions e where e.instance_id = i.id)",
     "delete from mandate_v2.drafts d where d.user_id = $1 and not exists (select 1 from mandate_v2.instances i where i.draft_id = d.id)",
   ];

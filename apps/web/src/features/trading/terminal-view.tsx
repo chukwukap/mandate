@@ -578,8 +578,8 @@ export function TerminalView({ model }: { model: WorkspaceModel }) {
             <ArrowUpRight size={15} />
           </button>
           <p className="ticket-footnote">
-            You sign a strategy, arm it, and the worker executes it against your spending
-            permission. Funds move at that point and not before.
+            You sign a strategy, arm it, and the worker buys from your wallet when its rule fires.
+            Funds move at that point and not before.
           </p>
         </section>
       </div>

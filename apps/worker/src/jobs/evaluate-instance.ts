@@ -4,7 +4,7 @@ import { classify, jobResult, RETRY, record, rethrowFatal } from "./outcomes.js"
 import type { EvaluateInstancePayload, JobDependencies, JobResult } from "./types.js";
 
 /**
- * Order statuses that still own the single spender key or an operator's attention. A new
+ * Order statuses that still hold the signing slot or an operator's attention. A new
  * intent must not join them: the worker executes one order at a time, and admitting a
  * second reserves budget for a trade that cannot start until the first settles.
  */

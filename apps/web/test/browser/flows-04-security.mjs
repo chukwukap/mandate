@@ -299,7 +299,7 @@ try {
   // ---- E. Another tenant: sees nothing of mine, I see nothing of theirs ------------------------
   const ctx2 = await b.newContext({ viewport: { width: 1280, height: 1000 } });
   const q = await ctx2.newPage();
-  const walletB = await login(q, { key: OTHER_KEY });
+  const walletB = await login(q, { key: OTHER_KEY, fund: false });
   await L.check(
     "E1 tenant B signs in as its own address",
     walletB.address.toLowerCase() === other.address.toLowerCase(),
@@ -308,7 +308,7 @@ try {
   const listB = await api("/v1/instances?limit=50", { token: tokenB, origin: ORIGIN });
   const ownedByA = new Set(
     sql(
-      `select i.id from mandate_v2.instances i join mandate_v2.drafts d on d.id=i.draft_id where d.account='${me.address.toLowerCase()}'`,
+      `select i.id from mandate_v2.instances i join mandate_v2.drafts d on d.id=i.draft_id where d.account='${wallet.account}'`,
     )
       .split("\n")
       .filter(Boolean),

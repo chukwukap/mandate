@@ -350,7 +350,7 @@ try {
     "C2 footer names the wallet, the chain and the reading time",
     /Last read \d/.test(await text(p.locator(".table-footer"))) &&
       /Base/.test(await text(p.locator(".table-footer"))) &&
-      new RegExp(wallet.address.slice(0, 6), "i").test(await text(p.locator(".table-footer"))),
+      new RegExp(wallet.account.slice(0, 6), "i").test(await text(p.locator(".table-footer"))),
   );
   await L.check(
     "C3 the notice is the API's, verbatim",
@@ -359,7 +359,7 @@ try {
   );
   // Mint 1.5 NVDAc (8 decimals) to the test wallet — the mock's mint is open on the fork.
   execSync(
-    `cast send ${NVDA} 'mint(address,uint256)' ${wallet.address} 150000000 --rpc-url http://127.0.0.1:8545 --private-key ${TEST_KEY}`,
+    `cast send ${NVDA} 'mint(address,uint256)' ${wallet.account} 150000000 --rpc-url http://127.0.0.1:8545 --private-key ${TEST_KEY}`,
     { stdio: "ignore" },
   );
   await p.locator(".panel-heading button", { hasText: /Refresh/ }).click();

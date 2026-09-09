@@ -2,8 +2,8 @@
  * Transactional units of work.
  *
  * `withTransaction` and `withTenant` are the composition points: they own isolation and bounded
- * retry so a repository method does not have to. `units.ts` holds the two writes whose halves
- * must never be separated.
+ * retry so a repository method does not have to. `units.ts` holds the write whose halves must
+ * never be separated: a journaled leg and the order state that depends on it.
  */
 
 export {
@@ -34,15 +34,11 @@ export type {
   ExecutionStatus,
   InstanceMode,
   InstanceStatus,
-  PermissionGrant,
-  PermissionStatus,
   TransactionLeg,
 } from "./units.js";
 export {
   NonceReused,
   recordExecutionLeg,
-  recordPermissionGrant,
   UNIT_OPTIONS,
   writeExecutionLeg,
-  writePermissionGrant,
 } from "./units.js";

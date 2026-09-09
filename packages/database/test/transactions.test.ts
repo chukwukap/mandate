@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { Problem } from "@mandate/contracts";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import type { Database, Transaction } from "../src/client.js";
 import * as schema from "../src/schema/index.js";
@@ -11,14 +11,12 @@ import {
   isUniqueViolation,
   NonceReused,
   recordExecutionLeg,
-  recordPermissionGrant,
   sqlState,
   UNIT_OPTIONS,
   WriteConflict,
   withTenant,
   withTransaction,
   writeExecutionLeg,
-  writePermissionGrant,
 } from "../src/transactions/index.js";
 
 /**
@@ -274,25 +272,10 @@ const alice = "00000000-0000-4000-8000-000000000001";
 const bob = "00000000-0000-4000-8000-000000000002";
 const draftId = "00000000-0000-4000-8000-000000000010";
 const instanceId = "00000000-0000-4000-8000-000000000011";
-const permissionId = "00000000-0000-4000-8000-000000000012";
 const executionId = "00000000-0000-4000-8000-000000000013";
 
 const client = new PGlite();
 let db: Database;
-
-async function payload() {
-  return {
-    account: "0x1111111111111111111111111111111111111111",
-    spender: "0x2222222222222222222222222222222222222222",
-    token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    allowance: "100000000",
-    period: 86400,
-    start: 0,
-    end: 4102444800,
-    salt: "1",
-    extraData: "0x",
-  };
-}
 
 beforeAll(async () => {
   const dir = new URL("../migrations/", import.meta.url);
@@ -331,20 +314,12 @@ beforeAll(async () => {
       draftId,
       name: "Demo",
       signature: "0xsig",
+      mode: "auto",
+      status: "armed",
       runtime: {} as never,
       createdAt: now,
       updatedAt: now,
       nextTickAt: now,
-    });
-    await tx.insert(schema.permissions).values({
-      id: permissionId,
-      userId: alice,
-      instanceId,
-      token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-      payload: (await payload()) as never,
-      hash: "0xhash-1",
-      createdAt: now,
-      updatedAt: now,
     });
     await tx.insert(schema.executions).values({
       id: executionId,
@@ -372,14 +347,6 @@ afterAll(async () => {
  */
 async function asAlice() {
   await client.query("select set_config('mandate.user_id', $1, false)", [alice]);
-}
-async function permissionRow() {
-  await asAlice();
-  const rows = await client.query<{ status: string; signature: string | null }>(
-    "select status, signature from mandate_v2.permissions where id=$1",
-    [permissionId],
-  );
-  return rows.rows[0];
 }
 async function instanceRow() {
   await asAlice();
@@ -422,71 +389,23 @@ describe("units of work against PostgreSQL", () => {
     expect(rows).toHaveLength(0);
   });
 
-  test("a permission grant and its instance land in one commit", async () => {
-    const now = new Date();
-    const { permission, instance } = await recordPermissionGrant(db, {
-      userId: alice,
-      instanceId,
-      permissionId,
-      expectedHash: "0xhash-1",
-      status: "active",
-      signature: "0xdeadbeef",
-      instance: { mode: "auto", status: "armed" },
-      now,
-    });
-    expect(permission.status).toBe("active");
-    expect(instance.mode).toBe("auto");
-    expect(await permissionRow()).toEqual({ status: "active", signature: "0xdeadbeef" });
-    expect(await instanceRow()).toEqual({ mode: "auto", status: "armed" });
-  });
-
-  test("a stale permission hash writes neither row", async () => {
-    await expect(
-      recordPermissionGrant(db, {
-        userId: alice,
-        instanceId,
-        permissionId,
-        expectedHash: "0xhash-superseded",
-        status: "revoked",
-        instance: { mode: "manual", status: "paused" },
-        now: new Date(),
-      }),
-    ).rejects.toMatchObject({ status: 409, code: "permission-state" });
-    expect(await permissionRow()).toEqual({ status: "active", signature: "0xdeadbeef" });
-    expect(await instanceRow()).toEqual({ mode: "auto", status: "armed" });
-  });
-
-  test("another user cannot reach the same permission at all", async () => {
-    await expect(
-      recordPermissionGrant(db, {
-        userId: bob,
-        instanceId,
-        permissionId,
-        expectedHash: "0xhash-1",
-        status: "revoked",
-        now: new Date(),
-      }),
-    ).rejects.toMatchObject({ status: 404 });
-    expect(await permissionRow()).toEqual({ status: "active", signature: "0xdeadbeef" });
-  });
-
   test("a journalled leg and its execution update land in one commit", async () => {
     const result = await recordExecutionLeg(db, {
       userId: alice,
       executionId,
       id: "00000000-0000-4000-8000-000000000020",
-      leg: "fund",
+      leg: "approve",
       signer: "0x3333333333333333333333333333333333333333",
       nonce: 7,
       rawTransaction: "0x02f8",
-      hash: "0xfund",
-      execution: { status: "pending", stage: "fund", txHash: "0xfund" },
+      hash: "0xapprove",
+      execution: { status: "pending", stage: "approve", txHash: "0xapprove" },
       now: new Date(),
     });
     expect(result.replayed).toBe(false);
     expect(result.execution.status).toBe("pending");
-    expect(result.execution.txHash).toBe("0xfund");
-    expect(await journal()).toEqual([{ leg: "fund", hash: "0xfund", nonce: 7 }]);
+    expect(result.execution.txHash).toBe("0xapprove");
+    expect(await journal()).toEqual([{ leg: "approve", hash: "0xapprove", nonce: 7 }]);
   });
 
   test("re-running the identical leg is idempotent rather than a second broadcast", async () => {
@@ -494,12 +413,12 @@ describe("units of work against PostgreSQL", () => {
       userId: alice,
       executionId,
       id: "00000000-0000-4000-8000-000000000021",
-      leg: "fund",
+      leg: "approve",
       signer: "0x3333333333333333333333333333333333333333",
       nonce: 7,
       rawTransaction: "0x02f8",
-      hash: "0xfund",
-      execution: { status: "pending", stage: "fund" },
+      hash: "0xapprove",
+      execution: { status: "pending", stage: "approve" },
       now: new Date(),
     });
     expect(result.replayed).toBe(true);
@@ -513,15 +432,15 @@ describe("units of work against PostgreSQL", () => {
         userId: alice,
         executionId,
         id: "00000000-0000-4000-8000-000000000022",
-        leg: "fund",
+        leg: "approve",
         signer: "0x3333333333333333333333333333333333333333",
         nonce: 8,
         rawTransaction: "0x02f9",
-        hash: "0xfund-replacement",
+        hash: "0xapprove-replacement",
         execution: { status: "pending" },
         now: new Date(),
       }),
-    ).rejects.toThrow("already has a different fund transaction");
+    ).rejects.toThrow("already has a different approve transaction");
     expect(await journal()).toHaveLength(1);
   });
 
@@ -532,18 +451,18 @@ describe("units of work against PostgreSQL", () => {
         userId: alice,
         executionId,
         id: "00000000-0000-4000-8000-000000000023",
-        leg: "approve",
+        leg: "swap",
         signer: "0x3333333333333333333333333333333333333333",
         nonce: 7,
         rawTransaction: "0x02fa",
-        hash: "0xapprove",
-        execution: { status: "pending", stage: "approve" },
+        hash: "0xswap",
+        execution: { status: "pending", stage: "swap" },
         now: new Date(),
       }),
     ).rejects.toBeInstanceOf(NonceReused);
     expect(await journal()).toEqual(before);
     // The execution never advanced to the stage whose transaction could not be journalled.
-    expect(await executionStage()).toBe("fund");
+    expect(await executionStage()).toBe("approve");
   });
 
   test("a failure after the journal insert rolls the insert back with it", async () => {
@@ -570,31 +489,28 @@ describe("units of work against PostgreSQL", () => {
 
   test("units compose inside a caller's transaction as one atom", async () => {
     const now = new Date();
+    // The swap settling and the strategy going quiet are one decision: a user who flips to
+    // manual while the last leg lands must see both or neither.
     await withTenant(db, alice, UNIT_OPTIONS, async (tx: Transaction) => {
-      await writePermissionGrant(tx, {
-        userId: alice,
-        instanceId,
-        permissionId,
-        expectedHash: "0xhash-1",
-        status: "revoked",
-        instance: { mode: "manual", status: "paused" },
-        now,
-      });
       await writeExecutionLeg(tx, {
         userId: alice,
         executionId,
         id: "00000000-0000-4000-8000-000000000025",
-        leg: "refund",
+        leg: "swap",
         signer: "0x3333333333333333333333333333333333333333",
         nonce: 11,
         rawTransaction: "0x02fc",
-        hash: "0xrefund",
-        execution: { status: "refunded", stage: "done" },
+        hash: "0xswap",
+        execution: { status: "confirmed", stage: "done" },
         now,
       });
+      await tx
+        .update(schema.instances)
+        .set({ mode: "manual", status: "paused", updatedAt: now })
+        .where(eq(schema.instances.id, instanceId));
     });
-    expect(await permissionRow()).toEqual({ status: "revoked", signature: "0xdeadbeef" });
     expect(await instanceRow()).toEqual({ mode: "manual", status: "paused" });
-    expect((await journal()).map((row) => row.leg)).toEqual(["fund", "refund"]);
+    expect(await executionStage()).toBe("done");
+    expect((await journal()).map((row) => row.leg)).toEqual(["approve", "swap"]);
   });
 });

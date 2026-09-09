@@ -1,7 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { Hex, PermissionPayload } from "../../../packages/contracts/src/index.js";
 import type { DraftRow, InstanceRow } from "../../../packages/database/src/index.js";
-import { permissionHash } from "../../../packages/evm/src/permissions/index.js";
 import {
   type Caps,
   capsSchema,
@@ -20,7 +18,7 @@ import { asTenant, type Postgres } from "./harness.js";
  * Drafts and instances are created through `Repository`, not through raw INSERTs: consuming a
  * draft under `UPDATE ... WHERE consumed_at IS NULL` is the production claim, and a test that
  * inserted an instance directly would be starting from a state the API cannot actually produce.
- * Permissions, executions and journal rows are written as raw SQL, because their production
+ * Executions and journal rows are written as raw SQL, because their production
  * writers are the routes and the worker — the very things under test in the other two suites.
  *
  * Every amount here is an integer of minor units or a decimal string. There is no float anywhere
@@ -79,7 +77,7 @@ export const BUY_PLAN: Plan = planSchema.parse({
   ],
 });
 
-/** The same plan with a sell leg, which no USDC spend permission can authorise. */
+/** The same plan with a sell leg, which the worker never executes automatically. */
 export const SELL_PLAN: Plan = planSchema.parse({
   params: [],
   nodes: [
@@ -227,72 +225,6 @@ export async function forceInstance(
       ],
     ),
   );
-}
-
-export type PermissionSeed = {
-  readonly id: string;
-  readonly hash: Hex;
-  readonly payload: PermissionPayload;
-};
-
-/**
- * A spend permission for a seeded instance.
- *
- * `hash` is computed with the production `permissionHash`, never invented: the funding gate
- * recomputes it from the payload and refuses on a mismatch, so a fixture that made one up would
- * make every permission look tampered with.
- */
-export async function seedPermission(
-  pg: Postgres,
-  userId: string,
-  seed: InstanceSeed,
-  options: {
-    status?: "prepared" | "signed" | "active" | "revoked" | "expired";
-    spender?: string;
-    allowance?: string;
-    start?: number;
-    end?: number;
-    signature?: string | null;
-  } = {},
-): Promise<PermissionSeed> {
-  const caps = seed.envelope.caps;
-  const status = options.status ?? "active";
-  const payload: PermissionPayload = {
-    account: seed.account as Hex,
-    spender: (options.spender ?? `0x${"22".repeat(20)}`) as Hex,
-    token: USDC,
-    allowance: options.allowance ?? units(caps.per_period, QUOTE_DECIMALS).toString(),
-    period: caps.period_secs,
-    start: options.start ?? Math.floor(Date.now() / 1000) - 60,
-    end: options.end ?? Math.floor(Date.parse(caps.expires_at) / 1000),
-    salt: BigInt(`0x${randomBytes(32).toString("hex")}`).toString(),
-    extraData: "0x",
-  };
-  const id = randomUUID();
-  const hash = permissionHash(payload);
-  const signature =
-    options.signature === null
-      ? null
-      : (options.signature ??
-        (["signed", "active"].includes(status) ? `0x${"ab".repeat(65)}` : null));
-  await asTenant(pg, userId, (query) =>
-    query(
-      `insert into mandate_v2.permissions
-         (id, user_id, instance_id, token, payload, hash, status, signature, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())`,
-      [
-        id,
-        userId,
-        seed.instance.id,
-        USDC.toLowerCase(),
-        JSON.stringify(payload),
-        hash,
-        status,
-        signature,
-      ],
-    ),
-  );
-  return { id, hash, payload };
 }
 
 export type ExecutionSeed = { readonly id: string; readonly intent: Intent };

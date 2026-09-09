@@ -140,9 +140,10 @@ const DEFAULTS = { ttlMs: 60_000, maxEntries: 500, maxConcurrent: 6, deadlineMs:
  * logged from the failure either: viem transport errors carry the request URL, which for a
  * paid RPC endpoint is a credential.
  *
- * The cache is keyed by hash *and* target because the same transaction is asked about with
- * different expectations (the fund leg's USDC to the spender, the swap leg's shares to the
- * user). Caching by hash alone would answer one question with the other's number.
+ * The cache is keyed by hash *and* target because the same transaction can be asked about with
+ * different expectations (the swap leg's shares to the user, or the USDC that left the same
+ * wallet in the same receipt). Caching by hash alone would answer one question with the
+ * other's number.
  */
 export class BaseReceiptReader implements ReceiptReader {
   private readonly cache = new Map<string, { at: number; value: Settlement }>();

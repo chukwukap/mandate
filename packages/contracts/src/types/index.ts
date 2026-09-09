@@ -32,13 +32,11 @@ export {
   isExecutionStatus,
   isInstanceStatus,
   isMode,
-  isPermissionStatus,
   isSide,
   isTransactionLeg,
   isTransactionStatus,
   isWalletKind,
   MODES,
-  PERMISSION_STATUSES,
   SIDES,
   TRANSACTION_LEGS,
   TRANSACTION_STATUSES,
@@ -81,21 +79,6 @@ export {
   WEI_DECIMALS,
 } from "./money.js";
 export type {
-  PermissionCheck,
-  PermissionDisposition,
-  PermissionPayload,
-  PermissionWindow,
-  TerminalPermissionStatus,
-} from "./permissions.js";
-export {
-  isSpendablePermissionStatus,
-  MAX_ALLOWANCE,
-  MAX_UINT48,
-  permissionDisposition,
-  permissionWindow,
-  TERMINAL_PERMISSION_STATUSES,
-} from "./permissions.js";
-export type {
   Address,
   AssetSymbol,
   Bps,
@@ -112,7 +95,6 @@ export type {
   Mode,
   NullableTimestamp,
   NullableTimestampInput,
-  PermissionStatus,
   QuoteAmount,
   RawUnits,
   Side,

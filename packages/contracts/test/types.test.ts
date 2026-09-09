@@ -15,7 +15,6 @@ import type {
   HexAddress,
   InstanceStatus,
   NullableTimestamp,
-  PermissionStatus,
   RawUnits,
   Timestamp,
   TimestampInput,
@@ -36,23 +35,16 @@ import {
   isEvaluationOutcome,
   isExecutionStatus,
   isSettledExecutionStatus,
-  isSpendablePermissionStatus,
   isTerminalInstanceStatus,
   isTransactionLeg,
   isUnwindLeg,
-  MAX_ALLOWANCE,
-  MAX_UINT48,
   MODES,
   NO_ONCHAIN_SPEND_STATUSES,
   outputDecimals,
-  PERMISSION_STATUSES,
-  permissionDisposition,
-  permissionWindow,
   QUOTE_DECIMALS,
   SETTLED_EXECUTION_STATUSES,
   SIDES,
   TERMINAL_INSTANCE_STATUSES,
-  TERMINAL_PERMISSION_STATUSES,
   TRANSACTION_LEGS,
   TRANSACTION_STATUSES,
   UNWIND_LEGS,
@@ -98,14 +90,27 @@ test("the derived member lists match the database CHECK constraints", () => {
     checkMembers(schema, "execution_status_valid"),
   );
   expect([...INSTANCE_STATUSES] as string[]).toEqual(checkMembers(schema, "instance_status_valid"));
-  expect([...PERMISSION_STATUSES] as string[]).toEqual(
-    checkMembers(schema, "permission_status_valid"),
-  );
   expect([...TRANSACTION_STATUSES] as string[]).toEqual(
     checkMembers(schema, "transaction_status_valid"),
   );
-  expect([...TRANSACTION_LEGS] as string[]).toEqual(checkMembers(schema, "transaction_leg_valid"));
   expect([...MODES] as string[]).toEqual(checkMembers(schema, "instance_mode_valid"));
+});
+
+/**
+ * The one vocabulary the CHECK is deliberately wider than.
+ *
+ * Journals written under the retired spend-permission design carry fund, reset and refund
+ * legs, and migration 0006 kept `transaction_leg_valid` wide so those rows stay readable. The
+ * code's vocabulary is the two legs a user's own wallet signs today, so the relationship is
+ * containment: everything the code can write, the database accepts — and the surplus is
+ * exactly the retired set, so a new leg cannot be added to the schema and forgotten here.
+ */
+test("the journal CHECK accepts every current leg and only the retired ones besides", () => {
+  const schema = read("packages/database/src/schema/index.ts");
+  const accepted = checkMembers(schema, "transaction_leg_valid");
+  for (const leg of TRANSACTION_LEGS) expect(accepted).toContain(leg);
+  expect(accepted.filter((leg) => !isTransactionLeg(leg))).toEqual(["fund", "reset", "refund"]);
+  expect([...TRANSACTION_LEGS]).toEqual(["approve", "swap"]);
 });
 
 test("the member lists are the schema's own options, copied and frozen", () => {
@@ -169,8 +174,8 @@ test("execution dispositions partition every status", () => {
 });
 
 test("a manual signal is never settled and never worked", () => {
-  // The lifecycle has no guard of its own against a signal: handed one it would fund, approve
-  // and swap a trade the user chose to place by hand. Both of these must stay false.
+  // The lifecycle has no guard of its own against a signal: handed one it would approve and
+  // swap a trade the user chose to place by hand. Both of these must stay false.
   expect(isSettledExecutionStatus("signal")).toBe(false);
   expect(executionDisposition("signal")).toBe("signalled");
 });
@@ -179,54 +184,24 @@ test("the no-spend promise is only made where it is true", () => {
   expect([...NO_ONCHAIN_SPEND_STATUSES]).toEqual(["signal", "admitted", "cancelled"]);
   for (const status of NO_ONCHAIN_SPEND_STATUSES)
     expect(guaranteesNoOnchainSpend(status)).toBe(true);
-  // `pending` means a transaction is signed and journaled and may still land; `reverted` can
-  // follow a funding leg that succeeded. Claiming "nothing was spent" for either would be a
-  // lie told to a user about their own money.
+  // `pending` means a transaction is signed and journaled and may still land, and `reverted`
+  // is a receipt that burned the wallet's gas even though no token moved. Claiming "nothing
+  // was spent" for either would be a lie told to a user about their own money.
   expect(guaranteesNoOnchainSpend("pending")).toBe(false);
   expect(guaranteesNoOnchainSpend("reverted")).toBe(false);
   expect(guaranteesNoOnchainSpend("confirmed")).toBe(false);
   expect(guaranteesNoOnchainSpend("recovery_required")).toBe(false);
 });
 
-test("forward and unwind legs partition the journal's leg vocabulary", () => {
+test("the forward legs are the whole vocabulary, and nothing unwinds", () => {
   expect([...FORWARD_LEGS, ...UNWIND_LEGS].sort()).toEqual([...TRANSACTION_LEGS].sort());
   for (const leg of FORWARD_LEGS) expect(isUnwindLeg(leg)).toBe(false);
-  for (const leg of UNWIND_LEGS) expect(isUnwindLeg(leg)).toBe(true);
-  // Order is load-bearing: funding must precede the approval it authorizes, which must precede
-  // the swap that spends it.
-  expect([...FORWARD_LEGS]).toEqual(["fund", "approve", "swap"]);
-});
-
-test("permission dispositions leave exactly one spendable status", () => {
-  const spendable = PERMISSION_STATUSES.filter((s) => permissionDisposition(s) === "spendable");
-  expect(spendable).toEqual(["active"]);
-  for (const status of PERMISSION_STATUSES)
-    expect(isSpendablePermissionStatus(status)).toBe(status === "active");
-  expect([...TERMINAL_PERMISSION_STATUSES]).toEqual(["revoked", "expired"]);
-  for (const status of PERMISSION_STATUSES)
-    expect(permissionDisposition(status) === "terminal").toBe(
-      (TERMINAL_PERMISSION_STATUSES as readonly string[]).includes(status),
-    );
-});
-
-test("the permission window is start-inclusive and end-exclusive", () => {
-  const payload = { start: 1_000, end: 2_000 };
-  expect(permissionWindow(payload, 999)).toBe("not_started");
-  expect(permissionWindow(payload, 1_000)).toBe("open");
-  expect(permissionWindow(payload, 1_999)).toBe("open");
-  // The repository treats `end * 1000 <= now` as expired; the boundary must agree with it, or
-  // a permission the API still considers live fails at the manager contract after signing.
-  expect(permissionWindow(payload, 2_000)).toBe("expired");
-  // Seconds, not milliseconds. Passing a millisecond clock reports every live permission as
-  // expired, which is the failure this argument name exists to prevent.
-  expect(permissionWindow(payload, 1_500_000)).toBe("expired");
-});
-
-test("the onchain encoding bounds are the ones SpendPermissionManager packs", () => {
-  expect(MAX_ALLOWANCE).toBe(2n ** 160n - 1n);
-  expect(MAX_UINT48).toBe(281_474_976_710_655);
-  // The schema's own ceiling for a Unix timestamp comes from the same uint48 fact.
-  expect(MAX_UINT48).toBe(2 ** 48 - 1);
+  // Order is load-bearing: the approval must precede the swap that spends it.
+  expect([...FORWARD_LEGS]).toEqual(["approve", "swap"]);
+  // There is no unwind path because nothing leaves the user's wallet until the swap moves it
+  // into the pool in the same transaction that delivers the shares. An unwind leg appearing
+  // here would mean money is transiting somewhere it can be stranded again.
+  expect([...UNWIND_LEGS]).toEqual([]);
 });
 
 test("order scale follows the side, not the token that happens to be first", () => {
@@ -324,13 +299,9 @@ test("the closed vocabularies are usable as exhaustive switch subjects", () => {
   const seen: string[] = [];
   for (const status of INSTANCE_STATUSES) seen.push(instanceDisposition(status));
   for (const status of EXECUTION_STATUSES) seen.push(executionDisposition(status));
-  for (const status of PERMISSION_STATUSES) seen.push(permissionDisposition(status));
   expect(seen).not.toContain(undefined);
-  expect(seen).toHaveLength(
-    INSTANCE_STATUSES.length + EXECUTION_STATUSES.length + PERMISSION_STATUSES.length,
-  );
+  expect(seen).toHaveLength(INSTANCE_STATUSES.length + EXECUTION_STATUSES.length);
   const legs: TransactionLeg[] = [...TRANSACTION_LEGS];
-  const statuses: PermissionStatus[] = [...PERMISSION_STATUSES];
   const instances: InstanceStatus[] = [...INSTANCE_STATUSES];
-  expect(legs.length + statuses.length + instances.length).toBe(14);
+  expect(legs.length + instances.length).toBe(6);
 });

@@ -122,7 +122,11 @@ export type MigrationPlan = {
 const MIGRATABLE_STATUS = "active";
 
 export async function planMigration(
-  deps: { readonly legacy: LegacySource; readonly target: TargetDirectory; readonly links: LinkTable },
+  deps: {
+    readonly legacy: LegacySource;
+    readonly target: TargetDirectory;
+    readonly links: LinkTable;
+  },
   options: PlanOptions,
 ): Promise<MigrationPlan> {
   const issues: Issue[] = [];

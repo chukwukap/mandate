@@ -95,7 +95,7 @@ const OUTCOMES: Record<string, Idle> = {
     tone: "attention",
   },
   // The honest catch-all. This one outcome covers a closed market, an unreachable price feed, a
-  // permission that is not active, and a pool too far from its reference — the API does not say
+  // wallet that is not delegated, and a pool too far from its reference — the API does not say
   // which, so neither do we. Naming the most common cause first is more useful than a shrug.
   "observation-or-authority-unavailable": {
     headline: "Waiting for the market to open",
@@ -141,16 +141,16 @@ export function whyIdle(
   /**
    * Asked for automatic, still running as signals.
    *
-   * `mode` only becomes "auto" once the spending permission is activated; a strategy whose
-   * permission was never approved arms happily and records signals instead. This has to be
-   * checked BEFORE the admitted branch below, because a recorded signal counts as an admitted
-   * order — so the page would otherwise show a green "Bought on the last check" to someone who
-   * has bought nothing at all.
+   * `mode` only becomes "auto" once the user's wallet is delegated to the app's signer; until
+   * then the strategy arms happily and records signals instead. This has to be checked BEFORE
+   * the admitted branch below, because a recorded signal counts as an admitted order — so the
+   * page would otherwise show a green "Bought on the last check" to someone who has bought
+   * nothing at all.
    */
   if (requestedMode === "auto" && mode && mode !== "auto")
     return {
-      headline: "Approval needed before it can buy",
-      action: "This is recording signals only. Approve spending to place real orders.",
+      headline: "Automatic buying is off",
+      action: "Turn it on to let this strategy buy from your wallet.",
       tone: "attention",
     };
   if (!latest)

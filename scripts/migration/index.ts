@@ -13,15 +13,22 @@
  * back out again (`rollback`).
  */
 
-export { applyMigration, targetDirectory } from "./apply.js";
 export type { ApplyOptions, ApplyResult } from "./apply.js";
+export { applyMigration, targetDirectory } from "./apply.js";
 export { BASE_CAIP2, resolveAsset, translateFeed } from "./catalogue.js";
-export { openSession, sameDatabase } from "./client.js";
 export type { Session } from "./client.js";
-export { LINK_FILE_VERSION, loadLinkFile, parseLinkFile, resolveAccount, resolveIdentity } from "./identity.js";
+export { openSession, sameDatabase } from "./client.js";
 export type { IdentityLink, LinkTable, ResolvedIdentity } from "./identity.js";
-export { collect, issue, note, Refused } from "./issues.js";
+export {
+  LINK_FILE_VERSION,
+  loadLinkFile,
+  parseLinkFile,
+  resolveAccount,
+  resolveIdentity,
+} from "./identity.js";
 export type { Issue, IssueCode, Note, NoteCode, Substitution } from "./issues.js";
+export { collect, issue, note, Refused } from "./issues.js";
+export type { ImportedRow, JournalRun, RunStatus } from "./journal.js";
 export {
   closeRun,
   ensureJournal,
@@ -36,8 +43,6 @@ export {
   recordImports,
   recordRun,
 } from "./journal.js";
-export type { ImportedRow, JournalRun, RunStatus } from "./journal.js";
-export { openLegacySource } from "./legacy.js";
 export type {
   LegacyActivity,
   LegacyPermission,
@@ -45,22 +50,35 @@ export type {
   LegacyUser,
   LegacyWallet,
 } from "./legacy.js";
-export { planMigration, planTotals } from "./plan.js";
+export { openLegacySource } from "./legacy.js";
 export type {
   MigrationPlan,
   PermissionNotice,
-  PlanOptions,
   PlannedDraft,
   PlannedUser,
+  PlanOptions,
   TargetDirectory,
 } from "./plan.js";
+export { planMigration, planTotals } from "./plan.js";
 export { applyReport, planDocument, planReport, rollbackReport } from "./report.js";
-export { rollbackMigration } from "./rollback.js";
 export type { Retention, RollbackOptions, RollbackResult } from "./rollback.js";
-export { asTenant, makeSessionReadOnly, one, widenStatementTimeout, withTransaction } from "./sql.js";
+export { rollbackMigration } from "./rollback.js";
 export type { SqlClient } from "./sql.js";
+export {
+  asTenant,
+  makeSessionReadOnly,
+  one,
+  widenStatementTimeout,
+  withTransaction,
+} from "./sql.js";
+export type {
+  DraftRow,
+  LegacyEnvelope,
+  LegacyStrategy,
+  TranslatedDraft,
+  TranslateOptions,
+} from "./translate.js";
 export { translateStrategy } from "./translate.js";
-export type { DraftRow, LegacyEnvelope, LegacyStrategy, TranslateOptions, TranslatedDraft } from "./translate.js";
 export {
   address,
   deterministicUuid,

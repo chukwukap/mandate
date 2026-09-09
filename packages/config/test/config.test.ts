@@ -71,7 +71,7 @@ test("a blank variable behaves as absent, not as an empty value", () => {
       LOG_LEVEL: "",
       API_DOCS: "",
       DEV_COUNTRY: "",
-      SPENDER_ADDRESS: "",
+      PRIVY_KEY_QUORUM_ID: "",
       ELIGIBLE_COUNTRIES: "",
       TRUSTED_PROXY_IPS: "",
       ANTHROPIC_API_KEY: "",
@@ -82,11 +82,12 @@ test("a blank variable behaves as absent, not as an empty value", () => {
   expect(config.port).toBe(8080);
   expect(config.logLevel).toBe("info");
   expect(config.docs).toBe(false);
-  // DEV_COUNTRY and SPENDER_ADDRESS are regex-validated. `""` matches neither pattern, so if the
-  // normalisation were removed these two would fail the parse rather than fall back to absent —
-  // which is precisely how a blank in a deployment template takes an API down.
+  // DEV_COUNTRY is regex-validated and PRIVY_KEY_QUORUM_ID has a minimum length. `""` satisfies
+  // neither, so if the normalisation were removed these two would fail the parse rather than
+  // fall back to absent — which is precisely how a blank in a deployment template takes an API
+  // down.
   expect(config.devCountry).toBeUndefined();
-  expect(config.spenderAddress).toBeUndefined();
+  expect(config.privySignerId).toBeUndefined();
   expect(config.ai.anthropicKey).toBeUndefined();
   // The model is absent here and defaulted per provider inside @mandate/strategy, so a key is
   // the only thing that decides whether text authoring runs.
@@ -279,13 +280,19 @@ test("API_DOCS is a strict 0/1 flag, not a truthiness test", () => {
   expect(loadConfig(env()).docs).toBe(false);
 });
 
-test("SPENDER_ADDRESS is a checksum-agnostic 20-byte address or absent", () => {
-  for (const value of [`0x${"1".repeat(39)}`, `0x${"1".repeat(41)}`, "1".repeat(40), "0xnothex"])
-    expect(rejected(env({ SPENDER_ADDRESS: value }))).toEqual(["SPENDER_ADDRESS"]);
-  // Mixed case passes: EIP-55 checksums are exactly that, and the value is compared downstream
-  // after lowercasing rather than as typed.
-  const mixed = `0x${"aB".repeat(20)}`;
-  expect(loadConfig(env({ SPENDER_ADDRESS: mixed })).spenderAddress).toBe(mixed);
+/**
+ * The signer users delegate their embedded wallet to. It is the only thing that turns automatic
+ * buying on: without it every strategy is signals only, and that is a legitimate deployment
+ * rather than a broken one — so it is optional, and nothing about its shape is second-guessed
+ * here. Privy owns the identifier format, and a value Privy rejects fails at the delegation
+ * check, where the error names the actual problem.
+ */
+test("PRIVY_KEY_QUORUM_ID is optional, and absent means signals only", () => {
+  expect(loadConfig(env()).privySignerId).toBeUndefined();
+  expect(loadConfig(env({ PRIVY_KEY_QUORUM_ID: "signer_abc123" })).privySignerId).toBe("signer_abc123");
+  // A blank is absent, not a signer named "": that is the min(1) doing its job after the
+  // normalisation has already turned `""` into undefined.
+  expect(loadConfig(env({ PRIVY_KEY_QUORUM_ID: "" })).privySignerId).toBeUndefined();
 });
 
 test("the loaded object is the flat, derived surface the rest of the API reads", () => {
@@ -317,7 +324,7 @@ test("the loaded object is the flat, derived surface the rest of the API reads",
       googleModel: undefined,
       googleBaseUrl: undefined,
     },
-    spenderAddress: undefined,
+    privySignerId: undefined,
     privyAppId: "app-id",
     privyAppSecret: "privy-secret",
     eligibleCountries: [],

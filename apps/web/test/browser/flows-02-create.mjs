@@ -395,19 +395,19 @@ try {
   );
   await closeBuilder();
 
-  // ---- J. Automatic mode: signs, then the EOA is refused at approval with a remedy ------------
+  // ---- J. Automatic mode: signs, and the detail explains the one switch that makes it buy ------
   await openBuilder();
   await dialog()
     .locator(".recipe", { hasText: /\$50 into NVIDIA every week/ })
     .click();
   await p.waitForTimeout(500);
   await dialog()
-    .locator(".segment.big button", { hasText: /Buy it for me/ })
+    .getByRole("button", { name: /^Buy it for me$/ })
     .click();
   await p.waitForTimeout(200);
   await L.check(
-    "auto: consequence line names the approval",
-    /approve a spending limit/i.test(
+    "auto: consequence line says it buys from my wallet, no per-strategy approval",
+    /Buys from your wallet automatically/.test(
       await dialog()
         .locator(".block", { hasText: /When it fires/ })
         .innerText(),
@@ -415,15 +415,18 @@ try {
   );
   await review();
   await L.check(
-    "auto review: second grant is the spending limit",
-    /Approving a spending limit/.test(await dialog().locator(".review-block.grants").innerText()),
+    "auto review: the grant is buying from my wallet",
+    /Buying from your wallet automatically/.test(
+      await dialog().locator(".review-block.grants").innerText(),
+    ),
   );
-  const sigJ = await sign(wallet, /Sign & turn it on/);
+  const sigJ = await sign(wallet, /Sign & turn it on|Sign & watch/);
   const dJ = latestDraft();
+  const delegated = wallet.automation?.delegated === true;
   await L.check(
-    "DB: requested auto, instance still manual until approved",
-    sigJ === 1 && dJ?.mode === "auto" && dJ?.instance_mode === "manual",
-    `draft=${dJ?.mode} instance=${dJ?.instance_mode}`,
+    "DB: requested auto; the instance is auto only if this wallet already delegated",
+    sigJ === 1 && dJ?.mode === "auto" && dJ?.instance_mode === (delegated ? "auto" : "manual"),
+    `draft=${dJ?.mode} instance=${dJ?.instance_mode} delegated=${delegated}`,
   );
   await p
     .locator(".sidebar")
@@ -442,38 +445,26 @@ try {
     .click();
   await p.waitForTimeout(1200);
   const detail = p.locator(".detail-content");
+  const detailText = await detail.innerText().catch(() => "");
   await L.check(
-    "detail opens with the idle explanation",
+    "detail: either automatic buying is on for this wallet, or one button turns it on",
     (await detail.count()) === 1 &&
-      /Approval needed before it can buy|Paused/.test(await detail.innerText()),
+      (delegated
+        ? /Buys automatically from your wallet/.test(detailText)
+        : /Automatic buying is off/.test(detailText) &&
+          (await detail.getByRole("button", { name: /Turn on automatic buying/ }).count()) === 1),
+    detailText.replace(/\s+/g, " ").slice(0, 140),
   );
-  const prepare = p.getByRole("button", { name: /review spending approval/i });
-  if (await prepare.count()) {
-    await prepare.click();
-    await p.waitForTimeout(2500);
-    const blocked = await p
-      .locator(".permission-blocked")
-      .innerText()
-      .catch(() => "");
-    await L.check(
-      "EOA refused with a remedy, not jargon",
-      /can't approve automatic buying/i.test(blocked) && /Coinbase Smart Wallet/.test(blocked),
-      blocked.slice(0, 90),
-    );
-    await L.check("the dead-end button is gone", (await prepare.count()) === 0);
-    await L.shot("J-wallet-unsupported");
-  } else await L.fail("spending approval control", "not found on detail");
   await L.check(
-    "no API errors across the run (text-mode 503 and the EOA 409 are provoked on purpose)",
-    apiProblems.filter(
-      (line) =>
-        !/strategies\/draft .*compiler|permissions\/prepare .*wallet-unsupported/.test(line),
-    ).length === 0,
+    "no smart-wallet or spending-limit jargon anywhere on the detail",
+    !/Coinbase|spending limit|spend permission/i.test(detailText),
+  );
+  await L.shot("J-automatic");
+  await L.check(
+    "no API errors across the run (text-mode 503 is provoked on purpose)",
+    apiProblems.filter((line) => !/strategies\/draft .*compiler/.test(line)).length === 0,
     apiProblems
-      .filter(
-        (line) =>
-          !/strategies\/draft .*compiler|permissions\/prepare .*wallet-unsupported/.test(line),
-      )
+      .filter((line) => !/strategies\/draft .*compiler/.test(line))
       .slice(0, 3)
       .join(" || "),
   );

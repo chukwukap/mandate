@@ -40,7 +40,8 @@ const native = process.env.TEST_DATABASE_URL
 let db: Database;
 let store: WorkerStore;
 let repo: Repository;
-const signer = privateKeyToAccount(`0x${"11".repeat(32)}`);
+/** The user's embedded wallet: it signs the commitment and, in production, every leg. */
+const wallet = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const origin = "http://localhost:3000";
 const observation: Observations = {
   authorize: async () => {},
@@ -126,7 +127,7 @@ async function fixture(mode: "auto" | "manual" = "manual") {
   };
   const rendered = review(plan, envelope);
   const id = randomUUID();
-  const account = signer.address.toLowerCase();
+  const account = wallet.address.toLowerCase();
   const expiresAt = new Date(Date.now() + 1800000);
   const name = "Worker fixture";
   const artifactId = digest({
@@ -161,7 +162,7 @@ async function fixture(mode: "auto" | "manual" = "manual") {
   const instance = await repo.createInstance(
     user.id,
     draft,
-    await signer.signMessage({ message: confirmMessage }),
+    await wallet.signMessage({ message: confirmMessage }),
     name,
     1000,
     new Date(),
@@ -294,23 +295,20 @@ test("leadership loss after signing prevents journal commit and broadcast", asyn
   expect(await store.journal(order.userId, order.id)).toHaveLength(0);
   expect(chain.sent).toHaveLength(0);
 });
-test("restart broadcasts persisted bytes and advances funding, approval, swap once", async () => {
+test("restart broadcasts persisted bytes and advances approval then swap exactly once", async () => {
   const order = await admit();
   const chain = new FakeExecutor();
   const run = async () => new Lifecycle(store, chain, 60000).run(await refresh(order));
   await run();
   expect(chain.sent).toHaveLength(0);
-  expect(chain.prepared).toEqual(["fund"]);
+  expect(chain.prepared).toEqual(["approve"]);
   await run();
   await run();
   expect(chain.sent).toEqual(["0x1234", "0x1234"]);
   expect(chain.prepared).toHaveLength(1);
   await settle(order, chain);
   await run();
-  expect(chain.prepared).toEqual(["fund", "approve"]);
-  await settle(order, chain);
-  await run();
-  expect(chain.prepared).toEqual(["fund", "approve", "swap"]);
+  expect(chain.prepared).toEqual(["approve", "swap"]);
   await settle(order, chain);
   await run();
   expect((await refresh(order)).status).toBe("confirmed");
@@ -318,7 +316,10 @@ test("restart broadcasts persisted bytes and advances funding, approval, swap on
     true,
   );
 });
-test("pause after funding clears allowance then refunds; never pulls again", async () => {
+test("pause after approval cancels the order; nothing is signed to unwind it", async () => {
+  // The USDC never left the user's wallet: a confirmed approval is only a router allowance,
+  // which moves nothing by itself. So withdrawn consent ends the order where it stands, with
+  // no return leg to sign and no worker address holding anything.
   const order = await admit();
   const chain = new FakeExecutor();
   const run = async () => new Lifecycle(store, chain, 60000).run(await refresh(order));
@@ -326,15 +327,12 @@ test("pause after funding clears allowance then refunds; never pulls again", asy
   await settle(order, chain);
   await repo.transition(order.userId, order.instanceId, "pause", new Date());
   await run();
-  expect(chain.prepared).toEqual(["fund", "reset"]);
-  await settle(order, chain);
-  await run();
-  expect(chain.prepared.at(-1)).toBe("refund");
-  await settle(order, chain);
-  await run();
-  expect((await refresh(order)).status).toBe("refunded");
+  expect(chain.prepared).toEqual(["approve"]);
+  const cancelled = await refresh(order);
+  expect(cancelled.status).toBe("cancelled");
+  expect(cancelled.stage).toBe("swap");
 });
-test("failed funding is terminal, and unknown receipt evidence halts for recovery", async () => {
+test("a reverted approval is terminal, and unknown receipt evidence halts for recovery", async () => {
   for (const result of ["reverted", "ambiguous"] as const) {
     const order = await admit();
     const chain = new FakeExecutor();
@@ -345,7 +343,7 @@ test("failed funding is terminal, and unknown receipt evidence halts for recover
     expect((await refresh(order)).status).toBe(
       result === "reverted" ? "reverted" : "recovery_required",
     );
-    expect(chain.prepared).toEqual(["fund"]);
+    expect(chain.prepared).toEqual(["approve"]);
   }
 });
 test("a changed settled receipt blocks the next leg", async () => {
@@ -354,32 +352,30 @@ test("a changed settled receipt blocks the next leg", async () => {
   const lifecycle = new Lifecycle(store, chain, 60000);
   await lifecycle.run(order);
   await settle(order, chain);
-  const [fund] = await store.journal(order.userId, order.id);
-  chain.results.set(required(fund).hash, "pending");
+  const [approve] = await store.journal(order.userId, order.id);
+  chain.results.set(required(approve).hash, "pending");
   await lifecycle.run(await refresh(order));
   expect((await refresh(order)).status).toBe("recovery_required");
-  expect(chain.prepared).toEqual(["fund"]);
+  expect(chain.prepared).toEqual(["approve"]);
 });
-test("unavailable funded swap goes through allowance reset and refund", async () => {
+test("an unavailable swap route after approval cancels without signing anything else", async () => {
+  // Admission checks re-run before each leg, and a swap that cannot be built fails them as a
+  // plain error. That is a cancellation, not recovery: the strategy stays armed and the money
+  // stays with the user, so there is nothing an operator would need to look at.
   const order = await admit();
   const chain = new FakeExecutor();
   const run = async () => new Lifecycle(store, chain, 60000).run(await refresh(order));
   await run();
   await settle(order, chain);
-  await run();
-  await settle(order, chain);
   chain.fail = "swap";
   await run();
-  expect((await refresh(order)).stage).toBe("reset");
-  await run();
-  await settle(order, chain);
-  await run();
-  await settle(order, chain);
-  await run();
-  expect(chain.prepared).toEqual(["fund", "approve", "reset", "refund"]);
-  expect((await refresh(order)).status).toBe("refunded");
+  expect(chain.prepared).toEqual(["approve"]);
+  const cancelled = await refresh(order);
+  expect(cancelled.status).toBe("cancelled");
+  expect(cancelled.stage).toBe("swap");
+  expect((await store.context(order.userId, order.instanceId)).instance.status).toBe("armed");
 });
-test("a kill before funding cancels the intent without signing", async () => {
+test("a kill before approval cancels the intent without signing", async () => {
   const order = await admit();
   const chain = new FakeExecutor();
   await repo.transition(order.userId, order.instanceId, "kill", new Date());
@@ -402,22 +398,27 @@ test("signed journal is immutable and isolated from other owners", async () => {
   const other = await fixture();
   expect(await store.journal(other.instance.userId, order.id)).toHaveLength(0);
 });
-test("configuration separates server identity credentials from worker signing authority", () => {
+test("live execution needs the full Privy signer, and observation needs none of it", () => {
+  // The worker holds no wallet key. What lets it execute is the app's Privy signer — all three
+  // credentials, or nothing — and an observation-only worker must build with none of them.
   const base = { DATABASE_URL: "postgresql://localhost/mandate" };
+  const privy = { PRIVY_APP_ID: "app", PRIVY_APP_SECRET: "secret", PRIVY_AUTHORIZATION_KEY: "q" };
   expect(loadWorkerConfig(base).execute).toBe(false);
-  expect(() => loadWorkerConfig({ ...base, WORKER_EXECUTE: "1" })).toThrow();
+  expect(new WorkerChain(loadWorkerConfig(base)).signer).toBeUndefined();
+  expect(() => loadWorkerConfig({ ...base, WORKER_EXECUTE: "1" })).toThrow("PRIVY");
+  expect(() =>
+    loadWorkerConfig({ ...base, WORKER_EXECUTE: "1", ...privy, PRIVY_AUTHORIZATION_KEY: "" }),
+  ).toThrow("PRIVY");
   expect(() => loadWorkerConfig({ ...base, ELIGIBLE_COUNTRIES: "US" })).toThrow();
-  expect(
-    () =>
-      new WorkerChain(
-        loadWorkerConfig({
-          ...base,
-          WORKER_EXECUTE: "1",
-          WORKER_PRIVATE_KEY: `0x${"11".repeat(32)}`,
-          SPENDER_ADDRESS: `0x${"22".repeat(20)}`,
-        }),
-      ),
-  ).toThrow("does not match");
+  // Credentials present but execution off: the signer is still not built. A process that
+  // only watches should not be able to sign by accident.
+  const watching = loadWorkerConfig({ ...base, ...privy });
+  expect(watching.execute).toBe(false);
+  expect(watching.privy).toBeDefined();
+  expect(new WorkerChain(watching).signer).toBeUndefined();
+  const live = loadWorkerConfig({ ...base, WORKER_EXECUTE: "1", ...privy });
+  expect(live.execute).toBe(true);
+  expect(new WorkerChain(live).signer).toBeDefined();
 });
 test("session follows New York daylight saving time and refuses weekends", () => {
   expect(executionSession(new Date("2026-09-04T14:00:00Z"))).toBe(true);

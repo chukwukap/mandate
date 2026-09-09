@@ -24,7 +24,7 @@ export interface WorkerOptions {
   /**
    * The database handle, for the recovery pass.
    *
-   * Recovery pages every owner to reconstruct what this worker has committed for the spender
+   * Recovery pages every owner to reconstruct what this worker has committed for a wallet
    * key, and it must do that with its own cursor rather than the shared `WorkerStore.owners()`
    * one that the scheduling loop reads — see `eachOwner`.
    */
@@ -82,13 +82,12 @@ export class Worker {
     this.lifecycle = jobs.lifecycle;
     this.scheduler = connector && log ? new Scheduler({ store, connector, log }) : undefined;
     this.recovery =
-      options.db && log && config.execute && config.spender
+      options.db && log && config.execute
         ? new Recovery({
             store,
             db: options.db,
             chain,
             log,
-            spender: config.spender as `0x${string}`,
             receiptTimeoutMs: config.receiptTimeoutMs,
           })
         : undefined;

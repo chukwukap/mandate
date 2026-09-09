@@ -43,6 +43,13 @@
       "when": 1788567396694,
       "tag": "0005_worker_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788968000000,
+      "tag": "0006_privy_wallets",
+      "breakpoints": true
     }
   ]
 }

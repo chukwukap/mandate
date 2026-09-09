@@ -383,10 +383,10 @@ test("caps keep USDC's six decimals, their ordering and onchain allowance capaci
   expect(capsSchema.parse(caps).slippage_bps).toBe(50);
   expect(() => capsSchema.parse({ ...caps, per_order: "21" })).toThrow();
   expect(() => capsSchema.parse({ ...caps, per_order: "0.0000001" })).toThrow();
-  // What actually bounds a cap below SpendPermissionManager's uint160 allowance is
-  // the 40-digit decimal shape, not the explicit uint160 refinement: 1e40 USDC is
-  // 1e46 units against a 2^160 ≈ 1.46e48 ceiling, so the refinement can never fire
-  // while this regex stands. The regex is therefore the load-bearing check.
+  // What actually bounds a cap below a uint160 token amount is the 40-digit decimal
+  // shape, not the explicit uint160 refinement: 1e40 USDC is 1e46 units against a
+  // 2^160 ≈ 1.46e48 ceiling, so the refinement can never fire while this regex
+  // stands. The regex is therefore the load-bearing check.
   expect(() => capsSchema.parse({ ...caps, lifetime: "1".repeat(41) })).toThrow();
   expect(capsSchema.parse({ ...caps, lifetime: "1".repeat(40) }).lifetime).toHaveLength(40);
   expect(units("1".repeat(40), 6) < 2n ** 160n).toBe(true);

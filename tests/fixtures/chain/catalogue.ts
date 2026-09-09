@@ -1,6 +1,11 @@
 import type { Asset } from "../../../packages/contracts/src/index.js";
-import { ASSETS, QUOTER, TICK_SPACINGS } from "../../../packages/evm/src/addresses/index.js";
-import { CHAIN_ID, SPEND_MANAGER, USDC } from "../../../packages/evm/src/permissions/index.js";
+import {
+  ASSETS,
+  CHAIN_ID,
+  QUOTER,
+  TICK_SPACINGS,
+  USDC,
+} from "../../../packages/evm/src/addresses/index.js";
 import {
   SLIPSTREAM_FACTORY,
   SLIPSTREAM_SWAP_ROUTER,
@@ -13,15 +18,7 @@ import {
  * the quoter address or the probe set would keep passing after production changed either one,
  * which is the one thing a fixture must never do.
  */
-export {
-  CHAIN_ID,
-  QUOTER,
-  SLIPSTREAM_FACTORY,
-  SLIPSTREAM_SWAP_ROUTER,
-  SPEND_MANAGER,
-  TICK_SPACINGS,
-  USDC,
-};
+export { CHAIN_ID, QUOTER, SLIPSTREAM_FACTORY, SLIPSTREAM_SWAP_ROUTER, TICK_SPACINGS, USDC };
 
 /** USDC is the quote leg of every B20 pair, and it has six decimals — not eighteen. */
 export const USDC_DECIMALS = 6;

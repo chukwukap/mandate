@@ -44,17 +44,17 @@ export function ThemeControl() {
     const close = (event: PointerEvent) => {
       if (!ref.current?.contains(event.target as Node)) setOpen(false);
     };
-    const escape = (event: KeyboardEvent) => {
+    const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
         ref.current?.querySelector("button")?.focus();
       }
     };
     document.addEventListener("pointerdown", close);
-    document.addEventListener("keydown", escape);
+    document.addEventListener("keydown", handleEscape);
     return () => {
       document.removeEventListener("pointerdown", close);
-      document.removeEventListener("keydown", escape);
+      document.removeEventListener("keydown", handleEscape);
     };
   }, [open]);
   return (
@@ -69,7 +69,7 @@ export function ThemeControl() {
         {resolved === "dark" ? <Moon size={18} /> : <Sun size={18} />}
       </button>
       {open && (
-        <div className="theme-menu" aria-label="Appearance">
+        <div className="theme-menu">
           {choices.map(({ value, label, icon: Icon }) => (
             <button
               type="button"

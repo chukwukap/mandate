@@ -218,7 +218,13 @@ async function buildPlan(flags: Flags): Promise<Built> {
         now: new Date(),
         catalogue: ASSETS,
         slippageBps: integerFlag(flags, "slippage-bps", 50, 1, 500),
-        signingWindowMs: integerFlag(flags, "signing-window", 7 * 24 * 3_600_000, 60_000, 2_592_000_000),
+        signingWindowMs: integerFlag(
+          flags,
+          "signing-window",
+          7 * 24 * 3_600_000,
+          60_000,
+          2_592_000_000,
+        ),
         expiresAt,
         mode,
         source: single(flags, "source") ?? "legacy",
@@ -327,8 +333,7 @@ if (import.meta.main) {
   try {
     process.exitCode = await main();
   } catch (error) {
-    if (error instanceof Problem)
-      process.stderr.write(`${error.title}: ${error.detail}\n`);
+    if (error instanceof Problem) process.stderr.write(`${error.title}: ${error.detail}\n`);
     else process.stderr.write(`${error instanceof Error ? error.message : "Unknown failure"}\n`);
     process.exitCode = 1;
   }

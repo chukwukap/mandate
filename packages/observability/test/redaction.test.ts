@@ -107,7 +107,13 @@ test("a secret is censored at the root and up to three levels below it", () => {
   });
 
   // Every name on the list gets the same treatment, at every one of those depths.
-  for (const name of ["signature", "spenderKey", "databaseUrl", "anthropicKey"]) {
+  for (const name of [
+    "signature",
+    "appSecret",
+    "authorizationKey",
+    "databaseUrl",
+    "anthropicKey",
+  ]) {
     const nested = capture();
     nested.log.info({ a: { b: { [name]: "leaked" } } }, "nested");
     expect(nested.last()).not.toContain("leaked");
@@ -127,8 +133,8 @@ test("a secret is censored at the root and up to three levels below it", () => {
  * today, which is what makes three the chosen depth — but if that changes, or if someone raises
  * the depth, this assertion is the one that has to be updated, and that is the point of it.
  *
- * The real defence remains not putting secrets in log objects at all; `SpenderKey` in
- * @mandate/execution keeps its material in a `#` field precisely so no depth of sweep is needed.
+ * The real defence remains not putting secrets in log objects at all; `Redactor` in
+ * @mandate/execution holds what it scrubs in a `#` field precisely so no depth of sweep is needed.
  */
 test("the wildcard sweep stops four levels down, and a secret there is printed in full", () => {
   const { log, last } = capture();
@@ -157,25 +163,33 @@ test("child bindings are redacted the same way as fields on the call", () => {
 /**
  * The two packages, checked against each other.
  *
- * `loadWorkerConfig` returns the signing key and the database URL as plain string properties, so
- * the names it chooses for them are the only thing standing between a logged config object and a
- * key in a log aggregator. If a field there is ever renamed — `privateKey` to `signerKey`, say —
- * the redaction list stops matching and nothing else in the build would notice.
+ * `loadWorkerConfig` returns the Privy app secret, the authorization key and the database URL
+ * as plain string properties, so the names it chooses for them are the only thing standing
+ * between a logged config object and a signing credential in a log aggregator. If a field there
+ * is ever renamed — `authorizationKey` to `signerKey`, say — the redaction list stops matching
+ * and nothing else in the build would notice.
  */
 test("a whole worker configuration can be logged without printing its secrets", () => {
   const config = loadWorkerConfig({
     DATABASE_URL: "postgres://mandate_app:hunter2@localhost:5432/mandate",
     WORKER_EXECUTE: "1",
-    WORKER_PRIVATE_KEY: KEY,
-    SPENDER_ADDRESS: `0x${"22".repeat(20)}`,
+    PRIVY_APP_ID: "app-id",
+    PRIVY_APP_SECRET: "privy-app-secret",
+    PRIVY_AUTHORIZATION_KEY: "wallet-auth:authorization-key",
   });
   const { log, last } = capture();
   log.info({ config }, "worker started");
-  expect(last()).not.toContain(KEY.slice(2)); // the signer
+  expect(last()).not.toContain("privy-app-secret"); // authenticates the worker to Privy
+  expect(last()).not.toContain("authorization-key"); // signs from every delegated wallet
   expect(last()).not.toContain("hunter2"); // the database password, inside databaseUrl
   // Public facts survive, or the log would be useless: this is redaction, not suppression.
+  // The app id is the one the browser already ships with, so it stays.
   expect(JSON.parse(last())).toMatchObject({
-    config: { execute: true, spender: `0x${"22".repeat(20)}`, confirmations: 3 },
+    config: {
+      execute: true,
+      confirmations: 3,
+      privy: { appId: "app-id", appSecret: "[REDACTED]", authorizationKey: "[REDACTED]" },
+    },
   });
 });
 

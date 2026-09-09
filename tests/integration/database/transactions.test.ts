@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import {
   NonceReused,
   recordExecutionLeg,
-  recordPermissionGrant,
   UNIT_OPTIONS,
   withTenant,
   withTransaction,
@@ -18,7 +17,7 @@ import {
   POSTGRES,
   type Postgres,
 } from "./harness.js";
-import { type InstanceSeed, seedExecution, seedInstance, seedPermission, txHash } from "./seed.js";
+import { type InstanceSeed, seedExecution, seedInstance, txHash } from "./seed.js";
 
 /**
  * The two units of work, against the constraints and triggers they were written for.
@@ -233,111 +232,6 @@ suite("units compose into the caller's transaction", () => {
         "select current_setting('mandate.user_id', true) as current",
       );
       expect(rows.rows[0]?.current).toBe(alice);
-    });
-  });
-});
-
-suite("writePermissionGrant", () => {
-  test("the permission and the instance move in one commit", async () => {
-    const seed = await seedInstance(app, alice, { mode: "auto" });
-    const permission = await seedPermission(app, alice, seed, {
-      status: "prepared",
-      signature: null,
-    });
-    const now = new Date();
-    const { permission: written, instance } = await recordPermissionGrant(app.db, {
-      userId: alice,
-      instanceId: seed.instance.id,
-      permissionId: permission.id,
-      expectedHash: permission.hash,
-      status: "active",
-      signature: `0x${"ab".repeat(65)}`,
-      instance: { mode: "auto" },
-      now,
-    });
-    expect(written.status).toBe("active");
-    expect(instance.mode).toBe("auto");
-
-    const [row] = await asTenant(app, alice, (query) =>
-      query<{ status: string; mode: string }>(
-        `select p.status, i.mode from mandate_v2.permissions p
-           join mandate_v2.instances i on i.id = p.instance_id
-          where p.id = $1`,
-        [permission.id],
-      ),
-    );
-    // A permission that says "active" beside an instance that still says "manual" is authority
-    // nobody will use; the reverse is an instance the worker will try to execute with nothing
-    // behind it. Neither is reachable if this is one commit.
-    expect(row).toMatchObject({ status: "active", mode: "auto" });
-  });
-
-  test("a permission re-prepared while the request was in flight is refused, unwritten", async () => {
-    const seed = await seedInstance(app, alice, { mode: "auto" });
-    const permission = await seedPermission(app, alice, seed, {
-      status: "prepared",
-      signature: null,
-    });
-    await expect(
-      recordPermissionGrant(app.db, {
-        userId: alice,
-        instanceId: seed.instance.id,
-        permissionId: permission.id,
-        // A different digest is a different authorization, not a stale copy of this one.
-        expectedHash: `0x${"00".repeat(32)}`,
-        status: "active",
-        signature: `0x${"ab".repeat(65)}`,
-        instance: { mode: "auto" },
-        now: new Date(),
-      }),
-    ).rejects.toMatchObject({ status: 409, code: "permission-state" });
-
-    const [row] = await asTenant(app, alice, (query) =>
-      query<{ status: string; signature: string | null; mode: string }>(
-        `select p.status, p.signature, i.mode from mandate_v2.permissions p
-           join mandate_v2.instances i on i.id = p.instance_id
-          where p.id = $1`,
-        [permission.id],
-      ),
-    );
-    expect(row).toMatchObject({ status: "prepared", signature: null, mode: "manual" });
-  });
-
-  test("a grant rolled back by its caller leaves neither half behind", async () => {
-    const seed = await seedInstance(app, alice, { mode: "auto" });
-    const permission = await seedPermission(app, alice, seed, {
-      status: "prepared",
-      signature: null,
-    });
-    await expect(
-      withTenant(app.db, alice, UNIT_OPTIONS, async (tx) => {
-        await recordPermissionGrant(tx, {
-          userId: alice,
-          instanceId: seed.instance.id,
-          permissionId: permission.id,
-          expectedHash: permission.hash,
-          status: "active",
-          signature: `0x${"ab".repeat(65)}`,
-          instance: { mode: "auto", status: "armed" },
-          now: new Date(),
-        });
-        throw new Error("caller failed after granting");
-      }),
-    ).rejects.toThrow("caller failed after granting");
-
-    const [row] = await asTenant(app, alice, (query) =>
-      query<{ status: string; signature: string | null; mode: string; istatus: string }>(
-        `select p.status, p.signature, i.mode, i.status as istatus from mandate_v2.permissions p
-           join mandate_v2.instances i on i.id = p.instance_id
-          where p.id = $1`,
-        [permission.id],
-      ),
-    );
-    expect(row).toMatchObject({
-      status: "prepared",
-      signature: null,
-      mode: "manual",
-      istatus: "paused",
     });
   });
 });

@@ -273,9 +273,9 @@ test("plan-specific surprises are disclosed, and only where they apply", () => {
   const plain = review(planFor([threshold("200")], NOTIFY, [AAPL]), envelopeFor([AAPL]));
   expect(plain.card.cautions).toEqual([]);
 
-  // routes.ts refuses to prepare a permission for any plan containing a sell (409
-  // sell-permission-required). Without this the user signs a review, then discovers
-  // at arming that half the strategy can never run.
+  // Automatic execution is buy-only: a sell is signalled, never signed. Without this
+  // the user signs a review, then discovers at arming that half the strategy can never
+  // run on its own.
   const selling = review(
     planFor(
       [threshold("200")],

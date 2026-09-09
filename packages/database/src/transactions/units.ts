@@ -4,10 +4,6 @@ import type { Transaction } from "../client.js";
 import {
   type ExecutionRow,
   executions,
-  type InstanceRow,
-  instances,
-  type PermissionRow,
-  permissions,
   type TransactionRow,
   transactions,
 } from "../schema/index.js";
@@ -41,103 +37,8 @@ import type { Executor, TransactionOptions } from "./unit.js";
  * runtime 23514 from a trigger, at whichever call site happens to run first.
  */
 
-export type PermissionStatus = "prepared" | "signed" | "active" | "revoked" | "expired";
 export type InstanceMode = "manual" | "auto";
 export type InstanceStatus = "armed" | "paused" | "halted" | "ended";
-
-export type PermissionGrant = {
-  readonly userId: string;
-  readonly instanceId: string;
-  readonly permissionId: string;
-  /**
-   * The `permissions.hash` the caller read before deciding what to write.
-   *
-   * The hash is the EIP-712 digest of the payload, so a different hash is a different
-   * authorization — a permission the user re-prepared while this request was in flight. Writing
-   * "active" against it would activate a grant nobody in this request ever looked at.
-   */
-  readonly expectedHash: string;
-  readonly status: PermissionStatus;
-  /** Write-once. Pass it only on the transition that first attaches a signature. */
-  readonly signature?: string | undefined;
-  /** Applied to the instance in the same commit. Omitted keys are left as they are. */
-  readonly instance?:
-    | {
-        readonly mode?: InstanceMode | undefined;
-        readonly status?: InstanceStatus | undefined;
-        readonly haltReason?: string | null | undefined;
-      }
-    | undefined;
-  readonly now: Date;
-};
-
-/**
- * Write a permission transition and the instance state that depends on it, together.
- *
- * Lock order is instances then permissions, and it is not arbitrary: `Repository.locked` — which
- * every lifecycle transition in the API goes through — takes `instances FOR UPDATE` first. A
- * unit that took the permission row first would deadlock against an arm/pause running at the
- * same moment, and PostgreSQL would resolve it by killing one of the two at random. Taking the
- * locks in the same order everywhere turns that into a wait.
- */
-export async function writePermissionGrant(
-  tx: Transaction,
-  grant: PermissionGrant,
-): Promise<{ permission: PermissionRow; instance: InstanceRow }> {
-  const [instance] = await tx
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, grant.instanceId), eq(instances.userId, grant.userId)))
-    .for("update");
-  if (!instance) throw Problem.notFound();
-
-  const [current] = await tx
-    .select()
-    .from(permissions)
-    .where(
-      and(
-        eq(permissions.id, grant.permissionId),
-        eq(permissions.userId, grant.userId),
-        eq(permissions.instanceId, grant.instanceId),
-      ),
-    )
-    .for("update");
-  if (!current) throw Problem.notFound();
-  if (current.hash !== grant.expectedHash)
-    throw new Problem(
-      409,
-      "permission-state",
-      "Permission changed",
-      "Refresh the permission before continuing.",
-    );
-
-  const [permission] = await tx
-    .update(permissions)
-    .set({
-      status: grant.status,
-      updatedAt: grant.now,
-      // Only ever set, never cleared: the trigger rejects a change to a non-null signature, and
-      // a caller passing undefined means "leave the stored one alone", not "drop it".
-      ...(grant.signature === undefined ? {} : { signature: grant.signature }),
-    })
-    .where(and(eq(permissions.id, grant.permissionId), eq(permissions.userId, grant.userId)))
-    .returning();
-  if (!permission) throw new Error("Permission update matched no row under a held lock");
-
-  const patch = grant.instance ?? {};
-  const [updated] = await tx
-    .update(instances)
-    .set({
-      updatedAt: grant.now,
-      ...(patch.mode === undefined ? {} : { mode: patch.mode }),
-      ...(patch.status === undefined ? {} : { status: patch.status }),
-      ...(patch.haltReason === undefined ? {} : { haltReason: patch.haltReason }),
-    })
-    .where(and(eq(instances.id, grant.instanceId), eq(instances.userId, grant.userId)))
-    .returning();
-  if (!updated) throw new Error("Instance update matched no row under a held lock");
-  return { permission, instance: updated };
-}
 
 export type TransactionLeg = "fund" | "approve" | "swap" | "reset" | "refund";
 export type ExecutionStatus =
@@ -307,11 +208,6 @@ export async function writeExecutionLeg(
  * staying empty, which is the case that needs predicate locking.
  */
 export const UNIT_OPTIONS: TransactionOptions = { isolationLevel: "repeatable read" };
-
-/** `writePermissionGrant` as a standalone unit of work, tenant-scoped and retried. */
-export function recordPermissionGrant(executor: Executor, grant: PermissionGrant) {
-  return withTenant(executor, grant.userId, UNIT_OPTIONS, (tx) => writePermissionGrant(tx, grant));
-}
 
 /** `writeExecutionLeg` as a standalone unit of work, tenant-scoped and retried. */
 export function recordExecutionLeg(executor: Executor, leg: ExecutionLeg) {

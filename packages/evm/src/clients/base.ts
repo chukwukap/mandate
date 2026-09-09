@@ -4,7 +4,6 @@ import {
   type ChainReader,
   type Hex,
   type MarketFeed,
-  type PermissionPayload,
   type Position,
   Problem,
   type Quote,
@@ -22,15 +21,7 @@ import {
   type Transport,
 } from "viem";
 import { base } from "viem/chains";
-import { ASSETS, QUOTER, TICK_SPACINGS } from "../addresses/index.js";
-import {
-  CHAIN_ID,
-  permissionAbi,
-  permissionMessage,
-  permissionTypedData,
-  SPEND_MANAGER,
-  USDC,
-} from "../permissions/index.js";
+import { ASSETS, CHAIN_ID, QUOTER, TICK_SPACINGS, USDC } from "../addresses/index.js";
 import { pacedFetch } from "./paced-fetch.js";
 
 const Money = Decimal.clone({ precision: 78, rounding: Decimal.ROUND_DOWN });
@@ -38,7 +29,6 @@ const feedAbi = parseAbi([
   "function decimals() view returns (uint8)",
   "function latestRoundData() view returns (uint80 roundId,int256 answer,uint256 startedAt,uint256 updatedAt,uint80 answeredInRound)",
 ]);
-const accountAbi = parseAbi(["function isOwnerAddress(address owner) view returns (bool)"]);
 const quoterAbi = parseAbi([
   "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,int24 tickSpacing,uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut,uint160 sqrtPriceX96After,uint32 initializedTicksCrossed,uint256 gasEstimate)",
 ]);
@@ -131,49 +121,6 @@ export class BaseReader implements ChainReader, BalanceReader {
   async verifyMessage(address: Hex, message: string, signature: Hex) {
     await this.network();
     return this.client.verifyMessage({ address, message, signature });
-  }
-  async verifyPermission(payload: PermissionPayload, signature: Hex) {
-    await this.network();
-    return this.client.verifyTypedData({
-      address: payload.account,
-      ...permissionTypedData(payload),
-      signature,
-    });
-  }
-  async walletKind(address: Hex) {
-    await this.network();
-    const code = await this.client.getCode({ address });
-    if (!code || code === "0x") return "eoa" as const;
-    try {
-      const owner = await this.client.readContract({
-        address,
-        abi: accountAbi,
-        functionName: "isOwnerAddress",
-        args: [SPEND_MANAGER],
-      });
-      return owner ? ("base_account" as const) : ("contract" as const);
-    } catch {
-      return "contract" as const;
-    }
-  }
-  async permissionStatus(payload: PermissionPayload) {
-    await this.network();
-    const args = [permissionMessage(payload)] as const;
-    const [approved, revoked] = await Promise.all([
-      this.client.readContract({
-        address: SPEND_MANAGER,
-        abi: permissionAbi,
-        functionName: "isApproved",
-        args,
-      }),
-      this.client.readContract({
-        address: SPEND_MANAGER,
-        abi: permissionAbi,
-        functionName: "isRevoked",
-        args,
-      }),
-    ]);
-    return { approved, revoked };
   }
   private async reference(asset: Asset): Promise<MarketFeed> {
     const [round, decimals, symbol, tokenDecimals, supply] = await Promise.all([

@@ -37,7 +37,9 @@ export async function databaseReady(db: Database) {
     await db.execute(sql`select id, runtime from mandate_v2.instances limit 0`);
     await db.execute(sql`select id, inputs from mandate_v2.evaluations limit 0`);
     await db.execute(sql`select id, tx_hash from mandate_v2.executions limit 0`);
-    await db.execute(sql`select id, payload, status from mandate_v2.permissions limit 0`);
+    // The journal, not the permissions table: migration 0006 dropped the latter, and probing
+    // it here reported every migrated database as unmigrated.
+    await db.execute(sql`select id, leg, hash from mandate_v2.transactions limit 0`);
     return true;
   } catch {
     return false;

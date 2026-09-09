@@ -81,16 +81,16 @@ describe("why a strategy is idle", () => {
   });
 
   /**
-   * The most expensive way to be wrong here: telling someone they bought when the permission
-   * was never approved and every "order" was a recorded signal.
+   * The most expensive way to be wrong here: telling someone they bought when automatic buying
+   * was never turned on and every "order" was a recorded signal.
    */
   test("asked for automatic but running as signals is called out, over any tick result", () => {
     const bought = evaluation({ admitted: 3 });
     const pending = whyIdle(bought, "armed", "manual", "auto");
     expect(pending?.tone).toBe("attention");
-    expect(pending?.headline).toMatch(/approval needed/i);
-    expect(pending?.action).toMatch(/signals only/i);
-    // Once the permission is active the same tick reads normally again.
+    expect(pending?.headline).toMatch(/automatic buying is off/i);
+    expect(pending?.action).toMatch(/turn it on/i);
+    // Once the wallet is delegated the same tick reads normally again.
     expect(whyIdle(bought, "armed", "auto", "auto")?.tone).toBe("ok");
     // A strategy the user deliberately created as signal-only is not nagged.
     expect(whyIdle(bought, "armed", "manual", "manual")?.tone).toBe("ok");

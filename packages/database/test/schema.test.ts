@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import { type Database, databaseReady } from "../src/client.js";
+import * as schema from "../src/schema/index.js";
 
 const db = new PGlite();
 const alice = "00000000-0000-4000-8000-000000000001";
@@ -34,10 +37,49 @@ test("all tenant tables force RLS", async () => {
     relrowsecurity: boolean;
     relforcerowsecurity: boolean;
   }>(
-    "select relname,relrowsecurity,relforcerowsecurity from pg_class join pg_namespace on pg_namespace.oid=relnamespace where nspname='mandate_v2' and relkind='r' and relname not in ('users', 'worker_state')",
+    "select relname,relrowsecurity,relforcerowsecurity from pg_class join pg_namespace on pg_namespace.oid=relnamespace where nspname='mandate_v2' and relkind='r' and relname not in ('users', 'worker_state') order by relname",
   );
-  expect(result.rows).toHaveLength(6);
+  expect(result.rows.map((row) => row.relname)).toEqual([
+    "drafts",
+    "evaluations",
+    "executions",
+    "instances",
+    "transactions",
+  ]);
   expect(result.rows.every((row) => row.relrowsecurity && row.relforcerowsecurity)).toBe(true);
+});
+
+/**
+ * Migration 0006 is the one that retires the spend-permission design. The table going is the
+ * easy half; the harder half is that nothing which decides whether a database is usable may
+ * still expect it there. `databaseReady` gates both the API's readiness probe and the worker's
+ * startup, and a probe of a dropped table would report every migrated database as unmigrated.
+ */
+test("the permissions table is gone, and readiness does not miss it", async () => {
+  const tables = await db.query<{ relname: string }>(
+    "select relname from pg_class join pg_namespace on pg_namespace.oid=relnamespace where nspname='mandate_v2' and relname='permissions'",
+  );
+  expect(tables.rows).toHaveLength(0);
+  // The session is `api_test` here — neither superuser nor RLS-bypassing — so the check gets
+  // past its role guard and actually probes the tables.
+  expect(await databaseReady(drizzle(db, { schema }) as unknown as Database)).toBe(true);
+});
+
+/**
+ * Two things apply migrations: these tests, which list the directory, and `db:migrate`, which
+ * asks drizzle's migrator — and the migrator only knows a file through `meta/_journal.json`.
+ * A migration written by hand and never journaled passes every test in this package while a
+ * real database never receives it. This is the assertion that closes that gap.
+ */
+test("every migration on disk is registered with the migrator", async () => {
+  const dir = new URL("../migrations/", import.meta.url);
+  const files = (await readdir(dir)).filter((file) => file.endsWith(".sql")).sort();
+  const journal = JSON.parse(await readFile(new URL("meta/_journal.json", dir), "utf8")) as {
+    entries: { idx: number; tag: string }[];
+  };
+  expect(journal.entries.map((entry) => `${entry.tag}.sql`)).toEqual(files);
+  // Indices are the migrator's ordering; a duplicate or a gap applies files out of sequence.
+  expect(journal.entries.map((entry) => entry.idx)).toEqual(files.map((_, index) => index));
 });
 test("a different user cannot read or consume another user's draft", async () => {
   await db.query("select set_config('mandate.user_id', $1, false)", [bob]);

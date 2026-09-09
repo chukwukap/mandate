@@ -4,7 +4,6 @@ import type { Config } from "@mandate/config";
 import {
   type Asset,
   type ChainReader,
-  type Hex,
   idSchema,
   modeSchema,
   Problem,
@@ -13,11 +12,10 @@ import {
 import {
   type DraftRow,
   type InstanceRow,
-  type PermissionRow,
   type Repository,
   workerAvailable,
 } from "@mandate/database";
-import { approvalCall, CHAIN_ID, permissionJson, USDC } from "@mandate/evm";
+import { CHAIN_ID, USDC } from "@mandate/evm";
 import {
   authorizationMessage,
   ClarificationRequired,
@@ -52,9 +50,6 @@ const _createInput = z.strictObject({
   artifact_id: z.string().regex(/^[0-9a-f]{64}$/),
   signature: signatureSchema,
 });
-const instanceInput = z.strictObject({ instance: idSchema });
-const _grantInput = instanceInput.extend({ signature: signatureSchema });
-const _activateInput = z.strictObject({ enable_auto: z.boolean().default(false) });
 const _idParams = z.strictObject({ id: idSchema });
 const _quoteInput = z.strictObject({
   symbol: z.string().max(24),
@@ -118,24 +113,6 @@ function _instanceView(instance: InstanceRow, draft: DraftRow) {
     execution_available: false,
   };
 }
-function _permissionView(row: PermissionRow) {
-  return {
-    id: row.id,
-    instance: row.instanceId,
-    status: row.status,
-    typed_data: permissionJson(row.payload),
-    hash: row.hash,
-    spender: row.payload.spender,
-    allowance: row.payload.allowance,
-    token: row.payload.token,
-    period_secs: row.payload.period,
-    expires_at: new Date(row.payload.end * 1000).toISOString(),
-    execution_available: false,
-    ...(row.signature && row.status === "signed"
-      ? { approval_call: approvalCall(row.payload, row.signature as Hex) }
-      : {}),
-  };
-}
 
 export async function registerTrading(
   app: FastifyInstance,
@@ -145,7 +122,7 @@ export async function registerTrading(
   const { repository: repo } = deps;
   const available = () => workerAvailable(repo.db);
 
-  // Only the authoring route lives here now. Market, instances, permissions and executions
+  // Only the authoring route lives here now. Market, instances, automation and executions
   // moved to their own modules; /v1/strategies POST and GET are registered by
   // registerInstanceAliases. Registering a path twice is FST_ERR_DUPLICATED_ROUTE at boot,
   // so each path must have exactly one owner.

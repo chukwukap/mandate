@@ -21,18 +21,11 @@ export {
   SHIPPED_ASSETS,
   SLIPSTREAM_FACTORY,
   SLIPSTREAM_SWAP_ROUTER,
-  SPEND_MANAGER,
   TICK_SPACINGS,
   USDC,
   USDC_DECIMALS,
 } from "./catalogue.js";
-export type {
-  ChainCalls,
-  ChainFaults,
-  FakeChainOptions,
-  MessageSignature,
-  PermissionState,
-} from "./client.js";
+export type { ChainCalls, ChainFaults, FakeChainOptions, MessageSignature } from "./client.js";
 export { FakeChainClient } from "./client.js";
 export type { BalanceSheet, TokenMetadata } from "./erc20.js";
 export {

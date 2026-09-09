@@ -4,7 +4,12 @@ import { schema } from "@mandate/database";
 import { eq } from "drizzle-orm";
 
 export type Context = Awaited<ReturnType<WorkerStore["context"]>>;
-export type Leg = "fund" | "approve" | "swap" | "reset" | "refund";
+/**
+ * approve → swap, both signed by the user's own embedded wallet. There is no funding leg and
+ * nothing to refund: the USDC stays in the user's wallet until the swap moves it into the pool
+ * in the same transaction that delivers the shares.
+ */
+export type Leg = "approve" | "swap";
 export type Prepared = Pick<
   TransactionRow,
   "signer" | "nonce" | "rawTransaction" | "hash" | "evidence"
@@ -87,30 +92,20 @@ export class Lifecycle {
       });
       return; // Next poll derives the next leg from the durable receipt.
     }
-    const fund = journal.find((t) => t.leg === "fund");
+    const approve = journal.find((t) => t.leg === "approve");
     const swap = journal.find((t) => t.leg === "swap");
-    const refund = journal.find((t) => t.leg === "refund");
-    if (fund?.status === "reverted") {
-      await this.status(order, "reverted", "fund", "Funding reverted");
-      return;
-    }
     if (swap?.status === "confirmed") {
       await this.status(order, "confirmed", "done");
       return;
     }
-    if (refund?.status === "confirmed") {
-      await this.status(order, "refunded", "done", "Input returned to strategy account");
-      return;
-    }
-    if (
-      refund?.status === "reverted" ||
-      journal.some((t) => t.leg === "reset" && t.status === "reverted")
-    ) {
+    if (approve?.status === "reverted" || swap?.status === "reverted") {
+      // Nothing left the user's wallet. A reverted approval or swap ends the order where it
+      // stands; the next tick may admit a fresh one if the rule still holds.
       await this.status(
         order,
-        "recovery_required",
-        order.stage,
-        "Refund or allowance reset reverted",
+        "reverted",
+        swap?.status === "reverted" ? "swap" : "approve",
+        swap?.status === "reverted" ? "Swap reverted" : "Approval reverted",
       );
       return;
     }
@@ -119,54 +114,33 @@ export class Lifecycle {
       context.instance.status !== "armed" ||
       context.instance.mode !== "auto" ||
       Date.parse(context.draft.envelope.caps.expires_at) <= Date.now();
-    if (!fund && stopped) {
-      await this.status(order, "cancelled", "fund", "Strategy no longer armed");
+    if (stopped) {
+      // Withdrawn consent, at any point before the swap. A confirmed approval leaves only a
+      // router allowance behind, which moves nothing by itself.
+      await this.status(
+        order,
+        "cancelled",
+        approve ? "swap" : "approve",
+        "Strategy no longer armed",
+      );
       return;
     }
-    const returning =
-      order.stage === "reset" ||
-      order.stage === "refund" ||
-      stopped ||
-      swap?.status === "reverted" ||
-      journal.some((t) => t.leg === "approve" && t.status === "reverted");
-    const leg: Leg = !fund
-      ? "fund"
-      : returning
-        ? journal.some((t) => t.leg === "reset" && t.status === "confirmed")
-          ? "refund"
-          : "reset"
-        : journal.some((t) => t.leg === "approve" && t.status === "confirmed")
-          ? "swap"
-          : "approve";
+    const leg: Leg = approve?.status === "confirmed" ? "swap" : "approve";
     let prepared: Prepared;
     try {
       prepared = await this.chain.prepare(leg, order, context);
     } catch (error) {
-      if (error instanceof RecoveryRequired || leg === "reset" || leg === "refund")
-        await this.status(
-          order,
-          "recovery_required",
-          leg,
-          "Cannot establish safe execution or refund",
-        );
-      else if (!fund)
-        await this.status(order, "cancelled", leg, "Admission checks failed before funding");
-      else
-        await this.status(
-          order,
-          "pending",
-          "reset",
-          "Execution unavailable; returning funded input",
-        );
+      if (error instanceof RecoveryRequired)
+        await this.status(order, "recovery_required", leg, "Cannot establish safe execution");
+      else await this.status(order, "cancelled", leg, "Admission checks failed before signing");
       return;
     }
     await this.store.write(order.userId, async (tx) => {
       const current = await this.store.lockInstance(tx, order.instanceId);
       if (
-        (leg === "fund" || leg === "approve" || leg === "swap") &&
-        (current.status !== "armed" ||
-          current.mode !== "auto" ||
-          current.updatedAt.getTime() !== context.instance.updatedAt.getTime())
+        current.status !== "armed" ||
+        current.mode !== "auto" ||
+        current.updatedAt.getTime() !== context.instance.updatedAt.getTime()
       )
         return;
       await tx.insert(schema.transactions).values({

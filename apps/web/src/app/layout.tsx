@@ -25,6 +25,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           against theirs — the "attributes didn't match" hydration error.
         */}
         <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: static first-paint theme script; no interpolated or user-provided code
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('mandate:theme');var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';document.documentElement.style.colorScheme=d?'dark':'light';}catch(e){}})();`,
           }}

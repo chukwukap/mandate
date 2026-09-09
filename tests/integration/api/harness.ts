@@ -8,10 +8,7 @@ import type {
   Asset,
   ChainReader,
   Hex,
-  Identity,
   MarketFeed,
-  PermissionCheck,
-  PermissionPayload,
   Quote,
 } from "../../../packages/contracts/src/index.js";
 import { Problem } from "../../../packages/contracts/src/index.js";
@@ -139,15 +136,6 @@ export class TestChain implements ChainReader {
     return this.signed.get(TestChain.key(address, message)) === signature.toLowerCase();
   }
 
-  verifyPermission(payload: PermissionPayload, signature: Hex): Promise<boolean> {
-    return this.fake.verifyPermission(payload, signature);
-  }
-  walletKind(address: Hex): Promise<Identity["walletKind"]> {
-    return this.fake.walletKind(address);
-  }
-  permissionStatus(payload: PermissionPayload): Promise<PermissionCheck> {
-    return this.fake.permissionStatus(payload);
-  }
   market(): Promise<MarketFeed[]> {
     return this.fake.market();
   }
@@ -158,9 +146,6 @@ export class TestChain implements ChainReader {
     return this.fake.ready();
   }
 }
-
-/** The worker spender the API advertises. Public, and never a key. */
-export const SPENDER_ADDRESS = "0x2222222222222222222222222222222222222222";
 
 /** The single proxy IP allowed to assert `cf-ipcountry`. Everything else lands on DEV_COUNTRY. */
 export const TRUSTED_PROXY_IP = "127.0.0.1";
@@ -177,7 +162,6 @@ export function testConfig(overrides: Record<string, string> = {}): Config {
     // Never contacted: `chainReady` and every chain read is the injected fixture client. It is
     // an unroutable address rather than a plausible one so a leak would fail loudly.
     BASE_RPC_URL: "http://127.0.0.1:9",
-    SPENDER_ADDRESS,
     PRIVY_APP_ID: "integration-app",
     PRIVY_APP_SECRET: "integration-secret",
     ELIGIBLE_COUNTRIES: "GB,NG",
@@ -211,6 +195,7 @@ export async function startApi(
     config,
     auth: new TestAuthenticator(options.identities ?? []),
     users: pg.repo,
+    wallets: { embedded: async () => null },
     databaseReady: () => databaseReady(pg.db),
     workerAvailable: () => workerAvailable(pg.db),
     chainReady: () => chain.ready(),

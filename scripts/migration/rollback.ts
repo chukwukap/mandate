@@ -141,7 +141,9 @@ export async function rollbackMigration(
         `${retained.length} journalled row(s) cannot be removed: ${retained
           .slice(0, 5)
           .map((row) => `${row.rowId} (${row.reason})`)
-          .join("; ")}. Nothing was deleted. Re-run without --strict to remove the rest and keep these.`,
+          .join(
+            "; ",
+          )}. Nothing was deleted. Re-run without --strict to remove the rest and keep these.`,
       );
     await closeRun(tx, runId, closed, options.now, {
       drafts_removed: draftsRemoved,
@@ -227,7 +229,9 @@ async function removeUser(tx: SqlClient, id: string, privyDid: string): Promise<
   const row = found[0];
   if (!row) return "absent";
   if (row.privy_did !== privyDid)
-    return { reason: `the user at this id is now ${row.privy_did}, not the ${privyDid} this run created` };
+    return {
+      reason: `the user at this id is now ${row.privy_did}, not the ${privyDid} this run created`,
+    };
   const owned = await asTenant(tx, id, async () => {
     for (const table of TENANT_TABLES) {
       const { rows } = await tx.query<{ present: boolean }>(

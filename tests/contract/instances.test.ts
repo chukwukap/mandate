@@ -172,10 +172,10 @@ describe("POST /v1/strategies", () => {
     const body = parsed(createdInstanceSchema, response.json());
     expect(body.version).toBe(artifact.artifact_id);
     // Requesting auto in the draft grants nothing. Instances always start paused and manual;
-    // the client still has to prepare, sign and activate a spending permission.
+    // the wallet has no server signer in this fixture.
     expect(body.status).toBe("paused");
     expect(body.mode).toBe("manual");
-    expect(body.needs_permission).toBe(true);
+    expect(body.needs_automation).toBe(true);
   });
 
   test("a signature over anything but the stored message is refused", async () => {

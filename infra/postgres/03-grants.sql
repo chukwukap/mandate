@@ -60,7 +60,7 @@ REVOKE ALL ON ALL TABLES IN SCHEMA mandate_v2
 -- API role (`mandate`, the DATABASE_URL in .env.example)
 -- ---------------------------------------------------------------------------
 --
--- The API authors: it creates users, drafts, instances and permissions, and updates their
+-- The API authors: it creates users, drafts and instances, and updates their
 -- lifecycle columns. It only ever reads the evaluation and execution history -- those rows
 -- are written by the worker inside the same transaction that advances the budget counters,
 -- and an API process that could insert an execution could manufacture an order that no
@@ -72,7 +72,6 @@ REVOKE ALL ON ALL TABLES IN SCHEMA mandate_v2
 GRANT SELECT, INSERT         ON mandate_v2.users        TO mandate;
 GRANT SELECT, INSERT, UPDATE ON mandate_v2.drafts       TO mandate;
 GRANT SELECT, INSERT, UPDATE ON mandate_v2.instances    TO mandate;
-GRANT SELECT, INSERT, UPDATE ON mandate_v2.permissions  TO mandate;
 GRANT SELECT                 ON mandate_v2.evaluations  TO mandate;
 GRANT SELECT                 ON mandate_v2.executions   TO mandate;
 -- Read-only: `execution_available` on /ready is a report about the worker, and the API must
@@ -89,14 +88,9 @@ GRANT SELECT                 ON mandate_v2.worker_state TO mandate;
 -- be able to invent one.
 --
 -- INSERT without UPDATE on `evaluations` matches the append-only history the API pages over.
--- SELECT-only on `permissions` matches the code: the admission gate re-derives permission
--- validity from the payload and the chain on every order (packages/execution/src/admission/
--- permission.ts) and never writes back, so write access would only be a way to make a
--- refused permission look active.
 GRANT SELECT                 ON mandate_v2.users        TO mandate_worker;
 GRANT SELECT                 ON mandate_v2.drafts       TO mandate_worker;
 GRANT SELECT, UPDATE         ON mandate_v2.instances    TO mandate_worker;
-GRANT SELECT                 ON mandate_v2.permissions  TO mandate_worker;
 GRANT SELECT, INSERT         ON mandate_v2.evaluations  TO mandate_worker;
 GRANT SELECT, INSERT, UPDATE ON mandate_v2.executions   TO mandate_worker;
 GRANT SELECT, INSERT, UPDATE ON mandate_v2.transactions TO mandate_worker;
@@ -121,7 +115,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA mandate_v2 TO mandate_metrics_reader;
 DO $$
 DECLARE
   known text[] := ARRAY[
-    'users', 'drafts', 'instances', 'permissions',
+    'users', 'drafts', 'instances',
     'evaluations', 'executions', 'transactions', 'worker_state'
   ];
   unexpected text;

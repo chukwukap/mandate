@@ -187,8 +187,8 @@ test("tick never mutates the runtime, portfolio or feeds it was given", () => {
 test("expiry halts before anything is evaluated, and needs no observations", () => {
   const { plan, envelope } = build([{ when: "cheap", to: "s", actions: [buy] }]);
   const expired = Date.parse(envelope.caps.expires_at);
-  // Feeds are deliberately empty: past expiry the permission is dead, so there is
-  // nothing an observation could justify.
+  // Feeds are deliberately empty: past expiry the user's authorization is dead, so
+  // there is nothing an observation could justify.
   const result = tick(plan, envelope, initialRuntime(plan, T0), {}, portfolio, expired);
   expect(result.state.halted).toBe(true);
   expect(result.refused).toEqual(["Strategy expired"]);

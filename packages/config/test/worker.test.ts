@@ -5,23 +5,26 @@ import { loadWorkerConfig } from "../src/index.js";
 /**
  * The worker's environment contract.
  *
- * Deliberately a second schema rather than a superset of the API's: the worker holds a signing
- * key and no Privy secret, the API holds a Privy secret and no key, and giving each process only
- * the variables it needs is what keeps a leak of one environment from being a leak of both.
+ * Deliberately a second schema rather than a superset of the API's: the worker holds the Privy
+ * authorization key that signs from delegated wallets and the API never does, and giving each
+ * process only the variables it needs is what keeps a leak of one environment from being a leak
+ * of both.
  *
  * The rule that matters most here is the last gate before real money moves — `WORKER_EXECUTE=1`
  * is the difference between a process that evaluates strategies and one that signs transactions
- * against a user's spend permission.
+ * from users' wallets.
  */
 
 /** The only variable with no default. */
 const required = { DATABASE_URL: "postgres://mandate_app:hunter2@localhost:5432/mandate" };
 const env = (overrides: Record<string, string | undefined> = {}) => ({ ...required, ...overrides });
 
-// Real-shaped values that control nothing: this key has never held funds and is never used to
-// sign, and the spender is a repeating pattern no deployment would use.
-const KEY = `0x${"11".repeat(32)}`;
-const SPENDER = `0x${"22".repeat(20)}`;
+// Real-shaped values that control nothing. None of these has ever been registered with Privy.
+const PRIVY = {
+  PRIVY_APP_ID: "app-id",
+  PRIVY_APP_SECRET: "privy-secret",
+  PRIVY_AUTHORIZATION_KEY: "wallet-auth:authorization-key",
+};
 
 function rejected(value: Record<string, string | undefined>): string[] {
   try {
@@ -38,8 +41,7 @@ test("a minimal worker environment is a dry run with conservative defaults", () 
   const config = loadWorkerConfig(env());
   // Not executing is the default in every environment. Trading has to be asked for.
   expect(config.execute).toBe(false);
-  expect(config.privateKey).toBeUndefined();
-  expect(config.spender).toBeUndefined();
+  expect(config.privy).toBeUndefined();
   expect(config.pollMs).toBe(2000);
   expect(config.maxBatch).toBe(10);
   expect(config.confirmations).toBe(3);
@@ -49,22 +51,42 @@ test("a minimal worker environment is a dry run with conservative defaults", () 
 });
 
 /**
- * Live execution needs both halves: a key to sign with and the spender address that key is
- * expected to control. Booting with only one produces a worker that believes it is trading and
- * fails at the first order — after it has already claimed the instance and written an execution
- * row. Refusing at boot keeps that state from being created at all.
+ * Live execution needs all three Privy values: the app the wallets belong to, the secret that
+ * authenticates to it, and the authorization key of the signer users delegated to. Booting with
+ * a subset produces a worker that believes it is trading and fails at the first order — after it
+ * has already claimed the instance and written an execution row. Refusing at boot keeps that
+ * state from being created at all.
  */
-test("live execution requires both a signer and the spender it is meant to be", () => {
-  for (const half of [{}, { WORKER_PRIVATE_KEY: KEY }, { SPENDER_ADDRESS: SPENDER }])
-    expect(() => loadWorkerConfig(env({ WORKER_EXECUTE: "1", ...half }))).toThrow(
-      "Live execution requires WORKER_PRIVATE_KEY and SPENDER_ADDRESS",
+test("live execution requires the whole Privy signer, not part of it", () => {
+  const names = Object.keys(PRIVY) as (keyof typeof PRIVY)[];
+  // Nothing, and every way of leaving exactly one out.
+  const partial = [{}, ...names.map((missing) => ({ ...PRIVY, [missing]: undefined }))];
+  for (const subset of partial)
+    expect(() => loadWorkerConfig(env({ WORKER_EXECUTE: "1", ...subset }))).toThrow(
+      "Live execution requires PRIVY_APP_ID, PRIVY_APP_SECRET and PRIVY_AUTHORIZATION_KEY",
     );
-  const live = loadWorkerConfig(
-    env({ WORKER_EXECUTE: "1", WORKER_PRIVATE_KEY: KEY, SPENDER_ADDRESS: SPENDER }),
-  );
+  const live = loadWorkerConfig(env({ WORKER_EXECUTE: "1", ...PRIVY }));
   expect(live.execute).toBe(true);
-  expect(live.privateKey).toBe(KEY);
-  expect(live.spender).toBe(SPENDER);
+  expect(live.privy).toEqual({
+    appId: "app-id",
+    appSecret: "privy-secret",
+    authorizationKey: "wallet-auth:authorization-key",
+  });
+});
+
+test("a partial Privy configuration is no configuration, even in a dry run", () => {
+  // The three values are one credential. Surfacing two of them as `privy` would let a caller
+  // check `if (config.privy)` and then hand Privy an undefined authorization key at the first
+  // signature — the partial object is exactly the shape that check exists to rule out.
+  expect(loadWorkerConfig(env({ PRIVY_APP_ID: "app-id" })).privy).toBeUndefined();
+  expect(
+    loadWorkerConfig(env({ PRIVY_APP_ID: "app-id", PRIVY_APP_SECRET: "privy-secret" })).privy,
+  ).toBeUndefined();
+  expect(loadWorkerConfig(env(PRIVY)).privy).toEqual({
+    appId: "app-id",
+    appSecret: "privy-secret",
+    authorizationKey: "wallet-auth:authorization-key",
+  });
 });
 
 test("WORKER_EXECUTE is a strict 0/1 flag", () => {
@@ -77,14 +99,15 @@ test("WORKER_EXECUTE is a strict 0/1 flag", () => {
 });
 
 test("a blank variable behaves as absent here too", () => {
-  // Same `.env` blank-line case as the API loader. WORKER_PRIVATE_KEY is the one that matters:
-  // `""` fails the 32-byte hex regex, so without the normalisation a commented-out key would
+  // Same `.env` blank-line case as the API loader. The Privy values are the ones that matter:
+  // `""` fails min(1), so without the normalisation a commented-out authorization key would
   // take the worker down instead of leaving it in its default dry run.
   const config = loadWorkerConfig(
     env({
       WORKER_EXECUTE: "",
-      WORKER_PRIVATE_KEY: "",
-      SPENDER_ADDRESS: "",
+      PRIVY_APP_ID: "",
+      PRIVY_APP_SECRET: "",
+      PRIVY_AUTHORIZATION_KEY: "",
       WORKER_POLL_MS: "",
       WORKER_MAX_BATCH: "",
       WORKER_CONFIRMATIONS: "",
@@ -95,27 +118,11 @@ test("a blank variable behaves as absent here too", () => {
     }),
   );
   expect(config.execute).toBe(false);
-  expect(config.privateKey).toBeUndefined();
-  expect(config.spender).toBeUndefined();
+  expect(config.privy).toBeUndefined();
   expect(config.pollMs).toBe(2000);
   expect(config.confirmations).toBe(3);
   expect(config.origin).toBe("http://localhost:3000");
   expect(config.eligibleCountries).toEqual([]);
-});
-
-test("WORKER_PRIVATE_KEY must be 32 bytes of hex, and the refusal does not quote it", () => {
-  for (const value of ["0xdeadbeef", KEY.slice(2), `${KEY}00`, `0x${"z".repeat(64)}`])
-    expect(rejected(env({ WORKER_PRIVATE_KEY: value }))).toEqual(["WORKER_PRIVATE_KEY"]);
-  // A key with one byte too many is still a key someone typed, and this rejection is printed at
-  // boot by whatever supervises the process. It must carry the pattern, never the material.
-  const mistyped = `${KEY}ff`;
-  try {
-    loadWorkerConfig(env({ WORKER_PRIVATE_KEY: mistyped }));
-    throw new Error("expected loadWorkerConfig to reject");
-  } catch (error) {
-    expect(error).toBeInstanceOf(ZodError);
-    expect((error as ZodError).message).not.toContain(mistyped.slice(2, 34));
-  }
 });
 
 /**
@@ -190,8 +197,7 @@ test("a production worker configuration is loaded whole", () => {
       APP_ORIGIN: "https://app.example.com",
       BASE_RPC_URL: "https://base-mainnet.example.com/v2/rpc-key",
       WORKER_EXECUTE: "1",
-      WORKER_PRIVATE_KEY: KEY,
-      SPENDER_ADDRESS: SPENDER,
+      ...PRIVY,
       ELIGIBLE_COUNTRIES: "GB",
       WORKER_POLL_MS: "5000",
       LOG_LEVEL: "warn",
@@ -204,9 +210,12 @@ test("a production worker configuration is loaded whole", () => {
     rpcUrl: "https://base-mainnet.example.com/v2/rpc-key",
     origin: "https://app.example.com",
     execute: true,
-    privateKey: KEY,
     eligibleCountries: ["GB"],
-    spender: SPENDER,
+    privy: {
+      appId: "app-id",
+      appSecret: "privy-secret",
+      authorizationKey: "wallet-auth:authorization-key",
+    },
     pollMs: 5000,
     maxBatch: 10,
     confirmations: 3,
@@ -214,14 +223,14 @@ test("a production worker configuration is loaded whole", () => {
     logLevel: "warn",
   });
   /**
-   * The key is an ordinary enumerable string property of this object, not a `#private` field
-   * like the one `SpenderKey` in @mandate/execution wraps it in. That is why
-   * @mandate/observability redacts `privateKey` below the root as well as at it: anything that
-   * logs a value holding this config — a chain client, a worker instance — would otherwise print
-   * the key. `packages/observability/test/redaction.test.ts` asserts that net actually holds.
+   * The secret and the authorization key are ordinary enumerable string properties one level
+   * below the root of this object. That is why @mandate/observability redacts `appSecret` and
+   * `authorizationKey` below the root as well as at it: anything that logs a value holding this
+   * config — a chain client, a worker instance — would otherwise print them.
+   * `packages/observability/test/redaction.test.ts` asserts that net actually holds.
    */
-  expect(Object.keys(config)).toContain("privateKey");
-  expect(JSON.stringify(config)).toContain(KEY);
+  expect(Object.keys(config.privy ?? {})).toEqual(["appId", "appSecret", "authorizationKey"]);
+  expect(JSON.stringify(config)).toContain("wallet-auth:authorization-key");
 });
 
 test("the session override cannot be switched on in production", () => {

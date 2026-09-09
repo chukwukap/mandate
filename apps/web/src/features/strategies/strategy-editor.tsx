@@ -20,7 +20,7 @@ import { PriceField } from "./price-field";
 import { ReviewCard } from "./review-card";
 import { ShapeGlyph } from "./shape-glyph";
 import { SHAPES, type ShapeId, STARTERS, shapeById } from "./shapes";
-import type { Draft, Strategy } from "./types";
+import type { CreatedStrategy, Draft } from "./types";
 
 /** Blank enough to be honest, defaulted enough to be usable. */
 function emptyForm(symbol: string, mode: "manual" | "auto"): StrategyForm {
@@ -97,7 +97,7 @@ export function StrategyEditor({
   symbol: string;
   initialMode?: "manual" | "auto";
   onClose(): void;
-  onCreate(strategy?: Strategy): void;
+  onCreate(strategy?: CreatedStrategy): void;
   call<T>(path: string, body?: unknown): Promise<T>;
   sign(message: string): Promise<`0x${string}`>;
   /** Today's oracle price, so a threshold can be judged against something. */
@@ -277,8 +277,11 @@ export function StrategyEditor({
     setError("");
     try {
       const signature = await sign(draft.confirm_message);
-      await call("/v1/strategies", { artifact_id: draft.artifact_id, signature });
-      onCreate();
+      const created = await call<CreatedStrategy>("/v1/strategies", {
+        artifact_id: draft.artifact_id,
+        signature,
+      });
+      onCreate(created);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save your strategy.");
     } finally {
@@ -719,7 +722,7 @@ export function StrategyEditor({
               <p className="hint">
                 {form.mode === "manual"
                   ? "You get a signal and decide. Nothing can spend your money."
-                  : "After signing you approve a spending limit — a separate onchain step you can revoke at any time."}
+                  : "Buys from your wallet automatically. Turn on automatic buying once; no per-strategy approval."}
               </p>
             </section>
 

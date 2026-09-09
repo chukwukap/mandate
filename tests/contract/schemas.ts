@@ -4,7 +4,6 @@ import {
   decimalSchema,
   digestSchema,
   executionStatusSchema,
-  hexSchema,
   idSchema,
   modeSchema,
   nullableTimestampSchema,
@@ -14,7 +13,6 @@ import {
   timestampSchema,
   unixSecondsSchema,
   usdcAmountSchema,
-  walletKindSchema,
 } from "../../packages/contracts/src/schemas/primitives.js";
 
 /**
@@ -145,25 +143,26 @@ export const meSchema = z.object({
     .enum(["region_unknown", "region_restricted", "region_unsupported"])
     .nullable(),
   chain_id: z.literal(8453),
-  automation_supported: z.boolean(),
+  automation: z.object({
+    supported: z.boolean(),
+    signer_id: z.string().nullable(),
+    wallet: addressSchema.nullable(),
+    delegated: z.boolean(),
+  }),
   execution_available: z.boolean(),
   server_time: timestampSchema,
 });
 
 export const walletCapabilitySchema = z.object({
   address: addressSchema,
-  /** Null when the chain could not be read for this address on this request. */
-  kind: walletKindSchema.nullable(),
-  can_authorize_spending: z.boolean(),
-  checked: z.boolean(),
-  checked_at: timestampSchema.nullable(),
+  embedded: z.boolean(),
+  delegated: z.boolean(),
 });
 
 export const walletsSchema = z.object({
   items: z.array(walletCapabilitySchema),
   chain_id: z.literal(8453),
-  automation_supported: z.boolean(),
-  notice: z.string().min(1),
+  signer_id: z.string().nullable(),
 });
 
 /* ------------------------------------------------------------------ market */
@@ -368,7 +367,7 @@ export const createdInstanceSchema = z.object({
   instance: idSchema,
   status: statusSchema,
   mode: modeSchema,
-  needs_permission: z.boolean(),
+  needs_automation: z.boolean(),
   execution_available: z.boolean(),
 });
 
@@ -383,61 +382,6 @@ export const evaluationSchema = z.object({
   refused: z.string().nullable(),
   inputs: z.record(z.string(), decimalSchema),
   notifications: z.array(z.unknown()),
-});
-
-/* ------------------------------------------------------------------ permissions */
-
-/**
- * Every permission response.
- *
- * `typed_data` is the stored payload rendered for `viem.signTypedData`, never a freshly built
- * one: `start` is captured at prepare time, so a struct rebuilt one second later hashes
- * differently and the signature the user produced verifies against nothing. `allowance` is an
- * integer string because it is uint160 onchain and JSON has no integer that wide — a number
- * here would hash to a digest nobody authorized.
- */
-export const permissionSchema = z.object({
-  id: idSchema,
-  instance: idSchema,
-  status: z.enum(["prepared", "signed", "active", "revoked", "expired"]),
-  typed_data: z.object({
-    domain: z.object({
-      name: z.literal("Spend Permission Manager"),
-      version: z.literal("1"),
-      chainId: z.literal(8453),
-      verifyingContract: addressSchema,
-    }),
-    types: z.object({
-      SpendPermission: z.array(z.object({ name: z.string(), type: z.string() })),
-    }),
-    primaryType: z.literal("SpendPermission"),
-    message: z.object({
-      account: addressSchema,
-      spender: addressSchema,
-      token: addressSchema,
-      allowance: rawUnitsSchema,
-      period: unixSecondsSchema,
-      start: unixSecondsSchema,
-      end: unixSecondsSchema,
-      salt: rawUnitsSchema,
-      extraData: hexSchema,
-    }),
-  }),
-  hash: txHashSchema,
-  spender: addressSchema,
-  allowance: rawUnitsSchema,
-  token: addressSchema,
-  period_secs: unixSecondsSchema,
-  expires_at: timestampSchema,
-  execution_available: z.boolean(),
-});
-
-/** An `eth_sendTransaction`-shaped call the client broadcasts itself. `value` is never a number. */
-export const callSchema = z.object({
-  to: addressSchema,
-  data: hexSchema,
-  value: rawUnitsSchema,
-  chain_id: z.literal(8453),
 });
 
 /* ------------------------------------------------------------------ executions */
@@ -571,8 +515,8 @@ export const executionDetailSchema = executionListItemSchema.extend({
         complete: z.boolean(),
         legs: z.int().min(0),
         paid_by: addressSchema.nullable(),
-        /** Gas is never taken from the user's spend permission, and the response says so. */
-        borne_by: z.literal("executor"),
+        /** Direct execution pays gas from the signing wallet. */
+        borne_by: z.literal("wallet"),
         note: z.string().min(1),
         l2_wei: rawUnitsSchema,
         l1_wei: rawUnitsSchema,

@@ -46,7 +46,8 @@ const native = process.env.TEST_DATABASE_URL
 let db: Database;
 let store: WorkerStore;
 let repo: Repository;
-const signer = privateKeyToAccount(`0x${"11".repeat(32)}`);
+/** The user's embedded wallet: it signs the commitment and, in production, every leg. */
+const wallet = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const origin = "http://localhost:3000";
 
 /** Counts every observation so a test can assert a precondition spent no RPC at all. */
@@ -76,8 +77,8 @@ class FakeChain implements Observations, Executor {
     if (leg === this.failPrepare) throw new Error("Live execution disabled");
     this.prepared.push(leg);
     return {
-      // A real worker signs with one fixed key; the journal's unique (signer, nonce) is
-      // global, so fixtures across tests use distinct signers to stay independent.
+      // Every fixture here shares one wallet key and the journal's unique (signer, nonce) is
+      // global, so a distinct signer per prepared leg keeps tests out of each other's nonces.
       signer: `0x${randomUUID().replaceAll("-", "")}00000000`,
       nonce: this.prepared.length,
       rawTransaction: RAW,
@@ -135,9 +136,9 @@ afterAll(async () => {
 });
 
 /**
- * The signer is global, so an order left outstanding by one test blocks admission and
- * execution in every later one. Cancelling them between tests reproduces a worker that
- * starts with nothing in flight.
+ * Execution is serialised to one outstanding order across every owner, so an order left by
+ * one test blocks admission and execution in every later one. Cancelling them between tests
+ * reproduces a worker that starts with nothing in flight.
  */
 async function quiesce() {
   clock = new Date();
@@ -206,7 +207,7 @@ async function fixture(mode: "auto" | "manual" = "manual") {
   };
   const rendered = review(plan, envelope);
   const id = randomUUID();
-  const account = signer.address.toLowerCase();
+  const account = wallet.address.toLowerCase();
   const expiresAt = new Date(Date.now() + 1800000);
   const name = "Job fixture";
   const artifactId = digest({
@@ -241,12 +242,13 @@ async function fixture(mode: "auto" | "manual" = "manual") {
   const instance = await repo.createInstance(
     user.id,
     draft,
-    await signer.signMessage({ message: confirmMessage }),
+    await wallet.signMessage({ message: confirmMessage }),
     name,
     1000,
     new Date(),
   );
-  // Arming before the mode switch mirrors the API's auto path without an onchain grant.
+  // Arming before the mode switch mirrors the API's auto path without asking Privy whether the
+  // wallet is delegated; the fake chain's `authorize` stands in for that check.
   await repo.transition(user.id, instance.id, "arm", new Date(), "NG");
   if (mode === "auto")
     await tenant(db, user.id, (tx) =>
@@ -347,7 +349,7 @@ test("an outstanding order blocks a new automatic admission instead of reserving
   expect(context.instance.runtime.lifetime).toBe("0");
 });
 
-test("a manual signal is never funded", async () => {
+test("a manual signal is never executed", async () => {
   const chain = new FakeChain();
   const { userId, instanceId } = await fixture();
   await evaluate(chain, userId, instanceId);
@@ -378,7 +380,7 @@ test("disabled execution blocks the order instead of cancelling it and burning t
 
   // What the gate prevents: Lifecycle alone turns a disabled signer into a permanent
   // cancellation, and admission's reservation is never credited back.
-  chain.failPrepare = "fund";
+  chain.failPrepare = "approve";
   await new Lifecycle(store, chain, 60000).run(await reload(order));
   expect((await reload(order)).status).toBe("cancelled");
   const context = await store.context(order.userId, order.instanceId);
@@ -398,7 +400,7 @@ test("a repeated execute-intent journals one leg and rebroadcasts identical byte
   const first = await run();
   expect(first.outcome).toBe("applied");
   expect(first.code).toBe("leg-signed");
-  expect(first.detail.signedLeg).toBe("fund");
+  expect(first.detail.signedLeg).toBe("approve");
   expect(chain.sent).toHaveLength(0); // Journal commits before anything is broadcast.
 
   const second = await run();
@@ -408,19 +410,19 @@ test("a repeated execute-intent journals one leg and rebroadcasts identical byte
   expect(third.code).toBe("awaiting-receipt");
   // One signed leg, one prepared transaction, byte-identical resends.
   expect(await store.journal(order.userId, order.id)).toHaveLength(1);
-  expect(chain.prepared).toEqual(["fund"]);
+  expect(chain.prepared).toEqual(["approve"]);
   expect(chain.sent).toEqual([RAW, RAW]);
 
   // A settled receipt advances exactly one leg per dispatch.
-  const [fund] = await store.journal(order.userId, order.id);
-  chain.results.set(required(fund).hash, "confirmed");
+  const [approve] = await store.journal(order.userId, order.id);
+  chain.results.set(required(approve).hash, "confirmed");
   const settled = await run();
   expect(settled.outcome).toBe("applied");
   expect(settled.code).toBe("leg-settled");
-  expect(settled.detail.legs).toBe("fund:confirmed");
+  expect(settled.detail.legs).toBe("approve:confirmed");
   const next = await run();
-  expect(next.detail.signedLeg).toBe("approve");
-  expect(chain.prepared).toEqual(["fund", "approve"]);
+  expect(next.detail.signedLeg).toBe("swap");
+  expect(chain.prepared).toEqual(["approve", "swap"]);
 });
 
 test("job logging never carries signed bytes or a wallet signature", async () => {
@@ -437,7 +439,7 @@ test("job logging never carries signed bytes or a wallet signature", async () =>
   expect(text).not.toContain(RAW);
   expect(text).not.toContain(instance.signature);
   // Journal metadata that IS safe to publish still reaches the operator.
-  expect(text).toContain("fund");
+  expect(text).toContain("approve");
 });
 
 test("log level separates a standing block from ordinary polling", async () => {
@@ -637,8 +639,9 @@ test("createWorkerJobs wires configuration through to a dispatched job", async (
     DATABASE_URL: "postgresql://localhost/mandate",
     APP_ORIGIN: origin,
     WORKER_EXECUTE: "1",
-    WORKER_PRIVATE_KEY: `0x${"11".repeat(32)}`,
-    SPENDER_ADDRESS: `0x${"22".repeat(20)}`,
+    PRIVY_APP_ID: "app",
+    PRIVY_APP_SECRET: "secret",
+    PRIVY_AUTHORIZATION_KEY: "quorum",
     ELIGIBLE_COUNTRIES: "NG",
   });
   const jobs = createWorkerJobs(config, store, chain, recorder(), () => clock);

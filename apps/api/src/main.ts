@@ -1,4 +1,9 @@
-import { CachedAuthenticator, PrivyAuthenticator, privyReader } from "@mandate/auth";
+import {
+  CachedAuthenticator,
+  embeddedWallet,
+  PrivyAuthenticator,
+  privyReader,
+} from "@mandate/auth";
 import { loadConfig } from "@mandate/config";
 import { connectDatabase, databaseReady, Repository, workerAvailable } from "@mandate/database";
 import { ASSETS, BaseReader } from "@mandate/evm";
@@ -10,6 +15,7 @@ async function main() {
   const connection = connectDatabase(config.databaseUrl);
   const repository = new Repository(connection.db);
   const chain = BaseReader.fromUrl(config.rpcUrl);
+  const privy = privyReader(config.privyAppId, config.privyAppSecret);
   let app: Awaited<ReturnType<typeof buildApp>> | undefined;
   try {
     app = await buildApp({
@@ -20,12 +26,13 @@ async function main() {
       // a user with three tabs open costs Privy six calls a second at steady state and a Privy
       // blip becomes a 503 for everyone. The cache holds verified identities for 60s, keyed by
       // token fingerprint rather than the token, and never caches a failure.
-      auth: new CachedAuthenticator(
-        new PrivyAuthenticator(
-          config.privyAppId,
-          privyReader(config.privyAppId, config.privyAppSecret),
-        ),
-      ),
+      auth: new CachedAuthenticator(new PrivyAuthenticator(config.privyAppId, privy)),
+      // Deliberately outside that cache. Delegation is the consent automatic buying runs on,
+      // and a user who withdraws it in Privy must not keep an armed strategy for another minute
+      // because a cached identity said otherwise. /v1/me asks only when a wallet is selected.
+      wallets: {
+        embedded: (did, address) => embeddedWallet(privy, did, address, config.privySignerId),
+      },
       databaseReady: () => databaseReady(connection.db),
       workerAvailable: () => workerAvailable(connection.db),
       chainReady: () => chain.ready(),

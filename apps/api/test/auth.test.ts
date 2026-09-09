@@ -1,21 +1,21 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import rateLimit from "@fastify/rate-limit";
-import { eligible, jurisdiction, selectWallet } from "@mandate/auth";
+import { type EmbeddedWallet, eligible, jurisdiction, selectWallet } from "@mandate/auth";
 import { type Config, loadConfig } from "@mandate/config";
-import { type ChainReader, type Hex, Problem } from "@mandate/contracts";
+import { type Hex, Problem } from "@mandate/contracts";
 import Fastify, { type FastifyInstance } from "fastify";
 import {
   type AuthDependencies,
   eligibilityReason,
   registerAuth,
-  WalletCapabilities,
-  type WalletKind,
   walletSelection,
 } from "../src/modules/auth/index.js";
+import { automationOf, type WalletReader } from "../src/modules/automation/index.js";
 
 const alice = "0x1111111111111111111111111111111111111111" as Hex;
 const bob = "0x2222222222222222222222222222222222222222" as Hex;
 const mallory = "0x3333333333333333333333333333333333333333" as Hex;
+const SIGNER = "kq_test_signer";
 
 function settings(overrides: Record<string, string | undefined> = {}): Config {
   return loadConfig({
@@ -29,33 +29,31 @@ function settings(overrides: Record<string, string | undefined> = {}): Config {
   });
 }
 
-type FakeChain = ChainReader & { calls: Hex[] };
-function chainReader(respond: (address: Hex) => Promise<WalletKind>): FakeChain {
-  const calls: Hex[] = [];
+type FakeWallets = WalletReader & { calls: string[] };
+/**
+ * Privy's linked-accounts read, reduced to the one fact this module asks for. `embedded` lists
+ * the addresses that are embedded wallets; `delegated` the subset delegated to the app.
+ */
+function walletReader(
+  options: { embedded?: Hex[]; delegated?: Hex[]; fail?: boolean } = {},
+): FakeWallets {
+  const calls: string[] = [];
+  const embedded = new Set((options.embedded ?? []).map((a) => a.toLowerCase()));
+  const delegated = new Set((options.delegated ?? []).map((a) => a.toLowerCase()));
   return {
     calls,
-    ready: async () => true,
-    market: async () => [],
-    quote: async () => {
-      throw Problem.unavailable("No route");
-    },
-    walletKind: async (address) => {
+    embedded: async (_did, address): Promise<EmbeddedWallet | null> => {
       calls.push(address);
-      return respond(address);
+      if (options.fail) throw new Error("privy: 503 https://auth.privy.io/api/v1/users/secret");
+      const key = address.toLowerCase();
+      if (!embedded.has(key) && !delegated.has(key)) return null;
+      return {
+        id: `wallet-${key.slice(2, 6)}`,
+        address: key as Hex,
+        delegated: delegated.has(key),
+      };
     },
-    permissionStatus: async () => ({ approved: false, revoked: false }),
-    verifyMessage: async () => false,
-    verifyPermission: async () => false,
   };
-}
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((settle, fail) => {
-    resolve = settle;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
 }
 
 const opened: FastifyInstance[] = [];
@@ -66,8 +64,7 @@ afterEach(async () => {
 /**
  * Reproduces the parts of buildApp this module depends on — the request decorators, the
  * jurisdiction/eligibility hook and the problem+json error handler — without booting the real app.
- * That keeps this suite free of PGlite and network access, and, until app.ts drops its inline
- * /v1/me, avoids the duplicate-route boot failure that registering the module there would cause.
+ * That keeps this suite free of PGlite and network access.
  */
 async function harness(
   options: {
@@ -156,7 +153,7 @@ describe("GET /v1/me", () => {
     expect(response.json()).toMatchObject({ status: 401, code: "unauthenticated" });
   });
 
-  test("returns the inline handler's fields plus identity the client needs, and nothing else", async () => {
+  test("returns the identity the client needs, and nothing else", async () => {
     const app = await harness();
     const response = await app.inject({ url: "/v1/me", headers: signedIn() });
     expect(response.statusCode).toBe(200);
@@ -172,14 +169,14 @@ describe("GET /v1/me", () => {
       eligible: false,
       eligibility_reason: "region_unknown",
       chain_id: 8453,
-      automation_supported: false,
+      automation: { supported: false, signer_id: null, wallet: null, delegated: false },
       execution_available: false,
     });
     expect(Date.parse(String(body.server_time))).toBeGreaterThan(0);
     // Pinning the key set is how the session id stays out: a 200 proves the token verified, not
     // that the Privy session is still live, so nothing session-shaped may be published here.
     expect(Object.keys(body).sort()).toEqual([
-      "automation_supported",
+      "automation",
       "chain_id",
       "eligibility_reason",
       "eligible",
@@ -302,13 +299,6 @@ describe("GET /v1/me", () => {
     });
   });
 
-  test("resolves identity without touching the chain", async () => {
-    const chain = chainReader(async () => "base_account");
-    const app = await harness({ wallets: [alice, bob], deps: { chain } });
-    expect((await app.inject({ url: "/v1/me", headers: signedIn() })).statusCode).toBe(200);
-    expect(chain.calls).toEqual([]);
-  });
-
   test("stays available when the worker heartbeat query fails", async () => {
     const app = await harness({
       deps: {
@@ -323,14 +313,87 @@ describe("GET /v1/me", () => {
     expect(response.body).not.toContain("password");
   });
 
-  test("reports automation support from the configured spender address", async () => {
+  test("reports the signer and the selected wallet's delegation, read from Privy", async () => {
+    const wallets = walletReader({ delegated: [alice] });
     const app = await harness({
-      config: settings({ SPENDER_ADDRESS: "0x4444444444444444444444444444444444444444" }),
-      deps: { workerAvailable: async () => true },
+      config: settings({ PRIVY_KEY_QUORUM_ID: SIGNER }),
+      deps: { wallets, workerAvailable: async () => true },
     });
     expect(
       await app.inject({ url: "/v1/me", headers: signedIn() }).then((r) => r.json()),
-    ).toMatchObject({ automation_supported: true, execution_available: true });
+    ).toMatchObject({
+      automation: { supported: true, signer_id: SIGNER, wallet: alice, delegated: true },
+      execution_available: true,
+    });
+    expect(wallets.calls).toEqual([alice]);
+  });
+
+  test("an embedded wallet that is not delegated is named, an external wallet is not", async () => {
+    const wallets = walletReader({ embedded: [alice] });
+    const app = await harness({
+      wallets: [alice, bob],
+      config: settings({ PRIVY_KEY_QUORUM_ID: SIGNER }),
+      deps: { wallets },
+    });
+    const embedded = await app.inject({
+      url: "/v1/me",
+      headers: signedIn({ "x-mandate-wallet": alice }),
+    });
+    expect(embedded.json()).toMatchObject({
+      automation: { supported: true, wallet: alice, delegated: false },
+    });
+    // Bob is a linked external wallet: Privy has no embedded wallet at that address, so there
+    // is nothing that could ever be delegated and `wallet` says so by staying null.
+    const external = await app.inject({
+      url: "/v1/me",
+      headers: signedIn({ "x-mandate-wallet": bob }),
+    });
+    expect(external.json()).toMatchObject({
+      automation: { supported: true, wallet: null, delegated: false },
+    });
+  });
+
+  test("asks Privy only when a wallet is selected", async () => {
+    const wallets = walletReader({ delegated: [alice, bob] });
+    const app = await harness({ wallets: [alice, bob], deps: { wallets } });
+    const ambiguous = await app.inject({ url: "/v1/me", headers: signedIn() });
+    expect(ambiguous.statusCode).toBe(200);
+    expect(ambiguous.json()).toMatchObject({
+      wallet_state: "selection_required",
+      automation: { wallet: null, delegated: false },
+    });
+    expect(wallets.calls).toEqual([]);
+  });
+
+  test("a Privy failure degrades delegation to false rather than failing identity", async () => {
+    const wallets = walletReader({ fail: true });
+    const app = await harness({ config: settings({ PRIVY_KEY_QUORUM_ID: SIGNER }), deps: { wallets } });
+    const response = await app.inject({ url: "/v1/me", headers: signedIn() });
+    // The frontend decides whether the user is signed in from this endpoint. A Privy blip must
+    // withhold an offer, not sign everyone out.
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      automation: { supported: true, signer_id: SIGNER, wallet: null, delegated: false },
+    });
+    expect(response.body).not.toContain("privy.io");
+  });
+});
+
+describe("automationOf", () => {
+  test("never rejects, and reports support from configuration alone", async () => {
+    const config = settings({ PRIVY_KEY_QUORUM_ID: SIGNER });
+    expect(await automationOf(config, undefined, "did", alice)).toEqual({
+      supported: true,
+      signer_id: SIGNER,
+      wallet: null,
+      delegated: false,
+    });
+    expect(
+      await automationOf(settings(), walletReader({ delegated: [alice] }), "did", alice),
+    ).toEqual({ supported: false, signer_id: null, wallet: alice, delegated: true });
+    expect(await automationOf(config, walletReader({ fail: true }), "did", alice)).toMatchObject({
+      delegated: false,
+    });
   });
 });
 
@@ -382,157 +445,71 @@ describe("eligibilityReason", () => {
   });
 });
 
-describe("WalletCapabilities", () => {
-  const kinds: Record<string, WalletKind> = {
-    [alice]: "base_account",
-    [bob]: "eoa",
-    [mallory]: "contract",
-  };
-  test("grants spending capability only to a Base account", async () => {
-    const chain = chainReader(async (address) => kinds[address] ?? "contract");
-    const capabilities = new WalletCapabilities(chain);
-    const rows = await capabilities.kinds([alice, bob, mallory], 1_700_000_000_000);
-    expect(rows.map((row) => [row.kind, row.can_authorize_spending, row.checked])).toEqual([
-      ["base_account", true, true],
-      ["eoa", false, true],
-      ["contract", false, true],
-    ]);
-    expect(rows[0]?.checked_at).toBe(new Date(1_700_000_000_000).toISOString());
-    expect(rows.map((row) => row.address)).toEqual([alice, bob, mallory]);
-  });
-
-  test("serves repeat reads from cache and refreshes once the TTL passes", async () => {
-    const chain = chainReader(async () => "base_account");
-    const capabilities = new WalletCapabilities(chain, 60_000);
-    await capabilities.kinds([alice], 0);
-    await capabilities.kinds([alice], 59_999);
-    expect(chain.calls).toEqual([alice]);
-    const refreshed = await capabilities.kinds([alice], 60_000);
-    expect(chain.calls).toEqual([alice, alice]);
-    expect(refreshed[0]?.checked_at).toBe(new Date(60_000).toISOString());
-  });
-
-  test("de-duplicates concurrent and repeated lookups of the same address", async () => {
-    const gate = deferred<WalletKind>();
-    const chain = chainReader(() => gate.promise);
-    const capabilities = new WalletCapabilities(chain);
-    const first = capabilities.kinds([alice, alice], 0);
-    const second = capabilities.kinds([alice], 0);
-    gate.resolve("base_account");
-    const rows = await first;
-    expect(rows).toHaveLength(2);
-    expect(rows.map((row) => row.kind)).toEqual(["base_account", "base_account"]);
-    expect((await second)[0]?.kind).toBe("base_account");
-    expect(chain.calls).toEqual([alice]);
-  });
-
-  test("fails soft on an RPC error and does not cache the failure", async () => {
-    let fail = true;
-    const chain = chainReader(async () => {
-      if (fail) throw new Error("https://rpc.example/PROVIDER-KEY 429 rate limited");
-      return "base_account";
-    });
-    const capabilities = new WalletCapabilities(chain);
-    const failed = await capabilities.kinds([alice], 0);
-    expect(failed[0]).toEqual({
-      address: alice,
-      kind: null,
-      can_authorize_spending: false,
-      checked: false,
-      checked_at: null,
-    });
-    fail = false;
-    // Same instant: a cached failure would have kept returning null for the whole TTL.
-    expect((await capabilities.kinds([alice], 0))[0]?.kind).toBe("base_account");
-    expect(chain.calls).toEqual([alice, alice]);
-  });
-
-  test("bounds the cache so an address set cannot pin memory", async () => {
-    const chain = chainReader(async () => "eoa");
-    const capabilities = new WalletCapabilities(chain, 60_000, 3);
-    const addresses = [1, 2, 3, 4].map((n) => `0x${String(n).repeat(40)}`.slice(0, 42) as Hex);
-    for (const address of addresses) await capabilities.kinds([address], 0);
-    expect(chain.calls).toHaveLength(4);
-    // The fourth write evicted the oldest entry, so the first address is read again while the
-    // most recent one is still served from cache.
-    await capabilities.kinds([addresses[3] as Hex], 1);
-    expect(chain.calls).toHaveLength(4);
-    await capabilities.kinds([addresses[0] as Hex], 1);
-    expect(chain.calls).toHaveLength(5);
-  });
-
-  test("bounds chain lookups per request and fills the rest on the next poll", async () => {
-    const chain = chainReader(async () => "eoa");
-    const capabilities = new WalletCapabilities(chain, 60_000, 512, 2);
-    const wallets = [alice, bob, mallory];
-    const first = await capabilities.kinds(wallets, 0);
-    expect(first.map((row) => row.checked)).toEqual([true, true, false]);
-    expect(chain.calls).toEqual([alice, bob]);
-    const second = await capabilities.kinds(wallets, 1);
-    expect(second.map((row) => row.checked)).toEqual([true, true, true]);
-    expect(chain.calls).toEqual([alice, bob, mallory]);
-  });
-
-  test("never rejects, whatever the chain does", async () => {
-    const chain = chainReader(async () => {
-      throw new Error("boom");
-    });
-    const rows = await new WalletCapabilities(chain).kinds([alice, bob], 0);
-    expect(rows.map((row) => [row.kind, row.checked, row.checked_at])).toEqual([
-      [null, false, null],
-      [null, false, null],
-    ]);
-  });
-});
-
 describe("GET /v1/me/wallets", () => {
-  test("reports each linked wallet's automation capability", async () => {
-    const chain = chainReader(async (address) => (address === alice ? "base_account" : "eoa"));
-    const app = await harness({ wallets: [alice, bob], deps: { chain } });
+  test("reports each linked wallet's embedded and delegated state, in order", async () => {
+    const wallets = walletReader({ embedded: [bob], delegated: [alice] });
+    const app = await harness({
+      wallets: [alice, bob, mallory],
+      config: settings({ PRIVY_KEY_QUORUM_ID: SIGNER }),
+      deps: { wallets },
+    });
     const response = await app.inject({ url: "/v1/me/wallets", headers: signedIn() });
     expect(response.statusCode).toBe(200);
-    const body = response.json<{ items: Array<Record<string, unknown>>; chain_id: number }>();
-    expect(body.items.map((item) => [item.address, item.can_authorize_spending])).toEqual([
-      [alice, true],
-      [bob, false],
+    const body = response.json<{
+      items: Array<Record<string, unknown>>;
+      chain_id: number;
+      signer_id: string;
+    }>();
+    expect(body.items).toEqual([
+      { address: alice, embedded: true, delegated: true },
+      { address: bob, embedded: true, delegated: false },
+      // An external wallet the user linked: never embedded, never delegable.
+      { address: mallory, embedded: false, delegated: false },
     ]);
     expect(body.chain_id).toBe(8453);
-    expect(response.json<{ notice: string }>().notice).toContain("re-checked");
+    expect(body.signer_id).toBe(SIGNER);
   });
 
   test("requires authentication", async () => {
-    const app = await harness({ deps: { chain: chainReader(async () => "eoa") } });
+    const app = await harness({ deps: { wallets: walletReader() } });
     expect((await app.inject({ url: "/v1/me/wallets" })).statusCode).toBe(401);
   });
 
-  test("answers 503 rather than inventing a capability when no chain reader is injected", async () => {
+  test("answers 503 rather than inventing a delegation when no reader is injected", async () => {
     const app = await harness();
     const response = await app.inject({ url: "/v1/me/wallets", headers: signedIn() });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toMatchObject({ code: "unavailable", status: 503 });
   });
 
-  test("degrades one row instead of leaking the upstream error", async () => {
-    const chain = chainReader(async () => {
-      throw new Error("https://base-mainnet.example/v2/PROVIDER-KEY refused");
+  test("degrades a row instead of leaking the upstream error", async () => {
+    const app = await harness({
+      wallets: [alice],
+      deps: { wallets: walletReader({ fail: true }) },
     });
-    const app = await harness({ wallets: [alice], deps: { chain } });
     const response = await app.inject({ url: "/v1/me/wallets", headers: signedIn() });
     expect(response.statusCode).toBe(200);
-    expect(response.json<{ items: Array<{ kind: unknown }> }>().items[0]?.kind).toBeNull();
-    expect(response.body).not.toContain("PROVIDER-KEY");
+    expect(response.json<{ items: Array<Record<string, unknown>> }>().items[0]).toEqual({
+      address: alice,
+      embedded: false,
+      delegated: false,
+    });
+    expect(response.body).not.toContain("privy.io");
   });
 
   test("applies a stricter per-route rate limit than the global limit", async () => {
-    const chain = chainReader(async () => "eoa");
-    const app = await harness({ wallets: [alice], deps: { chain }, globalRateLimit: 1000 });
+    const app = await harness({
+      wallets: [alice],
+      deps: { wallets: walletReader() },
+      globalRateLimit: 1000,
+    });
     const codes: number[] = [];
     for (let attempt = 0; attempt < 21; attempt++) {
       codes.push((await app.inject({ url: "/v1/me/wallets", headers: signedIn() })).statusCode);
     }
     expect(codes.slice(0, 20).every((code) => code === 200)).toBe(true);
     expect(codes[20]).toBe(429);
-    // The global limit is untouched, so identity still resolves after the capability route trips.
+    // The global limit is untouched, so identity still resolves after the wallet route trips.
     expect((await app.inject({ url: "/v1/me", headers: signedIn() })).statusCode).toBe(200);
   });
 });

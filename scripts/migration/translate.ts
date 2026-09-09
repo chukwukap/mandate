@@ -1,5 +1,5 @@
 import type { Asset } from "../../packages/contracts/src/index.js";
-import { CHAIN_ID, USDC } from "../../packages/evm/src/permissions/index.js";
+import { CHAIN_ID, USDC } from "../../packages/evm/src/addresses/index.js";
 import { digest } from "../../packages/strategy/src/review/canonical.js";
 import { authorizationMessage } from "../../packages/strategy/src/review/commitment.js";
 import { review } from "../../packages/strategy/src/review/render.js";

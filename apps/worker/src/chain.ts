@@ -1,7 +1,8 @@
+import { type EmbeddedWallet, PrivySigner } from "@mandate/auth";
 import type { WorkerConfig } from "@mandate/config";
 import type { Hex } from "@mandate/contracts";
 import type { DraftRow, ExecutionRow, TransactionRow } from "@mandate/database";
-import { BaseReader, permissionHash, SPEND_MANAGER, USDC } from "@mandate/evm";
+import { BaseReader, USDC } from "@mandate/evm";
 import {
   type Context,
   type Executor,
@@ -27,7 +28,6 @@ import {
   TransactionReceiptNotFoundError,
   type Transport,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 
 const Money = Decimal.clone({ precision: 78, rounding: Decimal.ROUND_DOWN });
@@ -35,9 +35,6 @@ export const ROUTER = "0x698Cb2b6dd822994581fEa6eA4Fc755d1363A92F" as const;
 const ORACLE_REGISTRY = "0x3f3E8cf41cdd3b1D118c16471aB0113DfDDd5CaD" as const;
 const POLICY_REGISTRY = "0x8453000000000000000000000000000000000002" as const;
 const abi = parseAbi([
-  "struct SpendPermission { address account; address spender; address token; uint160 allowance; uint48 period; uint48 start; uint48 end; uint256 salt; bytes extraData; }",
-  "function spend(SpendPermission permission,uint160 value)",
-  "function getCurrentPeriod(SpendPermission permission) view returns ((uint48 start,uint48 end,uint160 spend))",
   "function exactInputSingle((address tokenIn,address tokenOut,int24 tickSpacing,address recipient,uint256 deadline,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
   "function getOracleParams(address token) view returns (uint256 multiplier,bool paused)",
   "function isPaused(uint8 feature) view returns (bool)",
@@ -62,51 +59,43 @@ export function executionSession(now: Date) {
   return !["Sat", "Sun"].includes(get("weekday")) && minute >= 575 && minute < 955;
 }
 /**
- * How long an admitted intent may wait before its first leg is funded.
+ * How long an admitted intent may wait before its first leg is signed.
  *
- * Measured from admission — and admission fires every machine in a single pass, so every order
- * in a basket carries the same creation instant while the spender funds them one at a time,
- * sharing one nonce. Measured against a forked mainnet with three assets: they reached funding
- * at +4s, +42s and +70s, and at a 60s deadline the third was cancelled with both its siblings
- * already filled. A seven-asset basket would have lost five orders the user had authorised, and
- * lost them silently.
- *
- * The bound that actually protects the user is not this one. `guard` re-evaluates the triggering
- * condition against a fresh snapshot immediately before funding, and the swap leg re-quotes and
- * enforces the signed slippage cap — so an order funded late still cannot fill on a condition
- * that has stopped holding or at a price outside what was signed. This is only a backstop
- * against an intent the worker abandoned entirely, so it is sized to let a full basket through
- * rather than to police price staleness, which it was never the thing enforcing.
+ * Measured from admission, and admission fires every machine in a single pass, so every order
+ * in a basket carries the same creation instant while they are signed one at a time. Sized to
+ * let a full seven-asset basket through rather than to police price staleness: `guard`
+ * re-evaluates the triggering condition against a fresh snapshot immediately before each leg,
+ * and the swap re-quotes under the signed slippage cap, so a late order still cannot fill on a
+ * condition that has stopped holding or at a price outside what was signed.
  */
-const FUNDING_DEADLINE_MS = 600_000;
+const ORDER_DEADLINE_MS = 600_000;
 
 export class WorkerChain implements Observations, Executor {
   readonly reader: BaseReader;
   readonly client;
-  readonly account;
-  readonly wallet;
+  private readonly transport: Transport;
+  /**
+   * Signs from users' own Privy embedded wallets. This process holds no wallet key: each user
+   * delegated their wallet to the app's signer once, and every signature is authorised with
+   * that signer's key and checked by Privy against the delegation.
+   */
+  readonly signer: PrivySigner | undefined;
   constructor(
     private readonly config: WorkerConfig,
     injectedTransport?: Transport,
+    signer?: PrivySigner,
   ) {
-    const transport =
+    this.transport =
       injectedTransport ??
       http(config.rpcUrl, {
         timeout: 5000,
         retryCount: 1,
         batch: { wait: 30, batchSize: 5 },
       });
-    this.client = createPublicClient({ chain: base, transport });
+    this.client = createPublicClient({ chain: base, transport: this.transport });
     this.reader = new BaseReader(this.client);
-    this.account =
-      config.execute && config.privateKey
-        ? privateKeyToAccount(config.privateKey as Hex)
-        : undefined;
-    if (this.account && this.account.address.toLowerCase() !== config.spender?.toLowerCase())
-      throw new Error("Worker key does not match SPENDER_ADDRESS");
-    this.wallet = this.account
-      ? createWalletClient({ chain: base, transport, account: this.account })
-      : undefined;
+    this.signer =
+      signer ?? (config.execute && config.privy ? new PrivySigner(config.privy) : undefined);
   }
   verifyMessage(account: Hex, message: string, signature: Hex) {
     return this.reader.verifyMessage(account, message, signature);
@@ -157,10 +146,10 @@ export class WorkerChain implements Observations, Executor {
     feeds.equity = equity.toFixed();
     return { at: Date.now(), feeds, portfolio: { equity: equity.toFixed(), positions } };
   }
-  async authorize(context: Context) {
-    const { draft, instance, permission } = context;
+  async authorize(context: Context): Promise<EmbeddedWallet> {
+    const { draft, instance, owner } = context;
     if (
-      !this.account ||
+      !this.signer ||
       !this.config.execute ||
       instance.status !== "armed" ||
       instance.mode !== "auto" ||
@@ -180,24 +169,11 @@ export class WorkerChain implements Observations, Executor {
       !(this.config.ignoreSession || executionSession(new Date()))
     )
       throw new Error("Execution window closed");
-    if (permission?.status !== "active" || !permission.signature)
-      throw new Error("Missing permission");
-    const p = permission.payload;
-    if (
-      permissionHash(p) !== permission.hash ||
-      p.account.toLowerCase() !== draft.account.toLowerCase() ||
-      p.spender.toLowerCase() !== this.account.address.toLowerCase() ||
-      p.token.toLowerCase() !== USDC.toLowerCase() ||
-      p.period !== draft.envelope.caps.period_secs ||
-      p.allowance !== units(draft.envelope.caps.per_period, 6).toString() ||
-      p.end * 1000 > Date.parse(draft.envelope.caps.expires_at) ||
-      p.start > now ||
-      p.end <= now ||
-      !(await this.reader.verifyPermission(p, permission.signature as Hex))
-    )
-      throw new Error("Permission mismatch");
-    const state = await this.reader.permissionStatus(p);
-    if (!state.approved || state.revoked) throw new Error("Permission inactive");
+    // The wallet is read from Privy on every authorisation, never cached: a user who removes
+    // the delegation has withdrawn consent, and the next order must see that.
+    const wallet = await this.signer.wallet(owner.privyDid, draft.account);
+    if (!wallet) throw new Error("Strategy wallet is not an embedded wallet");
+    if (!wallet.delegated) throw new Error("Automatic buying is not enabled for this wallet");
     for (const asset of draft.envelope.assets) {
       const [multiplier, paused] = await this.client.readContract({
         address: ORACLE_REGISTRY,
@@ -247,12 +223,12 @@ export class WorkerChain implements Observations, Executor {
       )
         throw new Error("Recipient not authorized");
     }
-    return p;
+    return wallet;
   }
-  private async guard(order: ExecutionRow, context: Context, funding: boolean) {
+  private async guard(order: ExecutionRow, context: Context) {
     const { draft, instance } = context;
     await verifyCommitment(draft, instance, this.config.origin, this.reader);
-    const p = await this.authorize(context);
+    const wallet = await this.authorize(context);
     const intent = order.intent;
     const asset = intent ? draft.envelope.assets[intent.asset] : undefined;
     if (
@@ -263,18 +239,8 @@ export class WorkerChain implements Observations, Executor {
       order.amountIn !== units(intent.amount, 6).toString()
     )
       throw new Error("Unsupported order");
-    if (funding && Date.now() - order.createdAt.getTime() > FUNDING_DEADLINE_MS)
-      throw new Error("Order intent expired before funding");
-    if (funding) {
-      const period = await this.client.readContract({
-        address: SPEND_MANAGER,
-        abi,
-        functionName: "getCurrentPeriod",
-        args: [{ ...p, allowance: BigInt(p.allowance), salt: BigInt(p.salt) }],
-      });
-      if (period.spend + BigInt(order.amountIn) > BigInt(p.allowance))
-        throw new Error("Permission allowance exhausted");
-    }
+    if (Date.now() - order.createdAt.getTime() > ORDER_DEADLINE_MS)
+      throw new Error("Order intent expired before signing");
     const [machineId, stateId, transitionIndex] = intent.fireKey.split("/");
     const rule = draft.plan.machines
       .find((m) => m.id === machineId)
@@ -282,131 +248,88 @@ export class WorkerChain implements Observations, Executor {
     const snapshot = await this.snapshot(draft);
     if (!rule || evaluate(draft.plan, snapshot.feeds).get(rule.when) !== true)
       throw new Error("Order condition no longer holds");
-    return { asset, permission: p };
+    return { asset, wallet };
   }
   async prepare(leg: Leg, order: ExecutionRow, context: Context): Promise<Prepared> {
-    if (!this.account || !this.wallet || !this.config.execute)
-      throw new Error("Live execution disabled");
+    if (!this.signer || !this.config.execute) throw new Error("Live execution disabled");
     if ((await this.client.getChainId()) !== 8453) throw new RecoveryRequired("Wrong network");
     const amount = BigInt(order.amountIn);
-    const recipient = context.draft.account as Hex;
+    const { asset, wallet } = await this.guard(order, context);
+    const owner = wallet.address;
+    // The user's wallet pays. An order it cannot cover is cancelled at admission checks, not
+    // left to revert on chain and cost gas.
+    const balance = await this.client.readContract({
+      address: USDC,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [owner],
+    });
+    if (balance < amount) throw new Error("Not enough USDC in the strategy wallet");
     let to: Hex = USDC;
     let data: Hex;
     let evidence: Prepared["evidence"] = null;
-    if (leg === "fund") {
-      const { asset, permission } = await this.guard(order, context, true);
-      // Establish route before pulling funds; refresh it again for the swap.
-      await this.reader.quote(
+    if (leg === "swap") {
+      const quote = await this.reader.quote(
         asset,
         "buy",
         order.intent?.amount ?? "0",
         context.draft.envelope.caps.slippage_bps,
       );
-      to = SPEND_MANAGER;
+      to = ROUTER;
       data = encodeFunctionData({
         abi,
-        functionName: "spend",
+        functionName: "exactInputSingle",
         args: [
-          { ...permission, allowance: BigInt(permission.allowance), salt: BigInt(permission.salt) },
-          amount,
+          {
+            tokenIn: USDC,
+            tokenOut: asset.token,
+            tickSpacing: quote.tick_spacing,
+            recipient: owner,
+            deadline: BigInt(
+              Math.floor(
+                Math.min(
+                  Date.parse(quote.expires_at),
+                  Date.parse(context.draft.envelope.caps.expires_at),
+                ) / 1000,
+              ),
+            ),
+            amountIn: amount,
+            amountOutMinimum: BigInt(quote.min_out),
+            sqrtPriceLimitX96: 0n,
+          },
         ],
       });
-      evidence = {
-        token: USDC,
-        recipient: this.account.address,
-        amount: amount.toString(),
-        from: recipient,
-      };
+      evidence = { token: asset.token, recipient: owner, amount: quote.min_out };
     } else {
-      const balance = await this.client.readContract({
-        address: USDC,
+      data = encodeFunctionData({
         abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [this.account.address],
+        functionName: "approve",
+        args: [ROUTER, amount],
       });
-      if (balance < amount) throw new RecoveryRequired("Funded input no longer available");
-      if (leg === "swap") {
-        const { asset } = await this.guard(order, context, false);
-        const quote = await this.reader.quote(
-          asset,
-          "buy",
-          order.intent?.amount ?? "0",
-          context.draft.envelope.caps.slippage_bps,
-        );
-        to = ROUTER;
-        data = encodeFunctionData({
-          abi,
-          functionName: "exactInputSingle",
-          args: [
-            {
-              tokenIn: USDC,
-              tokenOut: asset.token,
-              tickSpacing: quote.tick_spacing,
-              recipient,
-              deadline: BigInt(
-                Math.floor(
-                  Math.min(
-                    Date.parse(quote.expires_at),
-                    Date.parse(context.draft.envelope.caps.expires_at),
-                  ) / 1000,
-                ),
-              ),
-              amountIn: amount,
-              amountOutMinimum: BigInt(quote.min_out),
-              sqrtPriceLimitX96: 0n,
-            },
-          ],
-        });
-        evidence = { token: asset.token, recipient, amount: quote.min_out };
-      } else if (leg === "refund") {
-        const allowance = await this.client.readContract({
-          address: USDC,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [this.account.address, ROUTER],
-        });
-        if (allowance !== 0n) throw new RecoveryRequired("Router allowance remains");
-        data = encodeFunctionData({
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [recipient, amount],
-        });
-        evidence = {
-          token: USDC,
-          recipient,
-          amount: amount.toString(),
-          from: this.account.address,
-        };
-      } else {
-        if (leg === "approve") await this.guard(order, context, false);
-        data = encodeFunctionData({
-          abi: erc20Abi,
-          functionName: "approve",
-          args: [ROUTER, leg === "reset" ? 0n : amount],
-        });
-      }
     }
-    // A private, dedicated signer is required. An unknown external pending nonce
-    // cannot be attributed to this order and blocks signing.
+    // An unknown pending nonce on the user's wallet cannot be attributed to this order. The
+    // wallet is theirs: they may have sent something from it themselves, and this waits.
     const [latest, pending] = await Promise.all([
-      this.client.getTransactionCount({ address: this.account.address, blockTag: "latest" }),
-      this.client.getTransactionCount({ address: this.account.address, blockTag: "pending" }),
+      this.client.getTransactionCount({ address: owner, blockTag: "latest" }),
+      this.client.getTransactionCount({ address: owner, blockTag: "pending" }),
     ]);
-    if (latest !== pending) throw new RecoveryRequired("Signer has an unknown pending transaction");
-    await this.client.call({ account: this.account, to, data });
-    const request = await this.wallet.prepareTransactionRequest({
-      account: this.account,
+    if (latest !== pending) throw new RecoveryRequired("Wallet has an unknown pending transaction");
+    const account = this.signer.account(wallet);
+    await this.client.call({ account: owner, to, data });
+    const signing = createWalletClient({ chain: base, transport: this.transport, account });
+    const request = await signing.prepareTransactionRequest({
+      account,
       to,
       data,
       value: 0n,
       nonce: pending,
     });
-    const rawTransaction = await this.wallet.signTransaction(request);
+    const rawTransaction = await signing.signTransaction(request);
     return {
       rawTransaction,
       hash: keccak256(rawTransaction),
       nonce: pending,
-      signer: this.account.address.toLowerCase(),
+      signer: owner.toLowerCase(),
       evidence,
     };
   }
@@ -460,11 +383,10 @@ export class WorkerChain implements Observations, Executor {
   async broadcast(transaction: TransactionRow) {
     if (
       !this.config.execute ||
-      !this.account ||
-      this.account.address.toLowerCase() !== transaction.signer ||
+      !this.signer ||
       keccak256(transaction.rawTransaction as Hex) !== transaction.hash
     )
-      throw new RecoveryRequired("Invalid journal signer or hash");
+      throw new RecoveryRequired("Invalid journal hash");
     if ((await this.client.getChainId()) !== 8453) throw new RecoveryRequired("Wrong network");
     await this.client.sendRawTransaction({
       serializedTransaction: transaction.rawTransaction as Hex,

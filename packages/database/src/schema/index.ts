@@ -1,4 +1,3 @@
-import type { PermissionPayload } from "@mandate/contracts";
 import type { Envelope, Intent, Plan, Runtime } from "@mandate/strategy";
 import { sql } from "drizzle-orm";
 import {
@@ -93,39 +92,6 @@ export const instances = namespace.table(
     check("instance_status_valid", sql`${t.status} in ('armed','paused','halted','ended')`),
     check("tick_interval_valid", sql`${t.tickIntervalMs} between 1000 and 3600000`),
     index("instance_schedule").on(t.status, t.nextTickAt),
-    tenantPolicy(t.userId),
-  ],
-);
-export const permissions = namespace.table(
-  "permissions",
-  {
-    id: uuid("id").primaryKey(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id),
-    instanceId: uuid("instance_id").notNull(),
-    token: text("token").notNull(),
-    payload: jsonb("payload").$type<PermissionPayload>().notNull(),
-    hash: text("hash").notNull().unique(),
-    status: text("status").notNull().default("prepared"),
-    signature: text("signature"),
-    createdAt: time("created_at").notNull(),
-    updatedAt: time("updated_at").notNull(),
-  },
-  (t) => [
-    unique("permission_instance_token").on(t.instanceId, t.token),
-    foreignKey({
-      columns: [t.instanceId, t.userId],
-      foreignColumns: [instances.id, instances.userId],
-    }),
-    check(
-      "permission_status_valid",
-      sql`${t.status} in ('prepared','signed','active','revoked','expired')`,
-    ),
-    check(
-      "permission_has_signature",
-      sql`${t.status} not in ('signed','active') or ${t.signature} is not null`,
-    ),
     tenantPolicy(t.userId),
   ],
 );
@@ -229,6 +195,8 @@ export const transactions = namespace.table(
     unique("signer_nonce").on(t.signer, t.nonce),
     check("transaction_status_valid", sql`${t.status} in ('signed','confirmed','reverted')`),
     check("transaction_nonce_valid", sql`${t.nonce} >= 0`),
+    // Wider than the current vocabulary on purpose: journals written under the retired
+    // spend-permission design carry fund/reset/refund legs and must stay readable.
     check("transaction_leg_valid", sql`${t.leg} in ('fund','approve','swap','reset','refund')`),
     tenantPolicy(t.userId),
   ],
@@ -236,6 +204,5 @@ export const transactions = namespace.table(
 
 export type DraftRow = typeof drafts.$inferSelect;
 export type InstanceRow = typeof instances.$inferSelect;
-export type PermissionRow = typeof permissions.$inferSelect;
 export type ExecutionRow = typeof executions.$inferSelect;
 export type TransactionRow = typeof transactions.$inferSelect;

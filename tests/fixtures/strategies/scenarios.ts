@@ -1,5 +1,4 @@
 import type { Asset as WireAsset } from "../../../packages/contracts/src/index.js";
-import type { LimitId } from "../../../packages/execution/src/admission/refusal.js";
 import type { Portfolio } from "../../../packages/strategy/src/enforcement/sizing.js";
 import type { Runtime, TickResult } from "../../../packages/strategy/src/machines/index.js";
 import { initialRuntime, tick } from "../../../packages/strategy/src/machines/index.js";
@@ -13,7 +12,6 @@ import {
   T0,
   TIGHT_ENVELOPE,
 } from "./envelopes.js";
-import { type PermissionFixture, permissionOf } from "./permissions.js";
 import {
   CONDITIONAL_BUY,
   EDGE_TRIGGERED,
@@ -26,13 +24,13 @@ import {
 
 /**
  * A library of authored strategies, each one a complete scenario: the plan as the user wrote
- * it, the envelope they signed, the permission they granted, and the sequence of market ticks
- * that makes the interesting thing happen.
+ * it, the envelope they signed, and the sequence of market ticks that makes the interesting
+ * thing happen.
  *
  * Every fixture carries the outcome it expects. That is not documentation — `strategies.test.ts`
- * runs each one through the real validator, the real tick and the real funding gate and
- * asserts against it, so a fixture that stops describing the product fails here rather than
- * quietly propagating a wrong assumption into every integration test that builds on it.
+ * runs each one through the real validator and the real tick and asserts against it, so a
+ * fixture that stops describing the product fails here rather than quietly propagating a wrong
+ * assumption into every integration test that builds on it.
  */
 
 const MINUTE = 60_000;
@@ -92,13 +90,6 @@ export type Expectation =
       /** Refusal strings each tick records, in order. */
       readonly refused: readonly (readonly string[])[];
       readonly halted: boolean;
-      /**
-       * Funding-gate limit ids, sorted. Present when a permission is attached.
-       *
-       * Typed as `LimitId` rather than `string` so a fixture that names a limit the gate
-       * cannot emit is a type error here, not a test that silently asserts nothing.
-       */
-      readonly permissionRefusals?: readonly LimitId[];
       /** How the venue turns the resulting order away, when it cannot be filled at all. */
       readonly venue?: { readonly status: number; readonly detail: RegExp };
     };
@@ -112,7 +103,6 @@ export type StrategyFixture = {
   /** Raw, unvalidated. The malformed fixtures must reach `validatePlan` as authored input. */
   readonly plan: unknown;
   readonly envelope: Envelope;
-  readonly permission?: PermissionFixture;
   readonly ticks: readonly TickInput[];
   readonly expected: Expectation;
 };
@@ -133,14 +123,12 @@ export const STRATEGIES: readonly StrategyFixture[] = [
     assets: SIGNED_ASSETS,
     plan: CONDITIONAL_BUY,
     envelope: STANDARD_ENVELOPE,
-    permission: permissionOf("active"),
     ticks: ticksAt(["320.08"]),
     expected: {
       kind: "ticks",
       intents: [1],
       refused: [[]],
       halted: false,
-      permissionRefusals: [],
     },
   },
   {
@@ -150,7 +138,6 @@ export const STRATEGIES: readonly StrategyFixture[] = [
     assets: SIGNED_ASSETS,
     plan: ENVELOPE_TRIPPER,
     envelope: TIGHT_ENVELOPE,
-    permission: permissionOf("active"),
     ticks: ticksAt(["320.08"]),
     expected: {
       kind: "ticks",
@@ -160,30 +147,12 @@ export const STRATEGIES: readonly StrategyFixture[] = [
     },
   },
   {
-    id: "expired-permission",
-    title: "An armed strategy whose onchain grant ran out an hour ago",
-    why: "The strategy layer still admits the order — nothing about the plan or the caps is wrong. The authority to pay for it is gone, and only the funding gate knows.",
-    assets: SIGNED_ASSETS,
-    plan: CONDITIONAL_BUY,
-    envelope: STANDARD_ENVELOPE,
-    permission: permissionOf("expired"),
-    ticks: ticksAt(["320.08"]),
-    expected: {
-      kind: "ticks",
-      intents: [1],
-      refused: [[]],
-      halted: false,
-      permissionRefusals: ["permission.expired", "permission.inactive"],
-    },
-  },
-  {
     id: "expired-mandate",
     title: "A strategy past its own expires_at",
     why: "Expiry is checked before evaluation and halts the instance: past the deadline no observation could justify an order, so there is nothing to compute.",
     assets: SIGNED_ASSETS,
     plan: CONDITIONAL_BUY,
     envelope: EXPIRED_ENVELOPE,
-    permission: permissionOf("active"),
     ticks: ticksAt(["320.08"]),
     expected: {
       kind: "ticks",
@@ -199,7 +168,6 @@ export const STRATEGIES: readonly StrategyFixture[] = [
     assets: SIGNED_ASSETS,
     plan: UNTRADABLE_ASSET,
     envelope: STANDARD_ENVELOPE,
-    permission: permissionOf("active"),
     ticks: ticksAt(["320.08"]),
     expected: {
       kind: "ticks",
@@ -216,7 +184,6 @@ export const STRATEGIES: readonly StrategyFixture[] = [
     assets: SIGNED_ASSETS,
     plan: EDGE_TRIGGERED,
     envelope: STANDARD_ENVELOPE,
-    permission: permissionOf("active"),
     // true, still true, false, true again, still true.
     ticks: ticksAt(["320.08", "321", "330", "319", "318"]),
     expected: {
@@ -233,7 +200,6 @@ export const STRATEGIES: readonly StrategyFixture[] = [
     assets: SIGNED_ASSETS,
     plan: LEVEL_TRIGGERED,
     envelope: STANDARD_ENVELOPE,
-    permission: permissionOf("active"),
     ticks: ticksAt(["320.08", "321", "330", "319", "318"]),
     expected: {
       kind: "ticks",

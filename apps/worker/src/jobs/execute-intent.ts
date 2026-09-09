@@ -7,7 +7,7 @@ import type { ExecuteIntentPayload, JobDependencies, JobResult } from "./types.j
 const TERMINAL = ["confirmed", "reverted", "cancelled", "refunded"];
 
 /**
- * Statuses that mean an order owns the single spender key right now. `admitted` is NOT
+ * Statuses that mean an order holds the signing slot right now. `admitted` is NOT
  * one of them: an admitted order has no signed nonce yet. `recovery_required` is, because
  * an operator reconciling it may be replacing a transaction at the signer's next nonce.
  */
@@ -26,8 +26,8 @@ const OWNER_PAGE = 100;
  *
  * 1. Before the journal commit. The retry re-signs the same leg and the `execution_leg`
  *    unique index on (execution_id, leg) rejects the insert, rolling back the whole
- *    transaction. A leg can never be journaled twice, so a second `fund` cannot pull a
- *    second spend permission draw.
+ *    transaction. A leg can never be journaled twice, so a second `swap` cannot spend the
+ *    user's USDC twice.
  * 2. After the journal commit, receipt still pending. The retry rebroadcasts byte-identical
  *    bytes at the identical nonce; the node answers "already known" and the chain sees one
  *    transaction. The `signer_nonce` unique index on (signer, nonce) makes two *different*
@@ -67,7 +67,7 @@ export async function executeIntent(
   const scoped = { ...base, instanceId: order.instanceId };
 
   // Lifecycle has NO guard against a manual signal — it only early-returns on
-  // `recovery_required`. Handed a signal's id it would fund, approve and swap a trade the
+  // `recovery_required`. Handed a signal's id it would approve and swap a trade the
   // user chose to place by hand. This precondition is the only thing between a manual-only
   // strategy and a real transfer, so it must live here and not in the scheduler.
   if (order.status === "signal")
@@ -98,7 +98,7 @@ export async function executeIntent(
       }),
     );
   // WORKER_EXECUTE=0. Lifecycle would call chain.prepare, catch "Live execution disabled"
-  // and — because no fund leg exists yet — write the order `cancelled` before funding.
+  // and — because nothing has been signed yet — write the order `cancelled`.
   // Budget reservations are never credited back, so an observation-only worker would
   // permanently burn a user's period and lifetime caps for a trade nobody attempted.
   if (!deps.executeEnabled)
@@ -123,7 +123,7 @@ export async function executeIntent(
   // One dedicated signer serves every owner, so an unrelated in-flight transaction is not
   // merely a queue conflict. `chain.prepare` compares the signer's latest and pending nonce
   // and throws RecoveryRequired("Signer has an unknown pending transaction") when they
-  // differ; for a fund leg Lifecycle turns that into `recovery_required` and HALTS this
+  // differ; Lifecycle turns that into `recovery_required` and HALTS this
   // user's instance. Without this gate, one owner's ordinary in-flight swap would push
   // another owner's untouched order into operator recovery.
   if (holder)
@@ -221,7 +221,7 @@ export async function executeIntent(
   );
 }
 
-/** `fund:confirmed;approve:signed` — ordered by nonce, so it is stable across reads. */
+/** `approve:confirmed;swap:signed` — ordered by nonce, so it is stable across reads. */
 function legs(journal: readonly { leg: string; status: string }[]) {
   return journal.map((t) => `${t.leg}:${t.status}`).join(";");
 }

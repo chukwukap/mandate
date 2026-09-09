@@ -47,3 +47,24 @@ export class ApiError extends Error {
 }
 
 export type ApiCall = <T>(path: string, body?: unknown) => Promise<T>;
+
+/**
+ * `GET /v1/me`'s account for automatic buying.
+ *
+ * The user's embedded wallet is the account strategies buy from; `delegated` says whether the
+ * app's signer has been added to it. `signer_id` is the API's own view of that signer, sent so
+ * a web build without `NEXT_PUBLIC_PRIVY_KEY_QUORUM_ID` can still delegate to the right one.
+ */
+export type MeAutomation = {
+  supported: boolean;
+  signer_id: string | null;
+  wallet: `0x${string}` | null;
+  delegated: boolean;
+};
+export type Me = { automation: MeAutomation };
+/** `POST /v1/me/automation`, after the API has re-read the wallet's signers from Privy. */
+export type AutomationResult = {
+  wallet: `0x${string}`;
+  delegated: boolean;
+  signer_id: string | null;
+};

@@ -231,8 +231,8 @@ export async function registerExecutions(app: FastifyInstance, deps: ExecutionDe
       const settlements = new Map<string, Settlement | null>();
       const reader = deps.receipts;
       if (reader) {
-        // At most five reads: `unique("execution_leg")` allows one row per leg and there are
-        // five legs. Each is cached and de-duplicated inside the reader.
+        // At most one read per leg: `unique("execution_leg")` allows one row per leg, and an
+        // order is an approve and a swap. Each is cached and de-duplicated inside the reader.
         const settled = record.journal.filter((entry) => entry.status !== "signed");
         const results = await Promise.all(
           settled.map((entry) =>

@@ -2,7 +2,8 @@ import { afterAll, afterEach, beforeAll, expect, setSystemTime, test } from "bun
 import { randomBytes, randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
-import { type Hex, type PermissionCheck, Problem } from "@mandate/contracts";
+import type { EmbeddedWallet } from "@mandate/auth";
+import { type Hex, Problem } from "@mandate/contracts";
 import {
   connectDatabase,
   type Database,
@@ -13,7 +14,7 @@ import {
 } from "@mandate/database";
 import { ASSETS, USDC } from "@mandate/evm";
 import { type Caps, capsSchema, type Envelope, type Plan, planSchema } from "@mandate/strategy";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import Fastify, { type FastifyInstance } from "fastify";
 import { verifyMessage } from "viem";
@@ -38,15 +39,20 @@ let database: Database;
 let repo: Repository;
 let users: { alice: string; bob: string };
 
-// Mutable chain state. permissionStatus is the only chain read arm performs, and verifyMessage
-// the only one create performs; both are real cryptography here, not a stub that returns true.
-let permissionState: PermissionCheck = { approved: false, revoked: false };
-let permissionThrows = false;
+// verifyMessage is the only chain read this module performs, and it is real cryptography here,
+// not a stub that returns true.
 const chain: InstancesDependencies["chain"] = {
   verifyMessage: (address, message, signature) => verifyMessage({ address, message, signature }),
-  permissionStatus: async () => {
-    if (permissionThrows) throw new Error("rpc down: https://base-rpc.example/key-in-url");
-    return permissionState;
+};
+// Privy's view of each wallet, as the module reads it: which addresses are delegated to the
+// app's signer. Mutable so a test can grant and withdraw between requests.
+const delegated = new Set<string>();
+let privyDown = false;
+const wallets: InstancesDependencies["wallets"] = {
+  embedded: async (_did, address): Promise<EmbeddedWallet | null> => {
+    if (privyDown) throw new Error("privy: 503 https://auth.privy.io/api/v1/users/app-secret");
+    const key = address.toLowerCase();
+    return { id: `wallet-${key.slice(2, 8)}`, address: key as Hex, delegated: delegated.has(key) };
   },
 };
 
@@ -154,6 +160,7 @@ async function harness(overrides: Partial<InstancesDependencies> = {}) {
   const deps: InstancesDependencies = {
     repository: overrides.repository ?? repo,
     chain: overrides.chain ?? chain,
+    wallets: overrides.wallets ?? wallets,
     ...(overrides.executionAvailable ? { executionAvailable: overrides.executionAvailable } : {}),
   };
   await registerInstances(app, deps);
@@ -196,8 +203,8 @@ afterAll(async () => {
 afterEach(async () => {
   setSystemTime();
   eligible = true;
-  permissionThrows = false;
-  permissionState = { approved: false, revoked: false };
+  privyDown = false;
+  delegated.clear();
   await database.delete(schema.workerState);
 });
 
@@ -273,44 +280,6 @@ async function row(instance: string, owner: "alice" | "bob" = "alice"): Promise<
   return found;
 }
 
-/** Puts an instance into automatic mode the way permission activation would. */
-async function setAuto(instance: string) {
-  await tenant(database, users.alice, async (tx) => {
-    await tx
-      .update(schema.instances)
-      .set({ mode: "auto", updatedAt: new Date() })
-      .where(and(eq(schema.instances.id, instance), eq(schema.instances.userId, users.alice)));
-  });
-}
-
-async function seedPermission(instance: string, status: string, end: Date) {
-  await tenant(database, users.alice, async (tx) => {
-    await tx.insert(schema.permissions).values({
-      id: randomUUID(),
-      userId: users.alice,
-      instanceId: instance,
-      token: USDC.toLowerCase(),
-      // Opaque to these routes: arm reads only payload (for the chain call) and status.
-      hash: `0x${randomBytes(32).toString("hex")}`,
-      status,
-      signature: ["signed", "active"].includes(status) ? `0x${"ab".repeat(65)}` : null,
-      payload: {
-        account: alice.address.toLowerCase() as Hex,
-        spender: `0x${"33".repeat(20)}` as Hex,
-        token: USDC,
-        allowance: "20000000",
-        period: 86400,
-        start: Math.floor(Date.now() / 1000) - 60,
-        end: Math.floor(end.getTime() / 1000),
-        salt: "1",
-        extraData: "0x",
-      },
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-  });
-}
-
 async function seedEvaluations(instance: string, times: Date[]) {
   await tenant(database, users.alice, async (tx) => {
     for (const at of times)
@@ -365,8 +334,9 @@ test("a signed draft becomes one paused instance and cannot be replayed", async 
   expect(body.mode).toBe("manual");
   expect(body.strategy).toBe(draft.id);
   expect(body.version).toBe(draft.artifact);
-  // The draft asked for automatic mode; the instance still starts manual and unpermissioned.
-  expect(body.needs_permission).toBe(true);
+  // The draft asked for automatic mode, but the wallet is not delegated: the instance starts
+  // manual and the response says what is missing.
+  expect(body.needs_automation).toBe(true);
   expect(body.execution_available).toBe(false);
   // A sequential replay is caught by the route's own consumed/expiry read. The concurrent
   // loser instead gets 409 draft-consumed from the atomic UPDATE ... WHERE consumed_at IS NULL
@@ -589,56 +559,82 @@ test("expiry is materialised even for an instance that was only ever paused", as
   }
 });
 
-test("arming an automatic instance requires a permission that the chain confirms", async () => {
-  const { instance } = await createInstance({ mode: "auto" });
-  await setAuto(instance);
-
-  const missing = await post(`/v1/instances/${instance}/arm`);
-  expect(missing.statusCode).toBe(409);
-  // Not the 404 repo.permission raises: the instance plainly exists, the authority does not.
-  expect(missing.json<Body>().code).toBe("permission-required");
-
-  await seedPermission(instance, "prepared", new Date(Date.now() + 86_400_000));
-  const unapproved = await post(`/v1/instances/${instance}/arm`);
-  expect(unapproved.statusCode).toBe(409);
-  expect(unapproved.json<Body>().code).toBe("permission-inactive");
-
-  permissionState = { approved: true, revoked: false };
-  // Approved onchain but never activated locally: the repository still refuses.
-  const inactiveRow = await post(`/v1/instances/${instance}/arm`);
-  expect(inactiveRow.statusCode).toBe(409);
-  expect(inactiveRow.json<Body>().code).toBe("permission-required");
-
-  await tenant(database, users.alice, async (tx) => {
-    await tx
-      .update(schema.permissions)
-      .set({ status: "active", signature: `0x${"ab".repeat(65)}`, updatedAt: new Date() })
-      .where(eq(schema.permissions.instanceId, instance));
+test("a draft that asked for automatic mode goes auto at creation when the wallet is delegated", async () => {
+  delegated.add(alice.address.toLowerCase());
+  const draft = await seedDraft({ mode: "auto" });
+  const signature = await alice.signMessage({ message: draft.message });
+  const created = await app.inject({
+    method: "POST",
+    url: "/v1/strategies",
+    headers,
+    payload: { artifact_id: draft.artifact, signature },
   });
+  expect(created.statusCode).toBe(201);
+  expect(created.json<Body>()).toMatchObject({
+    status: "paused",
+    mode: "auto",
+    needs_automation: false,
+  });
+  // Still paused: delegation is consent to sign, arming is the decision to run.
+  expect((await row(created.json<{ instance: string }>().instance)).status).toBe("paused");
+
+  // A manual draft is unaffected by the delegation either way.
+  const manual = await createInstance({ mode: "manual" });
+  const view = (await get(`/v1/instances/${manual.instance}`)).json<Body>();
+  expect(view.mode).toBe("manual");
+  expect(view.requested_mode).toBe("manual");
+});
+
+test("arming an automatic instance requires the wallet's delegation, read live from Privy", async () => {
+  const { instance } = await createInstance({ mode: "auto" });
+  expect((await row(instance)).mode).toBe("manual");
+
+  const refused = await post(`/v1/instances/${instance}/arm`);
+  expect(refused.statusCode).toBe(409);
+  expect(refused.json<Body>().code).toBe("automation-required");
+  expect(refused.json<Body>().detail).toContain("Turn on automatic buying");
+  // Refused means untouched: still paused, still manual.
+  expect((await row(instance)).status).toBe("paused");
+  expect((await row(instance)).mode).toBe("manual");
+
+  delegated.add(alice.address.toLowerCase());
   const armed = await post(`/v1/instances/${instance}/arm`);
   expect(armed.statusCode).toBe(200);
   expect(armed.json<Body>().status).toBe("armed");
   expect(armed.json<Body>().mode).toBe("auto");
 
-  // A revoked permission the local row still calls active must not arm.
+  // Once auto, re-arming does not consult Privy: the worker re-reads the delegation before
+  // every signature, and POST /v1/me/automation is the path that turns a withdrawn delegation
+  // into a paused, manual instance.
   await post(`/v1/instances/${instance}/pause`);
-  permissionState = { approved: true, revoked: true };
-  const revoked = await post(`/v1/instances/${instance}/arm`);
-  expect(revoked.statusCode).toBe(409);
-  expect(revoked.json<Body>().code).toBe("permission-inactive");
+  delegated.clear();
+  const rearmed = await post(`/v1/instances/${instance}/arm`);
+  expect(rearmed.statusCode).toBe(200);
+  expect(rearmed.json<Body>().mode).toBe("auto");
 });
 
-test("an unreadable RPC is 503, never a 500 and never an armed instance", async () => {
+test("an unreachable Privy is 503, never a 500 and never an armed instance", async () => {
   const { instance } = await createInstance({ mode: "auto" });
-  await setAuto(instance);
-  await seedPermission(instance, "active", new Date(Date.now() + 86_400_000));
-  permissionThrows = true;
+  privyDown = true;
   const response = await post(`/v1/instances/${instance}/arm`);
   expect(response.statusCode).toBe(503);
   expect(response.json<Body>().code).toBe("unavailable");
-  // The RPC URL carries the provider key; it must not reach the client.
-  expect(JSON.stringify(response.json())).not.toContain("base-rpc.example");
+  // The Privy SDK error carries the request URL; it must not reach the client.
+  expect(JSON.stringify(response.json())).not.toContain("privy.io");
   expect((await row(instance)).status).toBe("paused");
+  expect((await row(instance)).mode).toBe("manual");
+
+  // At creation the same outage is not an error: the instance exists and is simply manual.
+  const draft = await seedDraft({ mode: "auto" });
+  const signature = await alice.signMessage({ message: draft.message });
+  const created = await app.inject({
+    method: "POST",
+    url: "/v1/strategies",
+    headers,
+    payload: { artifact_id: draft.artifact, signature },
+  });
+  expect(created.statusCode).toBe(201);
+  expect(created.json<Body>()).toMatchObject({ mode: "manual", needs_automation: true });
 });
 
 test("arm acts as the wallet the request selects, and reads are open to any owner", async () => {

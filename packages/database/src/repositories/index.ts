@@ -10,8 +10,6 @@ import {
   executions,
   type InstanceRow,
   instances,
-  type PermissionRow,
-  permissions,
   users,
 } from "../schema/index.js";
 
@@ -188,25 +186,6 @@ export class Repository {
       if (action === "arm") {
         if (Date.parse(draft.envelope.caps.expires_at) <= now.getTime())
           throw new Problem(409, "expired", "Strategy expired", "The signed strategy has expired.");
-        if (instance.mode === "auto") {
-          const [grant] = await tx
-            .select()
-            .from(permissions)
-            .where(
-              and(
-                eq(permissions.instanceId, id),
-                eq(permissions.userId, user),
-                eq(permissions.status, "active"),
-              ),
-            );
-          if (!grant || grant.payload.end * 1000 <= now.getTime())
-            throw new Problem(
-              409,
-              "permission-required",
-              "Permission required",
-              "Confirm an active onchain spending permission first.",
-            );
-        }
       }
       await tx
         .update(instances)
@@ -222,133 +201,33 @@ export class Repository {
         .where(and(eq(instances.id, id), eq(instances.userId, user)));
     });
   }
-  async preparePermission(
-    user: string,
-    id: string,
-    build: (draft: DraftRow, instance: InstanceRow) => typeof permissions.$inferInsert,
-  ) {
-    return this.locked(user, id, async (tx, instance, draft) => {
+  /**
+   * The one write that turns automatic buying on or off for an instance.
+   *
+   * `auto` is only ever set after the API has confirmed, against Privy, that the draft's wallet
+   * is delegated to the app's signer. Anything else is manual, and going manual pauses the
+   * strategy so a user who withdraws the delegation is not left with an armed rule that can
+   * no longer act.
+   */
+  async setMode(user: string, id: string, mode: "auto" | "manual", now = new Date()) {
+    return this.locked(user, id, async (tx, instance) => {
       if (["halted", "ended"].includes(instance.status))
         throw new Problem(
           409,
           "terminal-instance",
           "Strategy has ended",
-          "Cannot authorize a terminal strategy.",
-        );
-      const [prior] = await tx
-        .select()
-        .from(permissions)
-        .where(and(eq(permissions.instanceId, id), eq(permissions.userId, user)));
-      if (prior) return prior;
-      const [created] = await tx.insert(permissions).values(build(draft, instance)).returning();
-      if (!created) throw new Error("Permission insert failed");
-      return created;
-    });
-  }
-  async permission(user: string, id: string) {
-    return tenant(this.db, user, async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(permissions)
-        .where(and(eq(permissions.instanceId, id), eq(permissions.userId, user)));
-      if (!row) throw Problem.notFound();
-      return row;
-    });
-  }
-  async saveGrant(user: string, row: PermissionRow, signature: string, now: Date) {
-    return this.locked(user, row.instanceId, async (tx, instance) => {
-      if (["halted", "ended"].includes(instance.status))
-        throw new Problem(
-          409,
-          "terminal-instance",
-          "Strategy has ended",
-          "Cannot authorize a terminal strategy.",
-        );
-      if (row.payload.end * 1000 <= now.getTime())
-        throw new Problem(
-          409,
-          "expired",
-          "Permission expired",
-          "Create a new strategy with a future expiry.",
-        );
-      const [saved] = await tx
-        .update(permissions)
-        .set({ signature, status: "signed", updatedAt: now })
-        .where(
-          and(
-            eq(permissions.id, row.id),
-            eq(permissions.userId, user),
-            eq(permissions.hash, row.hash),
-            eq(permissions.status, "prepared"),
-          ),
-        )
-        .returning();
-      if (saved) return saved;
-      const [existing] = await tx
-        .select()
-        .from(permissions)
-        .where(and(eq(permissions.id, row.id), eq(permissions.userId, user)));
-      if (existing?.signature === signature && ["signed", "active"].includes(existing.status))
-        return existing;
-      throw new Problem(
-        409,
-        "permission-state",
-        "Permission changed",
-        "Refresh the permission before continuing.",
-      );
-    });
-  }
-  async setPermissionStatus(
-    user: string,
-    row: PermissionRow,
-    status: "active" | "revoked" | "expired",
-    now: Date,
-    enableAuto: boolean,
-  ) {
-    return this.locked(user, row.instanceId, async (tx, instance) => {
-      const [current] = await tx
-        .select()
-        .from(permissions)
-        .where(and(eq(permissions.id, row.id), eq(permissions.userId, user)))
-        .for("update");
-      if (!current || current.hash !== row.hash) throw Problem.notFound();
-      if (current.status === "revoked" && status !== "revoked")
-        throw new Problem(
-          409,
-          "permission-revoked",
-          "Permission revoked",
-          "A revoked permission cannot be reactivated.",
-        );
-      if (
-        status === "active" &&
-        (!current.signature || ["halted", "ended"].includes(instance.status))
-      )
-        throw new Problem(
-          409,
-          "permission-state",
-          "Cannot activate permission",
-          "Sign the permission for a non-terminal strategy first.",
+          "A halted or ended strategy needs a new signed draft.",
         );
       const [updated] = await tx
-        .update(permissions)
-        .set({ status, updatedAt: now })
-        .where(and(eq(permissions.id, row.id), eq(permissions.userId, user)))
+        .update(instances)
+        .set({
+          mode,
+          ...(mode === "manual" && instance.status === "armed" ? { status: "paused" } : {}),
+          updatedAt: now,
+        })
+        .where(and(eq(instances.id, id), eq(instances.userId, user)))
         .returning();
-      if (status === "active" && enableAuto)
-        await tx
-          .update(instances)
-          .set({ mode: "auto", updatedAt: now })
-          .where(and(eq(instances.id, row.instanceId), eq(instances.userId, user)));
-      if (status !== "active")
-        await tx
-          .update(instances)
-          .set({
-            mode: "manual",
-            status: ["halted", "ended"].includes(instance.status) ? instance.status : "paused",
-            updatedAt: now,
-          })
-          .where(and(eq(instances.id, row.instanceId), eq(instances.userId, user)));
-      if (!updated) throw new Error("Permission update failed");
+      if (!updated) throw Problem.notFound();
       return updated;
     });
   }

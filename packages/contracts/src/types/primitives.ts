@@ -148,7 +148,6 @@ export type {
   ExecutionStatus,
   InstanceStatus,
   Mode,
-  PermissionStatus,
   Side,
   TransactionLeg,
   TransactionStatus,

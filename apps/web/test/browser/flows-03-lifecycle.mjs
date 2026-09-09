@@ -188,7 +188,7 @@ try {
   );
   await L.check(
     "detail: signing wallet is mine",
-    new RegExp(wallet.address.slice(0, 6), "i").test(await detail().innerText()),
+    new RegExp(wallet.account.slice(0, 6), "i").test(await detail().innerText()),
   );
   await detail()
     .locator("summary", { hasText: /Signed review/ })

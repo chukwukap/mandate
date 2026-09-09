@@ -9,19 +9,21 @@ import {
 import { type Repository, type schema, workerAvailable } from "@mandate/database";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { automationRequired, delegation, type WalletReader } from "../automation/delegation.js";
 import { definition, principal, requireAccount, requireEligible, upstream } from "./http.js";
 import { decideTransition, guardLifecycle, type LifecycleAction } from "./lifecycle.js";
 import { cursorPage, detailView, instanceView } from "./views.js";
 
 /**
- * Narrower than TradingDependencies on purpose — this module needs a repository and exactly two
- * chain reads — but structurally satisfied by it, so app.ts can pass the object it already
- * builds: `registerInstances(app, deps.trading)`. No Config is required; the message a user
- * signs is read from the stored draft, never rebuilt from configuration.
+ * Narrower than TradingDependencies on purpose — this module needs a repository, one chain read
+ * and one Privy read — so app.ts passes the pieces it already builds. No Config is required; the
+ * message a user signs is read from the stored draft, never rebuilt from configuration.
  */
 export interface InstancesDependencies {
   repository: Repository;
-  chain: Pick<ChainReader, "permissionStatus" | "verifyMessage">;
+  chain: Pick<ChainReader, "verifyMessage">;
+  /** Whether the draft's wallet is delegated to the app's signer, read live from Privy. */
+  wallets: WalletReader;
   /**
    * Worker heartbeat. Optional so `deps.trading` alone is a valid argument; inject a shared
    * reader when several modules should answer from one query per request.
@@ -122,41 +124,23 @@ function handlers(deps: InstancesDependencies) {
   };
 
   /**
-   * Arm additionally requires an active onchain permission when the instance runs automatically.
+   * Arming a strategy that asked for automatic mode first needs the wallet delegated.
    *
-   * Chain state is the authority, not the stored row: a permission the user revoked directly at
-   * the SpendPermissionManager still reads "active" locally until something looks.
+   * Privy is the authority, not the stored mode: a user who removed the delegation in Privy has
+   * withdrawn consent, and an instance still marked auto must not be armed on the strength of a
+   * row written before that happened. Read live, never cached, and only on the path that turns
+   * a manual instance into an automatic one — an instance already in auto mode was checked when
+   * it got there, and the worker re-reads the delegation before every signature anyway.
    */
-  const requireActivePermission = async (user: string, id: string) => {
-    const grant = await repo.permission(user, id).catch((error: unknown) => {
-      // repo.permission answers 404 for a missing row, which for an instance the caller just
-      // fetched would be a flatly misleading "not found". Unreachable while auto mode can only
-      // be reached through permission activation, but this is a money path.
-      if (error instanceof Problem && error.status === 404)
-        throw new Problem(
-          409,
-          "permission-required",
-          "Permission required",
-          "Confirm an active onchain spending permission first.",
-        );
-      throw error;
-    });
-    const state = await upstream(
-      () => chain.permissionStatus(grant.payload),
-      "The onchain permission state could not be read. Try again shortly.",
-    );
-    if (state.revoked || !state.approved)
-      throw new Problem(
-        409,
-        "permission-inactive",
-        "Permission inactive",
-        "Confirm an active onchain permission before arming.",
-      );
+  const requireDelegation = async (privyDid: string, account: string) => {
+    const embedded = await delegation(deps.wallets, privyDid, account);
+    if (!embedded?.delegated) throw automationRequired();
   };
 
   const transition = (action: LifecycleAction) => async (request: FastifyRequest) => {
     const { id } = idParams.parse(request.params);
-    const user = owner(request);
+    const caller = principal(request);
+    const user = caller.user;
     const now = new Date();
     // Order matters: eligibility is checked before the instance is read, so an ineligible caller
     // probing somebody else's id gets the same 403 for every id and learns nothing.
@@ -170,10 +154,16 @@ function handlers(deps: InstancesDependencies) {
     const decision = decideTransition(instance.status, action);
     if (decision instanceof Problem) throw decision;
     if (decision === "apply") {
-      if (action === "arm" && instance.mode === "auto") await requireActivePermission(user, id);
-      // Repository.transition re-reads FOR UPDATE and re-checks terminal state, expiry and the
-      // permission before writing, so a worker tick landing between the guard and this call can
-      // only turn an optimistic path into that call's own 409 — never into a bad write.
+      if (action === "arm" && draft.mode === "auto" && instance.mode !== "auto") {
+        await requireDelegation(caller.privyDid, draft.account);
+        // Mode first, then status. setMode takes the same row lock transition does and refuses
+        // a terminal row, so a kill landing between the two leaves a manual, halted instance
+        // rather than an armed one with nothing behind it.
+        await repo.setMode(user, id, "auto", now);
+      }
+      // Repository.transition re-reads FOR UPDATE and re-checks terminal state and expiry before
+      // writing, so a worker tick landing between the guard and this call can only turn an
+      // optimistic path into that call's own 409 — never into a bad write.
       await repo.transition(
         user,
         id,
@@ -232,7 +222,7 @@ function handlers(deps: InstancesDependencies) {
     // when that matches no row. Deciding it here instead — read, then insert — is exactly the
     // window in which two concurrent submissions of one signature both pass the read and create
     // two instances against one authorization.
-    const instance = await repo.createInstance(
+    let instance = await repo.createInstance(
       user.user,
       draft,
       input.signature,
@@ -240,15 +230,22 @@ function handlers(deps: InstancesDependencies) {
       TICK_INTERVAL_MS,
       now,
     );
+    // Requesting auto in the draft grants nothing by itself; the delegation does. A wallet the
+    // user already delegated makes the instance automatic here so the next step is simply arm.
+    // A Privy blip at this point leaves the instance manual rather than failing a request whose
+    // instance already exists: `needs_automation` tells the client to ask again through
+    // POST /v1/me/automation.
+    if (draft.mode === "auto") {
+      const embedded = await deps.wallets.embedded(user.privyDid, draft.account).catch(() => null);
+      if (embedded?.delegated) instance = await repo.setMode(user.user, instance.id, "auto", now);
+    }
     return reply.code(201).send({
       strategy: draft.id,
       version: draft.artifactId,
       instance: instance.id,
       status: instance.status,
       mode: instance.mode,
-      // Requesting auto in the draft does not grant anything. Instances always start paused and
-      // manual; the client still has to prepare, sign and activate a spending permission.
-      needs_permission: draft.mode === "auto",
+      needs_automation: draft.mode === "auto" && instance.mode !== "auto",
       execution_available: await available(),
     });
   };

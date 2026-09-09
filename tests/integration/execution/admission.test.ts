@@ -6,22 +6,18 @@ import {
   headroom,
   rollPeriod,
 } from "../../../packages/execution/src/admission/limits.js";
-import { checkPermission } from "../../../packages/execution/src/admission/permission.js";
-import type { LimitId, Refusal } from "../../../packages/execution/src/admission/refusal.js";
+import type { Refusal } from "../../../packages/execution/src/admission/refusal.js";
 import {
   describeRefusal,
   describeRefusals,
   refusalProblem,
 } from "../../../packages/execution/src/admission/refusal.js";
 import { units, whole } from "../../../packages/strategy/src/evaluation/money.js";
-import { ACCOUNTS, assetOf, FakeChainClient, plainAsset } from "../../fixtures/chain/index.js";
+import { assetOf, FakeChainClient, plainAsset } from "../../fixtures/chain/index.js";
 import {
   caps,
   DAY_MS,
-  evidenceOf,
   isoAt,
-  PERMISSIONS,
-  permissionOf,
   planOf,
   replay,
   STANDARD_ENVELOPE,
@@ -239,92 +235,6 @@ test("an expired mandate refuses at funding and says which deadline it passed", 
   expect(refusal?.unit).toBe("UTC");
 });
 
-/**
- * Each permission fixture breaks one derivation the gate performs, and the ids it must produce.
- *
- * Written out rather than snapshotted: a snapshot would happily record a gate that stopped
- * checking something. `revoked` produces `permission.inactive` twice on purpose — once from the
- * stored status and once from the chain — and those are two independent findings, not a
- * duplicate, because a row that says "active" while the chain says "revoked" is a different
- * problem from a row that already knows.
- */
-const PERMISSION_EXPECTATIONS: Readonly<Record<string, readonly LimitId[]>> = {
-  active: [],
-  expired: ["permission.expired", "permission.inactive"],
-  revoked: ["permission.inactive", "permission.inactive"],
-  "not-started": ["permission.not_started"],
-  "ending-inside-horizon": ["permission.horizon"],
-  "allowance-mismatch": ["permission.allowance_mismatch"],
-  "wrong-spender": ["permission.spender_mismatch"],
-  "hash-mismatch": ["permission.hash_mismatch"],
-  "period-exhausted": ["permission.period_allowance"],
-};
-
-test("every permission fixture refuses with the limit it actually breaks, and only that one", () => {
-  for (const fixture of PERMISSIONS) {
-    const expected = PERMISSION_EXPECTATIONS[fixture.id];
-    if (!expected) throw new Error(`No expectation for permission fixture ${fixture.id}`);
-    const refusals = checkPermission({
-      evidence: evidenceOf(fixture),
-      account: ACCOUNTS.user,
-      spender: ACCOUNTS.spender,
-      caps: STANDARD_ENVELOPE.caps,
-      amountIn: ORDER_USDC,
-      now: T0,
-    });
-    expect({ id: fixture.id, limits: limitsOf(refusals) }).toEqual({
-      id: fixture.id,
-      limits: [...expected].sort(),
-    });
-  }
-});
-
-test("a permission the database does not have is a refusal, not an exception", () => {
-  const refusals = checkPermission({
-    evidence: undefined,
-    account: ACCOUNTS.user,
-    spender: ACCOUNTS.spender,
-    caps: STANDARD_ENVELOPE.caps,
-    amountIn: ORDER_USDC,
-    now: T0,
-  });
-  // A missing row must stop the order and be recorded as the reason. Throwing here would crash
-  // the tick that was about to write down why nothing happened.
-  expect(limitsOf(refusals)).toEqual(["permission.missing"]);
-  expect(refusals[0]?.observed).toBe("none");
-});
-
-test("the onchain period is what pays, so its exhaustion refuses while the envelope shows room", () => {
-  const fixture = permissionOf("period-exhausted");
-  const refusals = checkPermission({
-    evidence: evidenceOf(fixture),
-    account: ACCOUNTS.user,
-    spender: ACCOUNTS.spender,
-    caps: STANDARD_ENVELOPE.caps,
-    amountIn: ORDER_USDC,
-    now: T0,
-  });
-  const refusal = refusals.find((entry) => entry.limit === "permission.period_allowance");
-  // The contract anchors its window at the permission's `start`; the strategy runtime anchors
-  // its own at instance creation. The two drift, so this refusal is normal rather than alarming
-  // — and the numbers have to say so: 1250 attempted against a 1000 allowance.
-  expect(refusal?.observed).toBe("1250");
-  expect(refusal?.bound).toBe("1000");
-  expect(refusal?.unit).toBe("USDC");
-  // The envelope, meanwhile, sees an untouched period. Neither view is wrong; they measure
-  // different windows, and only the onchain one can actually pay.
-  expect(
-    checkCaps({
-      caps: STANDARD_ENVELOPE.caps,
-      counters: counters(),
-      now: T0,
-      amountIn: ORDER_USDC,
-      side: "buy",
-      reserved: false,
-    }),
-  ).toEqual([]);
-});
-
 test("no refusal is ever produced without an observed value, a bound and a unit", () => {
   const produced: Refusal[] = [
     ...checkCaps({
@@ -335,18 +245,8 @@ test("no refusal is ever produced without an observed value, a bound and a unit"
       side: "buy",
       reserved: false,
     }),
-    ...PERMISSIONS.flatMap((fixture) =>
-      checkPermission({
-        evidence: evidenceOf(fixture),
-        account: ACCOUNTS.user,
-        spender: ACCOUNTS.spender,
-        caps: STANDARD_ENVELOPE.caps,
-        amountIn: ORDER_USDC,
-        now: T0,
-      }),
-    ),
   ];
-  expect(produced.length).toBeGreaterThan(10);
+  expect(produced.length).toBeGreaterThan(0);
 
   for (const refusal of produced) {
     // A refusal that names a limit without saying what was seen and what was allowed is the
@@ -361,7 +261,6 @@ test("no refusal is ever produced without an observed value, a bound and a unit"
   // persisted to `executions.reason` and returned to users; pino's redaction works on field
   // names and would not touch a value interpolated into a sentence.
   const sentence = describeRefusals(produced);
-  expect(sentence).not.toContain(permissionOf("active").signature);
   expect(sentence).not.toContain("cd".repeat(20));
   // Bounded, because an unbounded string built from unbounded input is how a log line becomes
   // a payload.
@@ -395,7 +294,7 @@ test("an unfillable pair is refused by the venue, in a different vocabulary from
   expect(quote.reference).toBe("320.08");
 });
 
-test("an admitted order under a live grant is refused by nothing on either half of the gate", () => {
+test("an admitted direct-wallet order does not reserve its caps twice", () => {
   const fixture = strategyOf("conditional-buy");
   const { results, runtime } = replay(fixture);
   const intent = results[0]?.intents[0];
@@ -412,16 +311,6 @@ test("an admitted order under a live grant is refused by nothing on either half 
       amountIn,
       side: intent.side,
       reserved: true,
-    }),
-  ).toEqual([]);
-  expect(
-    checkPermission({
-      evidence: evidenceOf(permissionOf("active")),
-      account: ACCOUNTS.user,
-      spender: ACCOUNTS.spender,
-      caps: fixture.envelope.caps,
-      amountIn,
-      now: T0,
     }),
   ).toEqual([]);
 });

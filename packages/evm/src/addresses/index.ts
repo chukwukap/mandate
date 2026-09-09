@@ -47,3 +47,8 @@ export const ASSETS: readonly Asset[] = [
 ];
 export const QUOTER = "0x514c8B5f54112481E28028F1166Bd78501089259" as const;
 export const TICK_SPACINGS = [100, 200, 2000, 50, 10, 1] as const;
+
+/** Base mainnet. */
+export const CHAIN_ID = 8453;
+/** USDC on Base, the settlement asset of every strategy. */
+export const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;

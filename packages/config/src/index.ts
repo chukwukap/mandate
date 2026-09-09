@@ -30,10 +30,11 @@ const envSchema = z.object({
   GOOGLE_MODEL: z.string().optional(),
   GOOGLE_BASE_URL: z.url().optional(),
   AI_PROVIDER: z.enum(["anthropic", "openai", "google"]).optional(),
-  SPENDER_ADDRESS: z
-    .string()
-    .regex(/^0x[0-9a-fA-F]{40}$/)
-    .optional(),
+  /**
+   * The Privy signer (key quorum) users delegate their embedded wallet to. Without it the app
+   * still works as signals only: nothing can be armed for automatic buying.
+   */
+  PRIVY_KEY_QUORUM_ID: z.string().min(1).optional(),
   PRIVY_APP_ID: z.string().min(1),
   PRIVY_APP_SECRET: z.string().min(1),
   ELIGIBLE_COUNTRIES: z.string().default(""),
@@ -102,7 +103,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       googleModel: parsed.GOOGLE_MODEL,
       googleBaseUrl: parsed.GOOGLE_BASE_URL,
     },
-    spenderAddress: parsed.SPENDER_ADDRESS,
+    privySignerId: parsed.PRIVY_KEY_QUORUM_ID,
     privyAppId: parsed.PRIVY_APP_ID,
     privyAppSecret: parsed.PRIVY_APP_SECRET,
     eligibleCountries: countries,

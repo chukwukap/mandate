@@ -4,9 +4,9 @@ import { PGlite } from "@electric-sql/pglite";
 import { loadConfig } from "@mandate/config";
 import { type ChainReader, type Hex, Problem } from "@mandate/contracts";
 import { connectDatabase, type Database, Repository, schema } from "@mandate/database";
-import { ASSETS, permissionTypedData } from "@mandate/evm";
+import { ASSETS } from "@mandate/evm";
 import { drizzle } from "drizzle-orm/pglite";
-import { verifyMessage, verifyTypedData } from "viem";
+import { verifyMessage } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { buildApp } from "../src/app.js";
 
@@ -16,20 +16,16 @@ const nativeUrl = process.env.TEST_DATABASE_URL;
 const db = nativeUrl ? undefined : new PGlite();
 const native = nativeUrl ? connectDatabase(nativeUrl) : undefined;
 let app: Awaited<ReturnType<typeof buildApp>>;
-let approved = false;
-let revoked = false;
 const chain: ChainReader = {
   ready: async () => true,
   market: async () => [],
   quote: async () => {
     throw Problem.unavailable("No route");
   },
-  walletKind: async () => "base_account",
-  permissionStatus: async () => ({ approved, revoked }),
   verifyMessage: (address, message, signature) => verifyMessage({ address, message, signature }),
-  verifyPermission: (payload, signature) =>
-    verifyTypedData({ address: payload.account, ...permissionTypedData(payload), signature }),
 };
+/** Alice's wallet is embedded and delegated; Bob's is an external wallet Privy cannot sign for. */
+const delegated = new Set<string>([alice.address.toLowerCase()]);
 const plan = {
   params: [],
   nodes: [
@@ -96,7 +92,7 @@ beforeAll(async () => {
       LOG_LEVEL: "silent",
       DEV_COUNTRY: "GB",
       ELIGIBLE_COUNTRIES: "GB",
-      SPENDER_ADDRESS: `0x${"33".repeat(20)}`,
+      PRIVY_KEY_QUORUM_ID: "kq_test",
     }),
     auth: {
       authenticate: async (header) => {
@@ -110,6 +106,12 @@ beforeAll(async () => {
       },
     },
     users: repository,
+    wallets: {
+      embedded: async (_did, address) =>
+        delegated.has(address.toLowerCase())
+          ? { id: "wallet-alice", address: address.toLowerCase() as Hex, delegated: true }
+          : null,
+    },
     databaseReady: async () => true,
     chainReady: chain.ready,
     trading: { repository, chain, assets: ASSETS },
@@ -321,61 +323,6 @@ test("cross-user access is denied for detail, history and lifecycle", async () =
   const list = await app.inject({ url: "/v1/instances", headers });
   expect(list.json<{ items: unknown[] }>().items).toHaveLength(0);
 });
-test("permission payload is stable; activation and revocation reflect actual chain state", async () => {
-  const { instance } = await create();
-  const prepare = () =>
-    app.inject({ method: "POST", url: "/v1/permissions/prepare", headers, payload: { instance } });
-  const first = await prepare();
-  expect(first.statusCode).toBe(200);
-  const persisted = first.json<{
-    hash: string;
-    typed_data: { message: Parameters<typeof permissionTypedData>[0] };
-  }>();
-  expect((await prepare()).json<{ hash: string }>().hash).toBe(persisted.hash);
-  const signature = await alice.signTypedData(permissionTypedData(persisted.typed_data.message));
-  const saved = await app.inject({
-    method: "POST",
-    url: "/v1/permissions",
-    headers,
-    payload: { instance, signature },
-  });
-  expect(saved.statusCode).toBe(200);
-  expect(saved.json<{ status: string }>().status).toBe("signed");
-  expect((await prepare()).json<{ approval_call: unknown }>().approval_call).toEqual(
-    saved.json<{ approval_call: unknown }>().approval_call,
-  );
-  expect(
-    (await app.inject({ url: `/v1/instances/${instance}`, headers })).json<{
-      requested_mode: string;
-    }>().requested_mode,
-  ).toBe("auto");
-  const activate = () =>
-    app.inject({
-      method: "POST",
-      url: `/v1/instances/${instance}/permission/activate`,
-      headers,
-      payload: { enable_auto: true },
-    });
-  expect((await activate()).statusCode).toBe(409);
-  approved = true;
-  expect((await activate()).json<{ status: string }>().status).toBe("active");
-  const arm = await app.inject({ method: "POST", url: `/v1/instances/${instance}/arm`, headers });
-  expect(arm.json<{ mode: string }>().mode).toBe("auto");
-  expect(arm.json<{ status: string }>().status).toBe("armed");
-  const revoke = () =>
-    app.inject({ method: "POST", url: `/v1/instances/${instance}/permission/revoke`, headers });
-  expect(
-    (await revoke()).json<{ onchain_revocation_required: boolean }>().onchain_revocation_required,
-  ).toBe(true);
-  revoked = true;
-  const done = await revoke();
-  expect(done.json<{ status: string }>().status).toBe("revoked");
-  expect(done.json<{ onchain_revocation_required: boolean }>().onchain_revocation_required).toBe(
-    false,
-  );
-  approved = false;
-  revoked = false;
-});
 test("terminal instances cannot rearm and missing execution history is an empty list", async () => {
   const { instance } = await create();
   expect(
@@ -406,49 +353,6 @@ test("invalid pagination and unsolicited identity fields are rejected", async ()
   ).toBe(400);
 });
 
-test("permission timestamps remain stable after a two-minute signing delay", async () => {
-  const { instance } = await create();
-  const prepare = () =>
-    app.inject({ method: "POST", url: "/v1/permissions/prepare", headers, payload: { instance } });
-  const first = await prepare();
-  const original = first.json<{
-    hash: string;
-    typed_data: { message: Parameters<typeof permissionTypedData>[0] };
-  }>();
-  try {
-    setSystemTime(new Date(Date.now() + 120000));
-    expect((await prepare()).json<{ hash: string }>().hash).toBe(original.hash);
-    const changed = {
-      ...original.typed_data.message,
-      start: original.typed_data.message.start + 120,
-    };
-    const wrong = await alice.signTypedData(permissionTypedData(changed));
-    expect(
-      (
-        await app.inject({
-          method: "POST",
-          url: "/v1/permissions",
-          headers,
-          payload: { instance, signature: wrong },
-        })
-      ).statusCode,
-    ).toBe(400);
-    const signature = await alice.signTypedData(permissionTypedData(original.typed_data.message));
-    expect(
-      (
-        await app.inject({
-          method: "POST",
-          url: "/v1/permissions",
-          headers,
-          payload: { instance, signature },
-        })
-      ).statusCode,
-    ).toBe(200);
-  } finally {
-    setSystemTime();
-  }
-});
-
 test("pagination retains every instance when creation timestamps are equal", async () => {
   try {
     setSystemTime(new Date(Date.now() + 300000));
@@ -467,5 +371,59 @@ test("pagination retains every instance when creation timestamps are equal", asy
     );
   } finally {
     setSystemTime();
+  }
+});
+
+test("delegation carries a draft's automatic mode through the whole app, and withdrawing it pauses the strategy", async () => {
+  // Alice's wallet is delegated: the draft asked for auto, so the instance is created auto and
+  // arms without any further ceremony.
+  const { instance } = await create();
+  const created = await app.inject({ url: `/v1/instances/${instance}`, headers });
+  expect(created.json<{ mode: string; requested_mode: string }>()).toMatchObject({
+    mode: "auto",
+    requested_mode: "auto",
+  });
+  const me = await app.inject({ url: "/v1/me", headers });
+  expect(me.json<{ automation: unknown }>().automation).toEqual({
+    supported: true,
+    signer_id: "kq_test",
+    wallet: alice.address.toLowerCase(),
+    delegated: true,
+  });
+  const armed = await app.inject({ method: "POST", url: `/v1/instances/${instance}/arm`, headers });
+  expect(armed.json<{ status: string; mode: string }>()).toMatchObject({
+    status: "armed",
+    mode: "auto",
+  });
+
+  // The user removes the delegation in Privy and the client tells the API to look again.
+  delegated.clear();
+  try {
+    const off = await app.inject({
+      method: "POST",
+      url: "/v1/me/automation",
+      headers,
+      payload: { wallet: alice.address },
+    });
+    expect(off.statusCode).toBe(200);
+    expect(off.json<Record<string, unknown>>()).toEqual({
+      wallet: alice.address.toLowerCase(),
+      delegated: false,
+      signer_id: "kq_test",
+    });
+    const after = await app.inject({ url: `/v1/instances/${instance}`, headers });
+    expect(after.json<{ mode: string; status: string }>()).toMatchObject({
+      mode: "manual",
+      status: "paused",
+    });
+    const refused = await app.inject({
+      method: "POST",
+      url: `/v1/instances/${instance}/arm`,
+      headers,
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe("automation-required");
+  } finally {
+    delegated.add(alice.address.toLowerCase());
   }
 });

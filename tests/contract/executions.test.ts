@@ -271,10 +271,9 @@ describe("GET /v1/executions/:id", () => {
       expect(body.fill.price.direction).toBe("at_limit");
       expect(body.cost).not.toBeNull();
       expect(body.cost?.gas.fee_wei).toBe("223500000000");
-      // Gas is paid in ETH by the executor and is never taken from the user's spend permission,
-      // which moves exactly the input amount. The response says so rather than netting it off.
-      expect(body.cost?.gas.borne_by).toBe("executor");
-      expect(body.cost?.gas.note).toContain("not deducted from your funds");
+      expect(body.cost?.gas.borne_by).toBe("wallet");
+      expect(body.cost?.gas.paid_by).toBe(alice.wallet);
+      expect(body.cost?.gas.note).toContain("Gas is paid in ETH from your wallet");
       expect(body.cost?.input.raw).toBe("10000000");
       expect(body.journal[0]?.settlement?.received).toBe("3122852");
     } finally {

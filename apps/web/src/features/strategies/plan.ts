@@ -255,9 +255,9 @@ export function recurringPlan(symbols: string[], amount: string): Plan {
  * This is the accumulation half of what trading bots call a martingale or "DCA with safety
  * orders", and it is deliberately NOT named after either. A martingale bot is defined as much by
  * its exit — take-profit on the average entry, then reset and cycle — as by its scaling, and the
- * exit needs to sell. Selling is not something this system can do automatically: a Coinbase
- * spend permission authorises one token, and that token is USDC. Shipping the scale-in under a
- * name that implies the exit exists would sell someone an accumulator with no brakes.
+ * exit needs to sell. Selling is not something this system can do automatically: the worker
+ * only ever spends USDC from the wallet. Shipping the scale-in under a name that implies the
+ * exit exists would sell someone an accumulator with no brakes.
  *
  * So what this is: a bounded way to buy progressively more into a fall, for someone who wants
  * the position anyway and wants a hard ceiling on the total. The ceiling is the envelope's

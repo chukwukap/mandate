@@ -1,14 +1,88 @@
 "use client";
-import { ArrowUpRight, ChevronDown, Loader2, Pause, Play } from "lucide-react";
+import { ArrowUpRight, ChevronDown, Loader2, Pause, Play, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Dialog } from "../../components/dialog";
 import { Status } from "../../components/status";
 import { currency, shortAddress } from "../../lib/format";
 import type { WorkspaceModel } from "../../providers/use-workspace";
+import type { Session } from "../auth/session-provider";
 import { StrategyHistory } from "../executions/strategy-history";
-import { SpendingPermission } from "../permissions/spending-permission";
+import type { Strategy } from "./types";
 import { type Evaluation, whyIdle } from "./why-idle";
+
+/**
+ * Where a strategy that asked to buy automatically stands.
+ *
+ * There is nothing per-strategy to approve any more: the user's embedded wallet is either
+ * delegated to the app's signer or it is not, and that one fact decides every auto strategy at
+ * once. So a strategy already in auto mode gets a single quiet line, and one that is still
+ * recording signals gets the one action that changes it — headless, no wallet popup — followed
+ * by a re-read of the detail so `mode` on screen comes from the API rather than from hope.
+ */
+function AutomaticBuying({
+  detail,
+  session,
+  onChange,
+}: {
+  detail: Strategy;
+  session: Session;
+  onChange(): Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const wallet = session.automation.wallet ?? detail.account ?? session.embeddedWallet;
+  if (detail.mode === "auto")
+    return (
+      <p className="automation-line">
+        <ShieldCheck size={14} />
+        Buys automatically from your wallet
+        {wallet && (
+          <>
+            <span className="footer-dot">·</span>
+            <code title={wallet}>{shortAddress(wallet)}</code>
+          </>
+        )}
+      </p>
+    );
+  const enable = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await session.enableAutomation();
+      await onChange();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't turn on automatic buying.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="automation-card">
+      <div>
+        <strong>Let this strategy buy for you</strong>
+        <p>
+          No signing and no popup: your funds stay in your wallet, and you can turn it off any time
+          in Settings.
+        </p>
+      </div>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        className="button primary"
+        disabled={busy || session.automation.loading}
+        onClick={() => void enable()}
+      >
+        {busy ? <Loader2 size={16} className="spin" /> : <ShieldCheck size={16} />}
+        Turn on automatic buying
+      </button>
+    </section>
+  );
+}
 export function StrategyDetails({
   model,
 }: {
@@ -114,14 +188,12 @@ export function StrategyDetails({
         </details>
       )}
       {detail.requested_mode === "auto" && !["halted", "ended"].includes(detail.status) && (
-        <SpendingPermission
-          instance={detail.id}
-          call={call}
-          sign={session.signPermission}
-          send={session.sendPermission}
-          onChange={() => {
+        <AutomaticBuying
+          detail={detail}
+          session={session}
+          onChange={async () => {
+            await openDetail(detail);
             void fetchOwned();
-            void openDetail(detail);
           }}
         />
       )}
@@ -137,8 +209,8 @@ export function StrategyDetails({
         <details className="review-details stop-control">
           <summary>Stop this strategy permanently</summary>
           <p className="helper">
-            This cannot be restarted. Existing transactions can still settle, and spending
-            permission must be revoked separately.
+            This cannot be restarted. Existing transactions can still settle. Automatic buying stays
+            on for your other strategies; turn it off in Settings.
           </p>
           <button
             type="button"

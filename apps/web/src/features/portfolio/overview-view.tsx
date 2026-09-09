@@ -238,6 +238,10 @@ export function OverviewView({ model }: { model: WorkspaceModel }) {
             <span>Available cash</span>
             <strong>{portfolio ? money(portfolio.cash) : "—"}</strong>
             <small>USDC on Base</small>
+            <Link href="/portfolio" className="desk-stat-action">
+              Add funds
+              <ArrowUpRight size={12} />
+            </Link>
           </div>
           <div>
             <span>Positions</span>

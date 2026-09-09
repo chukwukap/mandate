@@ -7,14 +7,14 @@ const schema = z.object({
   BASE_RPC_URL: z.url().default("https://mainnet.base.org"),
   WORKER_EXECUTE: z.enum(["0", "1"]).default("0"),
   ELIGIBLE_COUNTRIES: z.string().default(""),
-  WORKER_PRIVATE_KEY: z
-    .string()
-    .regex(/^0x[0-9a-fA-F]{64}$/)
-    .optional(),
-  SPENDER_ADDRESS: z
-    .string()
-    .regex(/^0x[0-9a-fA-F]{40}$/)
-    .optional(),
+  /**
+   * Signing from users' Privy embedded wallets. The worker holds no wallet key of its own: each
+   * user delegates their wallet to the app's signer (a Privy key quorum) once, and the worker
+   * signs through Privy with the quorum's private key. All three are required to execute.
+   */
+  PRIVY_APP_ID: z.string().min(1).optional(),
+  PRIVY_APP_SECRET: z.string().min(1).optional(),
+  PRIVY_AUTHORIZATION_KEY: z.string().min(1).optional(),
   WORKER_POLL_MS: z.coerce.number().int().min(250).max(60000).default(2000),
   WORKER_MAX_BATCH: z.coerce.number().int().min(1).max(100).default(10),
   WORKER_CONFIRMATIONS: z.coerce.number().int().min(2).max(64).default(3),
@@ -48,8 +48,10 @@ export function loadWorkerConfig(env: Record<string, string | undefined> = proce
     .filter(Boolean);
   if (countries.some((c) => !/^[A-Z]{2}$/.test(c) || ["US", "XX"].includes(c)))
     throw new Error("Explicit non-US eligible country codes required");
-  if (execute && (!value.WORKER_PRIVATE_KEY || !value.SPENDER_ADDRESS))
-    throw new Error("Live execution requires WORKER_PRIVATE_KEY and SPENDER_ADDRESS");
+  if (execute && !(value.PRIVY_APP_ID && value.PRIVY_APP_SECRET && value.PRIVY_AUTHORIZATION_KEY))
+    throw new Error(
+      "Live execution requires PRIVY_APP_ID, PRIVY_APP_SECRET and PRIVY_AUTHORIZATION_KEY",
+    );
   if (value.NODE_ENV === "production" && origin.protocol !== "https:")
     throw new Error("Production APP_ORIGIN must use HTTPS");
   return {
@@ -58,9 +60,15 @@ export function loadWorkerConfig(env: Record<string, string | undefined> = proce
     rpcUrl: value.BASE_RPC_URL,
     origin: value.APP_ORIGIN,
     execute,
-    privateKey: value.WORKER_PRIVATE_KEY,
     eligibleCountries: countries,
-    spender: value.SPENDER_ADDRESS,
+    privy:
+      value.PRIVY_APP_ID && value.PRIVY_APP_SECRET && value.PRIVY_AUTHORIZATION_KEY
+        ? {
+            appId: value.PRIVY_APP_ID,
+            appSecret: value.PRIVY_APP_SECRET,
+            authorizationKey: value.PRIVY_AUTHORIZATION_KEY,
+          }
+        : undefined,
     pollMs: value.WORKER_POLL_MS,
     maxBatch: value.WORKER_MAX_BATCH,
     confirmations: value.WORKER_CONFIRMATIONS,

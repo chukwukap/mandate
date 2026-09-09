@@ -1,18 +1,52 @@
 "use client";
 
-import type { Call, Hex } from "@mandate/contracts";
-import { PrivyProvider, usePrivy, useWallets } from "@privy-io/react-auth";
-import { createContext, type ReactNode, useContext, useState } from "react";
+import type { Hex } from "@mandate/contracts";
+import {
+  PrivyProvider,
+  useCreateWallet,
+  usePrivy,
+  useSigners,
+  useSignMessage,
+  useWallets,
+} from "@privy-io/react-auth";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { base } from "viem/chains";
+import { type AutomationResult, type Me, request } from "../../lib/api";
 import { useTheme } from "../../providers/theme-provider";
 
-type Session = {
+/**
+ * Whether this account's wallet lets the app buy on its behalf.
+ *
+ * Read from `GET /v1/me`, which is the API's view of the delegation rather than Privy's: the
+ * worker signs with what the API believes, so that is the value worth showing. `wallet` is the
+ * embedded wallet the API will buy from, which is the same address the user deposits to.
+ */
+export type Automation = {
+  supported: boolean;
+  signerId: string | null;
+  wallet: string | null;
+  delegated: boolean;
+  /** True until the first `/v1/me` read resolves, so a toggle is not drawn "off" by default. */
+  loading: boolean;
+};
+export type Session = {
   configured: boolean;
   ready: boolean;
   authenticated: boolean;
   userId: string | null;
   wallets: string[];
   wallet: string | null;
+  /** The Privy-managed wallet: the one users fund, and the one automatic buys come from. */
+  embeddedWallet: string | null;
+  createTradingWallet(): Promise<void>;
   selectWallet(value: string): void;
   login(): void;
   /** Resolves once the session is gone. `clean` is false when the SDK path failed and the
@@ -20,11 +54,39 @@ type Session = {
   logout(): Promise<{ clean: boolean }>;
   token(): Promise<string | null>;
   sign(message: string): Promise<Hex>;
-  signPermission(data: unknown): Promise<Hex>;
-  sendPermission(call: Call): Promise<Hex>;
+  automation: Automation;
+  /** Delegates the embedded wallet to the app's signer, then tells the API to re-read it. */
+  enableAutomation(): Promise<void>;
+  /** Removes every signer from the embedded wallet, then tells the API to re-read it. */
+  disableAutomation(): Promise<void>;
 };
 const unavailable = async (): Promise<never> => {
   throw new Error("Log in to continue.");
+};
+const NO_AUTOMATION: Automation = {
+  supported: false,
+  signerId: null,
+  wallet: null,
+  delegated: false,
+  loading: false,
+};
+const offline: Session = {
+  configured: false,
+  ready: true,
+  authenticated: false,
+  userId: null,
+  wallets: [],
+  wallet: null,
+  embeddedWallet: null,
+  createTradingWallet: unavailable,
+  selectWallet: () => {},
+  login: () => {},
+  logout: async () => ({ clean: true }),
+  token: async () => null,
+  sign: unavailable,
+  automation: NO_AUTOMATION,
+  enableAutomation: unavailable,
+  disableAutomation: unavailable,
 };
 /**
  * Everything Privy persists in the browser, so a sign-out can be completed locally.
@@ -75,35 +137,127 @@ const baseChain = {
   blockExplorers: base.blockExplorers,
   testnet: false,
 };
-const SessionContext = createContext<Session>({
-  configured: false,
-  ready: true,
-  authenticated: false,
-  userId: null,
-  wallets: [],
-  wallet: null,
-  selectWallet: () => {},
-  login: () => {},
-  logout: async () => ({ clean: true }),
-  token: async () => null,
-  sign: unavailable,
-  signPermission: unavailable,
-  sendPermission: unavailable,
-});
+const SessionContext = createContext<Session>(offline);
 function Bridge({ children }: { children: ReactNode }) {
   const privy = usePrivy();
   const { wallets, ready } = useWallets();
+  const { addSigners, removeSigners } = useSigners();
+  const { signMessage } = useSignMessage();
+  const { createWallet } = useCreateWallet();
   const [selected, setSelected] = useState<string | null>(null);
-  const wallet = wallets.find((w) => w.address === selected) ?? wallets[0];
+  // The embedded wallet is the account: it is where deposits go and what the worker signs from,
+  // so it wins over a linked external wallet unless the user has picked one on purpose.
+  const embedded = wallets.find((w) => w.walletClientType === "privy");
+  const wallet = wallets.find((w) => w.address === selected) ?? embedded ?? wallets[0];
+  const authenticated = privy.authenticated;
+  const address = wallet?.address ?? null;
+  const [automation, setAutomation] = useState<Automation>({ ...NO_AUTOMATION, loading: true });
+  // Refs, not dependencies: the hook hands back a fresh `getAccessToken` on renders that changed
+  // nothing, and keying the /v1/me read on it would re-fetch the account on every one of them.
+  const privyRef = useRef(privy);
+  privyRef.current = privy;
+  const walletRef = useRef(address);
+  walletRef.current = address;
+  const token = useCallback(() => privyRef.current.getAccessToken(), []);
+  /**
+   * The API's answer becomes the session's answer.
+   *
+   * The build-time signer id is preferred so the wallet is delegated to the signer this
+   * deployment was configured for; the API's own id fills in when the env var is absent.
+   */
+  const applyMe = useCallback((me: Me) => {
+    const signerId = process.env.NEXT_PUBLIC_PRIVY_KEY_QUORUM_ID || me.automation.signer_id || null;
+    setAutomation({
+      supported: me.automation.supported && Boolean(signerId),
+      signerId,
+      wallet: me.automation.wallet,
+      delegated: me.automation.delegated,
+      loading: false,
+    });
+  }, []);
+  useEffect(() => {
+    if (!authenticated || !address) {
+      setAutomation({ ...NO_AUTOMATION, loading: false });
+      return;
+    }
+    let active = true;
+    setAutomation((current) => ({ ...current, loading: true }));
+    void token()
+      .then((bearer) => request<Me>("/v1/me", { token: bearer, wallet: address }))
+      .then((me) => {
+        if (active) applyMe(me);
+      })
+      // An unreadable /v1/me leaves automation "unsupported" rather than failing the session:
+      // nothing else on screen depends on it, and the toggles say so instead of erroring.
+      .catch(() => {
+        if (active) setAutomation({ ...NO_AUTOMATION, loading: false });
+      });
+    return () => {
+      active = false;
+    };
+  }, [authenticated, address, token, applyMe]);
+  /**
+   * Both directions end with the API re-reading Privy, because the API is what the worker
+   * trusts. Privy alone succeeding would leave the strategies in manual mode with a wallet that
+   * is already delegated — the worst of both.
+   */
+  const syncAutomation = useCallback(
+    async (target: string, expected: boolean) => {
+      const bearer = await token();
+      // Privy's user record can briefly lag behind a successful signer update.
+      // Confirm the observed state before reporting that automation changed.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (attempt) await new Promise((resolve) => setTimeout(resolve, 1000));
+        const result = await request<AutomationResult>("/v1/me/automation", {
+          token: bearer,
+          wallet: walletRef.current,
+          body: { wallet: target },
+        });
+        setAutomation((current) => ({
+          ...current,
+          wallet: result.wallet,
+          delegated: result.delegated,
+          signerId: current.signerId ?? result.signer_id,
+          loading: false,
+        }));
+        if (result.delegated === expected) return;
+      }
+      throw new Error("Your wallet update is still syncing. Please try again shortly.");
+    },
+    [token],
+  );
+  const enableAutomation = useCallback(async () => {
+    const target = embedded?.address ?? automation.wallet;
+    if (!target) throw new Error("Your wallet is still being created. Try again in a moment.");
+    if (!automation.signerId)
+      throw new Error("Automatic buying isn't available for this account yet.");
+    await addSigners({ address: target, signers: [{ signerId: automation.signerId }] });
+    await syncAutomation(target, true);
+  }, [embedded?.address, automation.wallet, automation.signerId, addSigners, syncAutomation]);
+  const disableAutomation = useCallback(async () => {
+    const target = automation.wallet ?? embedded?.address;
+    if (!target) return;
+    await removeSigners({ address: target });
+    await syncAutomation(target, false);
+  }, [automation.wallet, embedded?.address, removeSigners, syncAutomation]);
   return (
     <SessionContext.Provider
       value={{
         configured: true,
         ready: privy.ready && ready,
-        authenticated: privy.authenticated,
+        authenticated,
         userId: privy.user?.id ?? null,
         wallets: wallets.map((w) => w.address),
-        wallet: wallet?.address ?? null,
+        wallet: address,
+        embeddedWallet: embedded?.address ?? null,
+        createTradingWallet: async () => {
+          if (embedded) {
+            setSelected(embedded.address);
+            return;
+          }
+          const created = await createWallet();
+          setSelected(created.address);
+        },
         selectWallet: setSelected,
         // Wrapped rather than passed as bare references. These are read off the hook's return
         // value, and a method that turns out to need its receiver breaks silently and only at
@@ -137,33 +291,18 @@ function Bridge({ children }: { children: ReactNode }) {
           forgetSession();
           return { clean };
         },
-        token: () => privy.getAccessToken(),
-        signPermission: async (data) => {
-          if (!wallet) return unavailable();
-          await wallet.switchChain(8453);
-          const provider = await wallet.getEthereumProvider();
-          return (await provider.request({
-            method: "eth_signTypedData_v4",
-            params: [wallet.address, JSON.stringify(data)],
-          })) as Hex;
-        },
-        sendPermission: async (call) => {
-          if (!wallet) return unavailable();
-          if (
-            call.chain_id !== 8453 ||
-            call.value !== "0" ||
-            call.to.toLowerCase() !== "0xf85210b21cc50302f477ba56686d2019dc9b67ad"
-          )
-            throw new Error("Unexpected permission transaction.");
-          await wallet.switchChain(8453);
-          const provider = await wallet.getEthereumProvider();
-          return (await provider.request({
-            method: "eth_sendTransaction",
-            params: [{ from: wallet.address, to: call.to, data: call.data, value: "0x0" }],
-          })) as Hex;
-        },
+        token,
         sign: async (message) => {
           if (!wallet) return unavailable();
+          if (wallet.walletClientType === "privy") {
+            // The strategy review already displays the exact message and asks for consent.
+            // Keep signing inside that flow instead of opening a second modal underneath it.
+            const { signature } = await signMessage(
+              { message },
+              { address: wallet.address, uiOptions: { showWalletUIs: false } },
+            );
+            return signature as Hex;
+          }
           const provider = await wallet.getEthereumProvider();
           const bytes = new TextEncoder().encode(message);
           const encoded = `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
@@ -172,6 +311,9 @@ function Bridge({ children }: { children: ReactNode }) {
             params: [encoded, wallet.address],
           })) as Hex;
         },
+        automation,
+        enableAutomation,
+        disableAutomation,
       }}
     >
       {children}
@@ -181,35 +323,16 @@ function Bridge({ children }: { children: ReactNode }) {
 export function Providers({ children }: { children: ReactNode }) {
   const { resolved } = useTheme();
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-  if (!appId)
-    return (
-      <SessionContext.Provider
-        value={{
-          configured: false,
-          ready: true,
-          authenticated: false,
-          userId: null,
-          wallets: [],
-          wallet: null,
-          selectWallet: () => {},
-          login: () => {},
-          logout: async () => ({ clean: true }),
-          token: async () => null,
-          sign: unavailable,
-          signPermission: unavailable,
-          sendPermission: unavailable,
-        }}
-      >
-        {children}
-      </SessionContext.Provider>
-    );
+  if (!appId) return <SessionContext.Provider value={offline}>{children}</SessionContext.Provider>;
   return (
     <PrivyProvider
       appId={appId}
       config={{
         appearance: { theme: resolved, accentColor: "#31745C", walletChainType: "ethereum-only" },
         loginMethods: ["email", "wallet", "google"],
-        embeddedWallets: { ethereum: { createOnLogin: "users-without-wallets" } },
+        // Every account gets an embedded wallet, even one that logged in with an external
+        // wallet: it is the strategy account, and delegation only works on a wallet Privy holds.
+        embeddedWallets: { ethereum: { createOnLogin: "all-users" } },
         defaultChain: baseChain,
         supportedChains: [baseChain],
       }}

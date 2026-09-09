@@ -76,11 +76,10 @@ export function requireAccount(request: FastifyRequest, draft: DraftRow) {
 /**
  * Runs a chain read and classifies its failure as 503, never 500 and never 400.
  *
- * `verifyMessage` and `permissionStatus` return `false` for a genuinely bad signature or an
- * unapproved permission and *throw* when the RPC transport fails. Letting the throw become a
- * generic 500 tells the user "unexpected error" for a condition that is purely "retry"; letting
- * it become "invalid signature" is worse still, because it invites the user to sign again when
- * the stored artifact they already signed is fine.
+ * `verifyMessage` returns `false` for a genuinely bad signature and *throws* when the RPC
+ * transport fails. Letting the throw become a generic 500 tells the user "unexpected error" for
+ * a condition that is purely "retry"; letting it become "invalid signature" is worse still,
+ * because it invites the user to sign again when the stored artifact they already signed is fine.
  *
  * The error object is neither logged nor echoed: RPC client errors carry the request URL, and
  * the request URL carries the provider API key. pino's redact list covers headers and bodies,

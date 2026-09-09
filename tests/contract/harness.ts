@@ -3,14 +3,14 @@ import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { type ApiDependencies, buildApp } from "../../apps/api/src/app.js";
+import type { WalletReader } from "../../apps/api/src/modules/automation/index.js";
 import type { ReceiptReader, Settlement } from "../../apps/api/src/modules/executions/index.js";
 import type { AuthenticatedUser, Authenticator } from "../../packages/auth/src/index.js";
 import { type Config, loadConfig } from "../../packages/config/src/index.js";
-import type { Hex, Identity, PermissionPayload } from "../../packages/contracts/src/index.js";
+import type { Hex } from "../../packages/contracts/src/index.js";
 import { Problem } from "../../packages/contracts/src/index.js";
 import { type Database, Repository, schema } from "../../packages/database/src/index.js";
 import { ASSETS } from "../../packages/evm/src/addresses/index.js";
-import { permissionHash } from "../../packages/evm/src/permissions/index.js";
 import type { Compiler } from "../../packages/strategy/src/index.js";
 import { units } from "../../packages/strategy/src/index.js";
 import { B20_ASSETS, FakeChainClient, USDC } from "../fixtures/chain/index.js";
@@ -130,11 +130,8 @@ export class TestChain extends FakeChainClient {
   private readonly signed = new Map<string, string>();
   private issued = 0;
 
-  constructor(walletKinds: Readonly<Record<string, Identity["walletKind"]>> = {}) {
-    // Every listed equity, so the catalogue the app serves and the market the chain reports
-    // describe the same universe. `walletKinds` is keyed by lowercased address; anything not
-    // named answers "base_account", which is the fake's default.
-    super({ assets: B20_ASSETS, walletKinds });
+  constructor() {
+    super({ assets: B20_ASSETS });
   }
 
   private static key(address: string, message: string) {
@@ -155,7 +152,6 @@ export class TestChain extends FakeChainClient {
 }
 
 /** The worker spender the API advertises. Public, and never a key. */
-export const SPENDER_ADDRESS = "0x2222222222222222222222222222222222222222";
 export const APP_ORIGIN = "http://localhost:3000";
 
 export function contractConfig(overrides: Record<string, string> = {}): Config {
@@ -167,7 +163,6 @@ export function contractConfig(overrides: Record<string, string> = {}): Config {
     // Never opened: the database handle is injected and every chain read is the fixture client.
     DATABASE_URL: "postgres://contract:contract@127.0.0.1:9/contract",
     BASE_RPC_URL: "http://127.0.0.1:9",
-    SPENDER_ADDRESS,
     PRIVY_APP_ID: "contract-app",
     PRIVY_APP_SECRET: "contract-secret",
     ELIGIBLE_COUNTRIES: "GB,NG",
@@ -191,14 +186,13 @@ export type ContractApi = {
 };
 
 export type StartOptions = {
+  wallets?: WalletReader;
   identities?: readonly TestIdentity[];
   receipts?: ReceiptReader;
   config?: Record<string, string>;
   /** Both default to available. Pass false to pin the degraded body of /ready and /v1/me. */
   databaseReady?: boolean;
   workerAvailable?: boolean;
-  /** Onchain wallet kinds by lowercased address. Unnamed addresses are Base accounts. */
-  walletKinds?: Readonly<Record<string, Identity["walletKind"]>>;
   /**
    * The natural-language strategy compiler. Absent by default, which is the deployment without
    * an Anthropic key, and is why POST /v1/strategies/draft answers 503 to a prompt.
@@ -219,12 +213,13 @@ export async function startContractApi(options: StartOptions = {}): Promise<Cont
   for (const file of files) await pglite.exec(await readFile(new URL(file, MIGRATIONS), "utf8"));
   const db = drizzle(pglite, { schema }) as unknown as Database;
   const repo = new Repository(db);
-  const chain = new TestChain(options.walletKinds ?? {});
+  const chain = new TestChain();
   const config = contractConfig(options.config ?? {});
   const deps: ApiDependencies = {
     config,
     auth: new TestAuthenticator(options.identities ?? []),
     users: repo,
+    wallets: options.wallets ?? { embedded: async () => null },
     databaseReady: async () => options.databaseReady ?? true,
     workerAvailable: async () => options.workerAvailable ?? true,
     chainReady: () => chain.ready(),
@@ -402,68 +397,6 @@ export async function commitStrategy(
 }
 
 /**
- * A spend permission for a committed instance, with its onchain state registered on the fixture
- * chain so `permissionStatus` answers about the same digest the row carries.
- *
- * `hash` comes from the production `permissionHash`; a made-up digest would make every stored
- * permission look tampered with.
- */
-export async function seedPermission(
-  api: ContractApi,
-  user: string,
-  seed: {
-    instance: string;
-    account: string;
-    expiresAt: string;
-    perPeriod: string;
-    periodSecs: number;
-  },
-  options: {
-    status?: "prepared" | "signed" | "active" | "revoked" | "expired";
-    approved?: boolean;
-    revoked?: boolean;
-  } = {},
-): Promise<{ id: string; payload: PermissionPayload; hash: string; signature: Hex }> {
-  const status = options.status ?? "active";
-  const payload: PermissionPayload = {
-    account: seed.account as Hex,
-    spender: SPENDER_ADDRESS as Hex,
-    token: USDC,
-    allowance: units(seed.perPeriod, 6).toString(),
-    period: seed.periodSecs,
-    start: Math.floor(Date.now() / 1000) - 60,
-    end: Math.floor(Date.parse(seed.expiresAt) / 1000),
-    salt: BigInt(`0x${randomBytes(32).toString("hex")}`).toString(),
-    extraData: "0x",
-  };
-  const signature = `0x${"ab".repeat(65)}` as Hex;
-  const id = randomUUID();
-  const hash = permissionHash(payload);
-  await api.sql(
-    `insert into mandate_v2.permissions
-       (id, user_id, instance_id, token, payload, hash, status, signature, created_at, updated_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())`,
-    [
-      id,
-      user,
-      seed.instance,
-      USDC.toLowerCase(),
-      JSON.stringify(payload),
-      hash,
-      status,
-      ["signed", "active"].includes(status) ? signature : null,
-    ],
-  );
-  api.chain.grant({
-    payload,
-    approved: options.approved ?? status === "active",
-    revoked: options.revoked ?? status === "revoked",
-    signature,
-  });
-  return { id, payload, hash, signature };
-}
-
-/**
  * An order, written the way `Admission.run` writes one.
  *
  * Raw SQL because the production writer is the worker, which is not in this process. Amounts
@@ -530,13 +463,16 @@ export async function seedTransaction(
     `insert into mandate_v2.transactions
        (id, user_id, execution_id, leg, signer, nonce, raw_transaction, hash, status, evidence,
         created_at, confirmed_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), $11)`,
+     values ($1, $2, $3, $4,
+       (select d.account from mandate_v2.executions e
+        join mandate_v2.instances i on i.id = e.instance_id
+        join mandate_v2.drafts d on d.id = i.draft_id where e.id = $3),
+       $5, $6, $7, $8, $9, now(), $10)`,
     [
       randomUUID(),
       user,
       execution,
       options.leg ?? "swap",
-      SPENDER_ADDRESS,
       options.nonce ?? Math.floor(Math.random() * 1_000_000),
       "0x02f8",
       hash,

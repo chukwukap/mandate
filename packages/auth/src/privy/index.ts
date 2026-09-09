@@ -7,6 +7,7 @@ export interface Authenticator {
 }
 // Narrow read-only capabilities: authentication cannot sign or submit transactions.
 export interface PrivyReader {
+  wallet?(id: string): Promise<{ additional_signers: ReadonlyArray<{ signer_id: string }> }>;
   verify(token: string): Promise<VerifyAccessTokenResponse>;
   user(id: string): Promise<{
     id: string;
@@ -14,6 +15,11 @@ export interface PrivyReader {
       type: string;
       address?: string;
       chain_type?: string;
+      /** Privy's wallet id, present for embedded wallets; what the server signs with. */
+      id?: string | null;
+      connector_type?: string;
+      /** True once the user has delegated this wallet to a signer this app registered. */
+      delegated?: boolean;
     }>;
   }>;
 }
@@ -23,6 +29,7 @@ export function privyReader(appId: string, appSecret: string): PrivyReader {
   return {
     verify: (token) => client.utils().auth().verifyAccessToken(token),
     user: (id) => client.users()._get(id),
+    wallet: (id) => client.wallets().get(id),
   };
 }
 

@@ -5,9 +5,9 @@ import { PGlite } from "@electric-sql/pglite";
 import { loadConfig } from "@mandate/config";
 import { type ChainReader, type Hex, Problem } from "@mandate/contracts";
 import { connectDatabase, type Database, Repository, schema, tenant } from "@mandate/database";
-import { ASSETS, permissionTypedData, USDC } from "@mandate/evm";
+import { ASSETS, USDC } from "@mandate/evm";
 import { drizzle } from "drizzle-orm/pglite";
-import { keccak256, pad, toHex, verifyMessage, verifyTypedData } from "viem";
+import { keccak256, pad, toHex, verifyMessage } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { buildApp } from "../src/app.js";
 import {
@@ -24,7 +24,8 @@ import {
 
 const alice = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const bob = privateKeyToAccount(`0x${"22".repeat(32)}`);
-const spender = `0x${"33".repeat(20)}` as Hex;
+/** A pool or router hop: the address a fill passes through and must never be credited to. */
+const router = `0x${"33".repeat(20)}` as Hex;
 function catalogue(symbol: string) {
   const asset = ASSETS.find((a) => a.symbol === symbol);
   if (!asset) throw new Error(`Missing catalogue asset: ${symbol}`);
@@ -58,11 +59,7 @@ const chain: ChainReader = {
   quote: async () => {
     throw Problem.unavailable("No route");
   },
-  walletKind: async () => "base_account",
-  permissionStatus: async () => ({ approved: false, revoked: false }),
   verifyMessage: (address, message, signature) => verifyMessage({ address, message, signature }),
-  verifyPermission: (payload, signature) =>
-    verifyTypedData({ address: payload.account, ...permissionTypedData(payload), signature }),
 };
 
 const plan = {
@@ -138,7 +135,7 @@ beforeAll(async () => {
       LOG_LEVEL: "silent",
       DEV_COUNTRY: "GB",
       ELIGIBLE_COUNTRIES: "GB",
-      SPENDER_ADDRESS: spender,
+      PRIVY_KEY_QUORUM_ID: "kq_test",
     }),
     auth: {
       authenticate: async (header) => {
@@ -152,6 +149,7 @@ beforeAll(async () => {
       },
     },
     users: repository,
+    wallets: { embedded: async () => null },
     databaseReady: async () => true,
     chainReady: chain.ready,
     trading: { repository, chain, assets: ASSETS },
@@ -213,7 +211,7 @@ async function order(input: OrderInput) {
       userId: aliceId,
       instanceId: input.instance,
       status: input.status,
-      stage: input.stage ?? "fund",
+      stage: input.stage ?? "approve",
       tokenIn: side === "buy" ? USDC : AAPL.token,
       tokenOut: side === "buy" ? AAPL.token : USDC,
       amountIn: input.amountIn ?? "632000000",
@@ -231,7 +229,7 @@ let nonce = 0;
 async function leg(
   execution: string,
   input: {
-    leg: "fund" | "approve" | "swap" | "reset" | "refund";
+    leg: "approve" | "swap";
     status: "signed" | "confirmed" | "reverted";
     at: Date;
     evidence?: { token: string; recipient: string; amount: string; from?: string } | null;
@@ -244,7 +242,8 @@ async function leg(
       userId: aliceId,
       executionId: execution,
       leg: input.leg,
-      signer: spender.toLowerCase(),
+      // The user's own wallet signs every leg; there is no operator key in the journal.
+      signer: alice.address.toLowerCase(),
       nonce: nonce++,
       rawTransaction: `0x02f8${"ab".repeat(40)}`,
       hash,
@@ -318,7 +317,7 @@ test("settlementFrom credits only standard Transfers of the expected token to th
       // A different token to the same recipient: not this fill.
       transferLog(USDC, alice.address, 999_000_000n),
       // The right token to somebody else: a router hop, not the user's delivery.
-      transferLog(AAPL.token, spender, 500_000_000n),
+      transferLog(AAPL.token, router, 500_000_000n),
       // A non-Transfer event from the token.
       {
         address: AAPL.token,
@@ -392,7 +391,7 @@ test("BaseReceiptReader caches, de-duplicates and degrades to null instead of th
   expect(calls).toBe(1);
   // A different expectation over the same transaction is a different question and is not
   // answered from the first one's cache entry.
-  const other = await reader.settlement({ hash, expect: { token: USDC, recipient: spender } });
+  const other = await reader.settlement({ hash, expect: { token: USDC, recipient: router } });
   expect(other?.received).toBe("0");
   expect(calls).toBe(2);
   fail = true;
@@ -471,7 +470,7 @@ test("list is scoped to the caller, filterable, and keyset-paged through equal t
   ).toBe(404);
 });
 
-test("a fill reports the eight-decimal amount, the realised price and the gas someone else paid", async () => {
+test("a fill reports the eight-decimal amount, the realised price and the gas the wallet paid", async () => {
   const target = await instance();
   const at = new Date("2026-03-03T15:04:05.000Z");
   await evaluation({
@@ -483,17 +482,6 @@ test("a fill reports the eight-decimal amount, the realised price and the gas so
     notifications: ["Entering position"],
   });
   const id = await order({ instance: target, at, status: "confirmed", stage: "done" });
-  const fund = await leg(id, {
-    leg: "fund",
-    status: "confirmed",
-    at,
-    evidence: {
-      token: USDC,
-      recipient: spender,
-      amount: "632000000",
-      from: alice.address,
-    },
-  });
   const approve = await leg(id, { leg: "approve", status: "confirmed", at });
   // The durable evidence for a swap is amountOutMinimum — the floor, not the fill.
   const swap = await leg(id, {
@@ -502,7 +490,6 @@ test("a fill reports the eight-decimal amount, the realised price and the gas so
     at,
     evidence: { token: AAPL.token, recipient: alice.address, amount: "197500000" },
   });
-  settlements.set(fund, settlement({ received: "632000000" }));
   settlements.set(approve, settlement());
   settlements.set(swap, settlement({ received: "200000000" }));
 
@@ -546,12 +533,13 @@ test("a fill reports the eight-decimal amount, the realised price and the gas so
   // Filled 4 USDC per share better than the floor of 320: 125 bps, and on a buy that is good.
   expect(body.fill.price.difference_bps).toBe("-125.00");
   expect(body.fill.price.direction).toBe("favourable");
-  // Three settled legs at 0.00000228456789 ETH each, borne by the executor's wallet.
-  expect(body.cost.gas.legs).toBe(3);
+  // Two settled legs at 0.00000228456789 ETH each, paid in ETH by the wallet that signed them
+  // — the user's own — and reported beside the USDC input rather than netted into it.
+  expect(body.cost.gas.legs).toBe(2);
   expect(body.cost.gas.complete).toBe(true);
-  expect(body.cost.gas.fee_eth).toBe("0.00000685370367");
-  expect(body.cost.gas.paid_by).toBe(spender.toLowerCase());
-  expect(body.cost.gas.borne_by).toBe("executor");
+  expect(body.cost.gas.fee_eth).toBe("0.00000456913578");
+  expect(body.cost.gas.paid_by).toBe(alice.address.toLowerCase());
+  expect(body.cost.gas.borne_by).toBe("wallet");
   expect(body.cost.input.amount).toBe("632");
   expect(body.decision.admitted).toBe(1);
   expect(body.decision.inputs["oracle:AAPLc"]).toBe("320.08");
@@ -624,7 +612,7 @@ test("a broken chain reader degrades the detail route, it does not fail it", asy
   }
 });
 
-test("a signal and a pre-funding cancellation are reported as decisions, not as failures", async () => {
+test("a signal and a pre-signing cancellation are reported as decisions, not as failures", async () => {
   const target = await instance();
   const at = new Date("2026-03-05T09:00:00.000Z");
   const signal = await order({ instance: target, at, status: "signal" });
@@ -632,8 +620,8 @@ test("a signal and a pre-funding cancellation are reported as decisions, not as 
     instance: target,
     at: new Date(at.getTime() + 1),
     status: "cancelled",
-    stage: "fund",
-    reason: "Admission checks failed before funding",
+    stage: "approve",
+    reason: "Admission checks failed before signing",
   });
 
   const one = (await app.inject({ url: `/v1/executions/${signal}`, headers })).json<{
@@ -658,7 +646,7 @@ test("a signal and a pre-funding cancellation are reported as decisions, not as 
   expect(two.reason.code).toBe("preconditions-failed");
   expect(two.reason.message).toContain("Nothing was spent");
   // The raw worker string is always kept so an operator and a user read the same event.
-  expect(two.reason.raw).toBe("Admission checks failed before funding");
+  expect(two.reason.raw).toBe("Admission checks failed before signing");
 });
 
 test("an unrecognised worker reason is shown verbatim rather than swallowed", async () => {
@@ -873,6 +861,7 @@ test("registerInstanceExecutions serves the enriched shape apps/web already read
       },
     },
     users: new Repository(database),
+    wallets: { embedded: async () => null },
     databaseReady: async () => true,
     chainReady: chain.ready,
   });

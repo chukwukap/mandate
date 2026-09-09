@@ -711,6 +711,20 @@
 .desk-quick-stats strong small {
   font-size: 16px;
 }
+/* The one stat with somewhere to go: cash is the number a person can change. */
+.desk-stat-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 9px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--desk-accent-text);
+  align-self: flex-start;
+}
+.desk-stat-action:hover {
+  color: var(--desk-accent-ink);
+}
 .desk-market-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

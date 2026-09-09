@@ -22,9 +22,11 @@ const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 // AAPLc. Eight decimals, not eighteen — the single most expensive assumption in this system.
 const AAPLC = "0xb200000000000000000000c2e324d24d7eecd1fb";
 const AAPLC_DECIMALS = 8;
+// The user's own embedded wallet: it signs both legs, pays the input and receives the output.
 const ACCOUNT = "0x1111111111111111111111111111111111111111";
-const SPENDER = "0x2222222222222222222222222222222222222222";
 const POOL = "0x3333333333333333333333333333333333333333";
+// A third party that appears in the same receipts, so a filter by address has something to miss.
+const OTHER = "0x2222222222222222222222222222222222222222";
 
 /**
  * Transcribed independently of `src/reconciliation/logs.ts`: this is
@@ -67,23 +69,23 @@ test("the source transfer topic matches the specification", () => {
 
 test("standard transfers decode and non-standard logs are skipped, never thrown on", () => {
   const logs: LogRecord[] = [
-    transferLog(USDC, ACCOUNT, SPENDER, 100_000000n),
+    transferLog(USDC, ACCOUNT, POOL, 100_000000n),
     // A receipt carries every contract the transaction touched. None of these three may
     // stop the decode, and none of them may be counted.
     { address: USDC, topics: [SPEC_TRANSFER_TOPIC, topic(ACCOUNT)], data: word(5n) },
     {
       address: USDC,
-      topics: [`0x${"cc".repeat(32)}`, topic(ACCOUNT), topic(SPENDER)],
+      topics: [`0x${"cc".repeat(32)}`, topic(ACCOUNT), topic(POOL)],
       data: word(5n),
     },
-    { address: USDC, topics: [SPEC_TRANSFER_TOPIC, topic(ACCOUNT), topic(SPENDER)], data: "0x" },
+    { address: USDC, topics: [SPEC_TRANSFER_TOPIC, topic(ACCOUNT), topic(POOL)], data: "0x" },
   ];
   const decoded = transfers(logs);
   expect(decoded).toHaveLength(1);
   expect(decoded[0]).toEqual({
     token: USDC,
     from: ACCOUNT,
-    to: SPENDER,
+    to: POOL,
     value: 100_000000n,
   });
 });
@@ -94,7 +96,7 @@ test("repeated transfers to the same address are summed, not sampled", () => {
   const logs = [
     transferLog(AAPLC, POOL, ACCOUNT, 31_000_000n),
     transferLog(AAPLC, POOL, ACCOUNT, 228_530n),
-    transferLog(AAPLC, POOL, SPENDER, 999n),
+    transferLog(AAPLC, POOL, OTHER, 999n),
   ];
   expect(received(logs, AAPLC, ACCOUNT)).toBe(31_228_530n);
   expect(totalTransferred(logs, { token: AAPLC, to: ACCOUNT, from: POOL })).toBe(31_228_530n);
@@ -154,25 +156,26 @@ test("a receipt for different bytes is never accepted as this transaction's", ()
 });
 
 test("success is not evidence; the transfer logs are", () => {
-  const evidence = { token: USDC, recipient: SPENDER, amount: "100000000", from: ACCOUNT };
+  // The swap's input is an amount this system chose, so it is matched exactly.
+  const evidence = { token: USDC, recipient: POOL, amount: "100000000", from: ACCOUNT };
   const short = classifyReceipt({
     ...base,
-    receipt: receipt({ logs: [transferLog(USDC, ACCOUNT, SPENDER, 99_000000n)] }),
+    receipt: receipt({ logs: [transferLog(USDC, ACCOUNT, POOL, 99_000000n)] }),
     evidence,
   });
   expect(short.outcome).toBe("ambiguous");
 
   const exact = classifyReceipt({
     ...base,
-    receipt: receipt({ logs: [transferLog(USDC, ACCOUNT, SPENDER, 100_000000n)] }),
+    receipt: receipt({ logs: [transferLog(USDC, ACCOUNT, POOL, 100_000000n)] }),
     evidence,
   });
   expect(exact.outcome).toBe("confirmed");
 
-  // A pull that moved MORE than this order authorised is not a happy surprise.
+  // A swap that took MORE of the user's USDC than it was signed for is not a happy surprise.
   const over = classifyReceipt({
     ...base,
-    receipt: receipt({ logs: [transferLog(USDC, ACCOUNT, SPENDER, 101_000000n)] }),
+    receipt: receipt({ logs: [transferLog(USDC, ACCOUNT, POOL, 101_000000n)] }),
     evidence,
   });
   expect(over.outcome).toBe("ambiguous");
@@ -192,9 +195,9 @@ test("a reverted receipt is reverted even when the evidence would have matched",
     ...base,
     receipt: receipt({
       status: "reverted",
-      logs: [transferLog(USDC, ACCOUNT, SPENDER, 100_000000n)],
+      logs: [transferLog(USDC, ACCOUNT, POOL, 100_000000n)],
     }),
-    evidence: { token: USDC, recipient: SPENDER, amount: "100000000" },
+    evidence: { token: USDC, recipient: POOL, amount: "100000000" },
   });
   expect(verdict.outcome).toBe("reverted");
 });
@@ -203,8 +206,8 @@ function journalRow(over: Partial<JournalEntry> = {}): JournalEntry {
   return {
     id: over.id ?? "t1",
     executionId: "order-a",
-    leg: over.leg ?? "fund",
-    signer: SPENDER,
+    leg: over.leg ?? "approve",
+    signer: ACCOUNT,
     nonce: over.nonce ?? 7,
     hash: over.hash ?? `0x${"aa".repeat(32)}`,
     rawTransaction: "0x02f8aa",
@@ -215,7 +218,7 @@ function journalRow(over: Partial<JournalEntry> = {}): JournalEntry {
 
 test("submissions are matched by hash, and a settled leg that changed is flagged", () => {
   const settled = journalRow({ id: "t1", status: "confirmed", hash: `0x${"aa".repeat(32)}` });
-  const inFlight = journalRow({ id: "t2", leg: "approve", nonce: 8, hash: `0x${"bb".repeat(32)}` });
+  const inFlight = journalRow({ id: "t2", leg: "swap", nonce: 8, hash: `0x${"bb".repeat(32)}` });
   const result = matchSubmissions({
     entries: [settled, inFlight],
     receipts: [
@@ -232,20 +235,19 @@ test("submissions are matched by hash, and a settled leg that changed is flagged
   expect(second?.receipt).toBeNull();
   expect(second?.verdict.outcome).toBe("pending");
   expect(second?.changed).toBe(false);
-  // Bytes sent from the spender key that no journal row claims.
+  // Bytes sent from the user's wallet that no journal row claims.
   expect(result.unmatched).toHaveLength(1);
 });
 
-/** 100 USDC in, 0.31228530 AAPLc out, with a reverted approval on the way. */
+/**
+ * 100 USDC in, 0.31228530 AAPLc out, with a reverted approval retried on the way.
+ *
+ * Both legs are signed by the user's wallet, so the swap receipt is the whole story: the USDC
+ * leaves the account and the shares arrive in the same transaction. The reverted approval is
+ * kept because it cost gas, and gas is part of what the order did.
+ */
 function buyLegs(): SettledLeg[] {
   return [
-    {
-      leg: "fund",
-      receipt: receipt({
-        transactionHash: `0x${"a1".repeat(32)}`,
-        logs: [transferLog(USDC, ACCOUNT, SPENDER, 100_000000n)],
-      }),
-    },
     {
       leg: "approve",
       receipt: receipt({
@@ -263,7 +265,7 @@ function buyLegs(): SettledLeg[] {
         gasUsed: 300_000n,
         l1Fee: 2_000_000_000_000n,
         logs: [
-          transferLog(USDC, SPENDER, POOL, 100_000000n),
+          transferLog(USDC, ACCOUNT, POOL, 100_000000n),
           transferLog(AAPLC, POOL, ACCOUNT, 31_228_530n),
         ],
       }),
@@ -274,7 +276,6 @@ function buyLegs(): SettledLeg[] {
 const buy = {
   side: "buy" as const,
   account: ACCOUNT,
-  spender: SPENDER,
   assetToken: AAPLC,
   assetDecimals: AAPLC_DECIMALS,
   quoteToken: USDC,
@@ -283,17 +284,47 @@ const buy = {
 test("the realised fill and its price come from the receipts", () => {
   const result = realise({ ...buy, legs: buyLegs() });
   expect(result.status).toBe("filled");
+  // What left the account IS the swap input: there is no funding hop for the two to differ.
   expect(result.accountSpent).toBe(100_000000n);
-  expect(result.spenderCredited).toBe(100_000000n);
   expect(result.swapInput).toBe(100_000000n);
   expect(result.filled).toBe(31_228_530n);
-  expect(result.residual).toBe(0n);
   expect(result.netSpent).toBe(100_000000n);
   expect(result.price).toBe("320.220003951514848761");
+  // Nothing transits a service wallet, so nothing can be credited to one, returned from one,
+  // or left sitting in one. A non-zero residual on a clean fill would be reported as
+  // cross-order contamination — an alarm that can no longer mean anything.
+  expect(result.spenderCredited).toBe(0n);
+  expect(result.returned).toBe(0n);
+  expect(result.residual).toBe(0n);
   // Gas is summed over every leg INCLUDING the reverted approval, which still cost money.
-  expect(result.gasWei).toBe(27_300_000_000_000n);
+  expect(result.gasWei).toBe(20_300_000_000_000n);
   expect(result.gasByLeg.approve).toBe(50_000n * 50_000_000n + 800_000_000_000n);
+  expect(result.gasByLeg.swap).toBe(300_000n * 50_000_000n + 2_000_000_000_000n);
   expect(describeRealised(result, AAPLC_DECIMALS)).toContain("0.3122853 shares");
+  expect(describeRealised(result, AAPLC_DECIMALS)).toContain("your wallet paid");
+});
+
+test("a sell reads the same receipt with the tokens the other way round", () => {
+  const result = realise({
+    ...buy,
+    side: "sell",
+    legs: [
+      {
+        leg: "swap",
+        receipt: receipt({
+          logs: [
+            transferLog(AAPLC, ACCOUNT, POOL, 31_228_530n),
+            transferLog(USDC, POOL, ACCOUNT, 100_000000n),
+          ],
+        }),
+      },
+    ],
+  });
+  expect(result.status).toBe("filled");
+  expect(result.swapInput).toBe(31_228_530n);
+  expect(result.filled).toBe(100_000000n);
+  // Same fill, same price: the side changes which token is the input, not what a share cost.
+  expect(result.price).toBe("320.220003951514848761");
 });
 
 test("assuming eighteen decimals misprices the same fill by ten orders of magnitude", () => {
@@ -313,78 +344,46 @@ test("assuming eighteen decimals misprices the same fill by ten orders of magnit
   expect(realisedPrice({ quoteAmount: 100_000000n, assetAmount: 0n, assetDecimals: 8 })).toBeNull();
 });
 
-test("a refunded order charges the user nothing and the operator gas", () => {
-  const result = realise({
-    ...buy,
-    legs: [
+test("a reverted leg leaves the account untouched and still costs gas", () => {
+  // Whether the approval or the swap reverts, no token moved: the router allowance is the
+  // only thing an approval writes, and a reverted swap moves nothing at all. The wallet still
+  // paid for the attempt, and hiding that would make a string of failed orders look free.
+  for (const legs of [
+    [{ leg: "approve" as const, receipt: receipt({ status: "reverted" }) }],
+    [
+      { leg: "approve" as const, receipt: receipt() },
       {
-        leg: "fund",
-        receipt: receipt({ logs: [transferLog(USDC, ACCOUNT, SPENDER, 100_000000n)] }),
-      },
-      {
-        leg: "refund",
-        receipt: receipt({
-          transactionHash: `0x${"b1".repeat(32)}`,
-          logs: [transferLog(USDC, SPENDER, ACCOUNT, 100_000000n)],
-        }),
+        leg: "swap" as const,
+        receipt: receipt({ transactionHash: `0x${"c1".repeat(32)}`, status: "reverted" }),
       },
     ],
-  });
-  expect(result.status).toBe("refunded");
-  expect(result.netSpent).toBe(0n);
-  expect(result.residual).toBe(0n);
-  expect(result.gasWei).toBeGreaterThan(0n);
-  expect(describeRealised(result, AAPLC_DECIMALS)).toContain("nothing is charged to the account");
+  ]) {
+    const result = realise({ ...buy, legs });
+    expect(result.status).toBe("not-funded");
+    expect(result.accountSpent).toBe(0n);
+    expect(result.filled).toBe(0n);
+    expect(result.netSpent).toBe(0n);
+    expect(result.price).toBeNull();
+    expect(result.gasWei).toBeGreaterThan(0n);
+    expect(describeRealised(result, AAPLC_DECIMALS)).toContain("No swap settled");
+  }
 });
 
-test("a funded order with nothing after it is reported as still held by the service", () => {
-  const result = realise({
-    ...buy,
-    legs: [
-      {
-        leg: "fund",
-        receipt: receipt({ logs: [transferLog(USDC, ACCOUNT, SPENDER, 100_000000n)] }),
-      },
-    ],
-  });
-  expect(result.status).toBe("stranded");
-  expect(result.residual).toBe(100_000000n);
-  expect(result.price).toBeNull();
-});
-
-test("a reverted funding leg leaves the account untouched", () => {
-  const result = realise({
-    ...buy,
-    legs: [{ leg: "fund", receipt: receipt({ status: "reverted" }) }],
-  });
+test("a confirmed approval alone has settled nothing", () => {
+  // An approval is not a trade. Reporting it as anything but "no fill yet" would show a
+  // position that does not exist while the swap is still in flight.
+  const result = realise({ ...buy, legs: [{ leg: "approve", receipt: receipt() }] });
   expect(result.status).toBe("not-funded");
   expect(result.accountSpent).toBe(0n);
-  expect(result.gasWei).toBeGreaterThan(0n);
+  expect(result.gasByLeg.approve).toBeGreaterThan(0n);
 });
 
-test("spending more than this order funded shows up as a negative residual", () => {
-  // Clamping this at zero would hide the one number that reveals one order paying out of
-  // another order's balance in a shared spender wallet.
-  const result = realise({
-    ...buy,
-    legs: [
-      {
-        leg: "fund",
-        receipt: receipt({ logs: [transferLog(USDC, ACCOUNT, SPENDER, 50_000000n)] }),
-      },
-      {
-        leg: "swap",
-        receipt: receipt({
-          transactionHash: `0x${"c1".repeat(32)}`,
-          logs: [
-            transferLog(USDC, SPENDER, POOL, 100_000000n),
-            transferLog(AAPLC, POOL, ACCOUNT, 31_228_530n),
-          ],
-        }),
-      },
-    ],
-  });
-  expect(result.residual).toBe(-50_000000n);
+test("an order with no settled leg is unsettled, not a fill of zero", () => {
+  const result = realise({ ...buy, legs: [] });
+  expect(result.status).toBe("unsettled");
+  expect(result.gasWei).toBe(0n);
+  expect(result.price).toBeNull();
+  expect(describeRealised(result, AAPLC_DECIMALS)).toContain("No transaction");
 });
 
 test("execution quality measures the fill against the quote and against the reference", () => {

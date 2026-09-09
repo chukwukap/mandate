@@ -56,13 +56,6 @@ export const modeSchema = z.enum(["manual", "auto"]);
 export const statusSchema = z.enum(["armed", "paused", "halted", "ended"]);
 export const sideSchema = z.enum(["buy", "sell"]);
 export const walletKindSchema = z.enum(["eoa", "base_account", "contract"]);
-export const permissionStatusSchema = z.enum([
-  "prepared",
-  "signed",
-  "active",
-  "revoked",
-  "expired",
-]);
 /** Mirrors the `execution_status_valid` CHECK added in migration 0004. */
 export const executionStatusSchema = z.enum([
   "signal",
@@ -75,7 +68,12 @@ export const executionStatusSchema = z.enum([
   "recovery_required",
 ]);
 /** Mirrors `transaction_leg_valid`. The lifecycle's stage is always one of these or "done". */
-export const transactionLegSchema = z.enum(["fund", "approve", "swap", "reset", "refund"]);
+/**
+ * approve → swap, both signed by the user's own wallet. The custodial fund/reset/refund legs of
+ * the spend-permission design are gone with it: money never leaves the user's wallet except
+ * into the pool, so there is nothing to return.
+ */
+export const transactionLegSchema = z.enum(["approve", "swap"]);
 export const transactionStatusSchema = z.enum(["signed", "confirmed", "reverted"]);
 
 /** A catalogue symbol such as AAPLc. Bounded so an unknown-symbol probe cannot carry a payload. */
@@ -150,7 +148,6 @@ export type Mode = z.infer<typeof modeSchema>;
 export type InstanceStatus = z.infer<typeof statusSchema>;
 export type Side = z.infer<typeof sideSchema>;
 export type WalletKind = z.infer<typeof walletKindSchema>;
-export type PermissionStatus = z.infer<typeof permissionStatusSchema>;
 export type ExecutionStatus = z.infer<typeof executionStatusSchema>;
 export type TransactionLeg = z.infer<typeof transactionLegSchema>;
 export type TransactionStatus = z.infer<typeof transactionStatusSchema>;

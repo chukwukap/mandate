@@ -43,8 +43,6 @@ export interface RecoveryDeps {
   db: Database;
   chain: RecoveryChain;
   log: RecoveryLogger;
-  /** The configured spender. A journal signed by anything else is unattributable. */
-  spender: Hex;
   receiptTimeoutMs: number;
   rebroadcastAfterMs?: number;
   now?: () => number;
@@ -147,13 +145,16 @@ export class Recovery {
       legs.push({ transaction, observed });
     }
 
-    const spender = this.deps.spender.toLowerCase();
-    const signerMismatch = journal.some((row) => row.signer.toLowerCase() !== spender);
+    // Every order is signed by the wallet of the strategy that admitted it — the user's own
+    // Privy embedded wallet — so that is the only signer a journal row may carry.
+    const context = await this.deps.store.context(order.userId, order.instanceId);
+    const signer = context.draft.account.toLowerCase() as Hex;
+    const signerMismatch = journal.some((row) => row.signer.toLowerCase() !== signer);
 
     return {
       legs,
-      nonce: await this.history.nonceState(this.deps.spender).catch(() => null),
-      journal: signerMismatch ? null : await this.signerJournal(),
+      nonce: await this.history.nonceState(signer).catch(() => null),
+      journal: signerMismatch ? null : await this.signerJournal(signer),
       located: null,
       signerMismatch,
       now: this.now(),
@@ -161,7 +162,10 @@ export class Recovery {
   }
 
   /**
-   * Every nonce this worker has ever committed for the spender key, across all owners.
+   * Every nonce this worker has ever committed for one wallet, across all owners.
+   *
+   * A wallet belongs to one user, but the read still pages every owner: a journal row's
+   * tenant is the order's owner, and this is the one place that must not trust the mapping.
    *
    * Read through `eachOwner` rather than `WorkerStore.owners()`: that method advances a cursor
    * held on the shared store that the scheduling loop also reads, so borrowing it here would
@@ -172,8 +176,7 @@ export class Recovery {
    * "cannot tell" rather than as evidence, so a truncated scan can never accuse the key of
    * being used by somebody else.
    */
-  private async signerJournal(): Promise<SignerJournal> {
-    const spender = this.deps.spender.toLowerCase();
+  private async signerJournal(signer: Hex): Promise<SignerJournal> {
     let ceiling = 0;
     const unsettled: number[] = [];
 
@@ -184,7 +187,7 @@ export class Recovery {
           status: schema.transactions.status,
         })
         .from(schema.transactions)
-        .where(eq(schema.transactions.signer, spender));
+        .where(eq(schema.transactions.signer, signer));
       for (const row of rows) {
         ceiling = Math.max(ceiling, row.nonce + 1);
         if (row.status === "signed") unsettled.push(row.nonce);

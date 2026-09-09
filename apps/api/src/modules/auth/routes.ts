@@ -1,8 +1,8 @@
 import type { Config } from "@mandate/config";
-import { type ChainReader, type Hex, Problem } from "@mandate/contracts";
+import { type Hex, Problem } from "@mandate/contracts";
 import { CHAIN_ID } from "@mandate/evm";
 import type { FastifyInstance } from "fastify";
-import { WalletCapabilities, type WalletCapability } from "./capabilities.js";
+import { type Automation, automationOf, type WalletReader } from "../automation/delegation.js";
 import {
   type EligibilityReason,
   eligibilityReason,
@@ -13,10 +13,10 @@ import {
 
 export interface AuthDependencies {
   /**
-   * Optional so a caller without a chain reader still boots. `/v1/me` never touches it; only
-   * `/v1/me/wallets` does, and it answers 503 rather than inventing a capability.
+   * Optional so a caller without Privy still boots. `/v1/me` then reports nothing delegated,
+   * and `/v1/me/wallets` answers 503 rather than inventing a delegation.
    */
-  chain?: ChainReader | undefined;
+  wallets?: WalletReader | undefined;
   workerAvailable?: (() => Promise<boolean>) | undefined;
 }
 
@@ -31,28 +31,28 @@ export type MeResponse = {
   eligible: boolean;
   eligibility_reason: EligibilityReason | null;
   chain_id: number;
-  automation_supported: boolean;
+  automation: Automation;
   execution_available: boolean;
   server_time: string;
 };
-export type WalletsResponse = {
-  items: WalletCapability[];
-  chain_id: number;
-  automation_supported: boolean;
-  notice: string;
-};
 
-const CAPABILITY_NOTICE =
-  "Wallet capability is a cached onchain observation used to decide what to offer. Automatic execution is authorized only by a spending permission that is re-checked against the chain when it is prepared.";
+export type WalletItem = {
+  address: Hex;
+  /** A Privy embedded wallet. Only these can be delegated; an external wallet never can. */
+  embedded: boolean;
+  delegated: boolean;
+};
+export type WalletsResponse = {
+  items: WalletItem[];
+  chain_id: number;
+  signer_id: string | null;
+};
 
 function definition(summary: string) {
   return { tags: ["auth"], summary, security: [{ privy: [] }] };
 }
 
 export async function registerAuth(app: FastifyInstance, config: Config, deps: AuthDependencies) {
-  const capabilities: WalletCapabilities | undefined = deps.chain
-    ? new WalletCapabilities(deps.chain)
-    : undefined;
   // Mirrors app.ts: a worker heartbeat lives in PostgreSQL, so this is one indexed read and it is
   // allowed to fail. A database outage must degrade this single boolean to false, not take down
   // the endpoint the whole frontend uses to decide whether the user is signed in at all.
@@ -80,7 +80,9 @@ export async function registerAuth(app: FastifyInstance, config: Config, deps: A
       // The client refuses to sign on the wrong network rather than producing a signature bound
       // to a chain the API will not execute on.
       chain_id: CHAIN_ID,
-      automation_supported: Boolean(config.spenderAddress),
+      // One Privy read, and only when a wallet is actually selected: with two linked wallets and
+      // no header there is nothing to ask about, and this endpoint is polled.
+      automation: await automationOf(config, deps.wallets, user.privyDid, selection.wallet),
       execution_available: await available(),
       server_time: new Date().toISOString(),
     };
@@ -94,20 +96,28 @@ export async function registerAuth(app: FastifyInstance, config: Config, deps: A
   app.get(
     "/v1/me/wallets",
     {
-      schema: definition("Automation capability of each linked wallet"),
-      // Stricter than the global 120/min: every miss here is a paced RPC round trip, and /v1/me
-      // is the endpoint that gets polled, not this one.
+      schema: definition("Delegation state of each linked wallet"),
+      // Stricter than the global 120/min: every row is a Privy round trip, and /v1/me is the
+      // endpoint that gets polled, not this one.
       config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
     },
     async (request) => {
       const user = principal(request);
-      if (!capabilities)
-        throw Problem.unavailable("Wallet capability checks are temporarily unavailable.");
+      const wallets = deps.wallets;
+      if (!wallets)
+        throw Problem.unavailable("Wallet delegation checks are temporarily unavailable.");
+      // One failed lookup degrades one row to "not delegated" rather than failing the list. The
+      // error is dropped, not logged: Privy SDK errors carry request details.
+      const items: WalletItem[] = await Promise.all(
+        user.wallets.map(async (address) => {
+          const embedded = await wallets.embedded(user.privyDid, address).catch(() => null);
+          return { address, embedded: embedded !== null, delegated: embedded?.delegated === true };
+        }),
+      );
       const response: WalletsResponse = {
-        items: await capabilities.kinds(user.wallets),
+        items,
         chain_id: CHAIN_ID,
-        automation_supported: Boolean(config.spenderAddress),
-        notice: CAPABILITY_NOTICE,
+        signer_id: config.privySignerId ?? null,
       };
       return response;
     },

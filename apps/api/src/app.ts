@@ -8,13 +8,13 @@ import { loggerOptions } from "@mandate/observability";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { registerAuth } from "./modules/auth/index.js";
+import { registerAutomation, type WalletReader } from "./modules/automation/index.js";
 import type { ExecutionDependencies } from "./modules/executions/index.js";
 import { registerExecutions, registerInstanceExecutions } from "./modules/executions/index.js";
 import { registerHealth } from "./modules/health/index.js";
 import { registerInstanceAliases, registerInstances } from "./modules/instances/index.js";
 import { registerMarket } from "./modules/market/index.js";
 import { MarketSnapshots } from "./modules/market/snapshot.js";
-import { registerPermissions } from "./modules/permissions/index.js";
 import { registerPortfolio } from "./modules/portfolio/index.js";
 import { registerTrading, type TradingDependencies } from "./modules/strategies/routes.js";
 import { PREFLIGHT_HEADERS, PREFLIGHT_METHODS, registerPlugins } from "./plugins/index.js";
@@ -36,6 +36,12 @@ export interface ApiDependencies {
   config: Config;
   auth: Authenticator;
   users: { resolvePrivyUser(did: string): Promise<{ id: string }> };
+  /**
+   * Privy's view of a user's embedded wallet: whether it exists at an address and whether the
+   * user delegated it to the app's signer. Separate from `auth` because verification is cached
+   * for a minute and this deliberately is not — see modules/automation/delegation.ts.
+   */
+  wallets: WalletReader;
   databaseReady(): Promise<boolean>;
   workerAvailable?(): Promise<boolean>;
   chainReady(): Promise<boolean>;
@@ -142,7 +148,7 @@ export async function buildApp(deps: ApiDependencies) {
 
   await registerHealth(app, deps);
   await registerAuth(app, config, {
-    ...(deps.trading ? { chain: deps.trading.chain } : {}),
+    wallets: deps.wallets,
     ...(deps.workerAvailable ? { workerAvailable: deps.workerAvailable } : {}),
   });
 
@@ -178,15 +184,22 @@ export async function buildApp(deps: ApiDependencies) {
       });
     }
 
-    const instances = { repository: trading.repository, chain: trading.chain, executionAvailable };
+    const instances = {
+      repository: trading.repository,
+      chain: trading.chain,
+      wallets: deps.wallets,
+      executionAvailable,
+    };
     await registerInstances(app, instances);
     // /v1/strategies POST and GET are the older names for the same two routes. They are
     // registered here, once, rather than by the strategies module.
     await registerInstanceAliases(app, instances);
 
-    await registerPermissions(app, config, {
+    // Turning a wallet's delegation into instance modes needs the repository, so it lives with
+    // the trading modules even though its path is under /v1/me.
+    await registerAutomation(app, config, {
       repository: trading.repository,
-      chain: trading.chain,
+      wallets: deps.wallets,
     });
 
     const executions = { repository: trading.repository, ...(deps.executions ?? {}) };

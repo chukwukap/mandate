@@ -18,6 +18,11 @@ export type Strategy = {
   /** Symbols this strategy watches, on every list row. The full envelope is detail-only. */
   assets?: string[];
 };
+/**
+ * `POST /v1/strategies`. `needs_automation` is true for a strategy asked to buy automatically
+ * whose wallet is not yet delegated — it will arm as signal-only until automatic buying is on.
+ */
+export type CreatedStrategy = Strategy & { needs_automation: boolean };
 export type Draft = {
   artifact_id: string;
   name: string;

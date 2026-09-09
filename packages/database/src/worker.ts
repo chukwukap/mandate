@@ -2,15 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import type pg from "pg";
 import { type Database, type Transaction, tenant } from "./client.js";
-import {
-  drafts,
-  executions,
-  instances,
-  permissions,
-  transactions,
-  users,
-  workerState,
-} from "./schema/index.js";
+import { drafts, executions, instances, transactions, users, workerState } from "./schema/index.js";
 
 export class LeadershipLost extends Error {}
 export class WorkerLease {
@@ -139,11 +131,14 @@ export class WorkerStore {
         .innerJoin(drafts, eq(drafts.id, instances.draftId))
         .where(eq(instances.id, id));
       if (!row) throw new Error("Instance unavailable");
-      const [permission] = await tx
-        .select()
-        .from(permissions)
-        .where(eq(permissions.instanceId, id));
-      return { ...row, permission };
+      // The owner's Privy identity travels with the context: it is how the worker asks Privy
+      // for the embedded wallet that signs this strategy's orders.
+      const [owner] = await tx
+        .select({ id: users.id, privyDid: users.privyDid })
+        .from(users)
+        .where(eq(users.id, user));
+      if (!owner) throw new Error("Owner unavailable");
+      return { ...row, owner };
     });
   }
   async pending(user: string, limit: number) {

@@ -1,5 +1,4 @@
 import type { Hex } from "@mandate/contracts";
-import { SPEND_MANAGER, USDC } from "@mandate/evm";
 import {
   decodeErrorResult,
   decodeFunctionData,
@@ -46,10 +45,6 @@ const PANIC: Record<string, string> = {
   "81": "call to an uninitialised internal function",
 };
 
-const spendAbi = parseAbi([
-  "struct SpendPermission { address account; address spender; address token; uint160 allowance; uint48 period; uint48 start; uint48 end; uint256 salt; bytes extraData; }",
-  "function spend(SpendPermission permission, uint160 value)",
-]);
 const routerAbi = parseAbi([
   "function exactInputSingle((address tokenIn,address tokenOut,int24 tickSpacing,address recipient,uint256 deadline,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
 ]);
@@ -88,7 +83,7 @@ function revertData(error: unknown): Hex | null {
 }
 
 /**
- * Everything that has to ask the chain about the spender key.
+ * Everything that has to ask the chain about a strategy's wallet.
  *
  * This class reads only. It holds no wallet, no private key and no signing method, so no
  * amount of misuse from a caller can make it originate a transaction.
@@ -284,31 +279,15 @@ export class SignerHistory {
   /**
    * Decode calldata into something an operator can read.
    *
-   * This proves WHAT a transaction does, never WHO authorised it. A decoded
-   * `permission-spend` at our nonce is not evidence the bytes were ours: recovery reports
-   * it and stops rather than adopting it into the journal.
+   * This proves WHAT a transaction does, never WHO authorised it. A decoded swap at the
+   * wallet's nonce is not evidence the bytes were ours: recovery reports it and stops rather
+   * than adopting it into the journal.
    */
   identify(input: { to: Hex | null; input: Hex }): KnownCall {
     const to = input.to;
     const data = input.input;
     const selector = data.length >= 10 ? data.slice(0, 10) : null;
     if (!to || !selector) return { kind: "unknown", to, selector };
-    if (same(to, SPEND_MANAGER))
-      try {
-        const call = decodeFunctionData({ abi: spendAbi, data });
-        if (call.functionName === "spend") {
-          const [permission, value] = call.args;
-          return {
-            kind: "permission-spend",
-            account: permission.account,
-            spender: permission.spender,
-            token: permission.token,
-            value: value.toString(),
-          };
-        }
-      } catch {
-        /* Not a spend call; fall through to the generic answer. */
-      }
     if (same(to, ROUTER))
       try {
         const call = decodeFunctionData({ abi: routerAbi, data });
@@ -426,30 +405,5 @@ export class SignerHistory {
         };
       }
     }
-  }
-
-  /** The USDC the spender actually holds, and what it has left approved to the router. */
-  async spenderPosition(signer: Hex) {
-    const read = async (functionName: "balanceOf" | "allowance") => {
-      try {
-        return functionName === "balanceOf"
-          ? await this.client.readContract({
-              address: USDC,
-              abi: erc20Abi,
-              functionName: "balanceOf",
-              args: [signer],
-            })
-          : await this.client.readContract({
-              address: USDC,
-              abi: erc20Abi,
-              functionName: "allowance",
-              args: [signer, ROUTER],
-            });
-      } catch {
-        return null;
-      }
-    };
-    const [balance, routerAllowance] = await Promise.all([read("balanceOf"), read("allowance")]);
-    return { balance, routerAllowance };
   }
 }

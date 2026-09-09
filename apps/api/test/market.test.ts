@@ -72,10 +72,7 @@ function reader(
       if (!handlers.quote) throw Problem.unavailable("No route");
       return handlers.quote(asset, side, amount);
     },
-    walletKind: async () => "eoa",
-    permissionStatus: async () => ({ approved: false, revoked: false }),
     verifyMessage: async () => false,
-    verifyPermission: async () => false,
   };
   return { chain, calls };
 }

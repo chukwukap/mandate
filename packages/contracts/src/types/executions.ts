@@ -22,22 +22,19 @@ export type ExecutionStage = TransactionLeg | "done";
 /**
  * The legs that move an order forward, in the order they are attempted.
  *
- * fund → approve → swap. Each is conditional on the instance still being armed, still being in
- * auto mode, and not having been touched since the order was admitted: the lifecycle re-reads
- * and re-checks that under a row lock before it will journal any of them, because a user who
- * pauses a strategy has withdrawn consent for the next transfer, not just the next tick.
+ * approve → swap, both signed by the user's own wallet. Each is conditional on the instance
+ * still being armed, still in auto mode, and untouched since the order was admitted: the
+ * lifecycle re-reads and re-checks that under a row lock before it journals either, because a
+ * user who pauses a strategy has withdrawn consent for the next transfer, not just the next tick.
  */
-export const FORWARD_LEGS: readonly TransactionLeg[] = Object.freeze(["fund", "approve", "swap"]);
+export const FORWARD_LEGS: readonly TransactionLeg[] = Object.freeze(["approve", "swap"]);
 
 /**
- * The legs that undo one.
- *
- * reset drops a stale router allowance; refund returns a funded input to the user's account.
- * Deliberately NOT guarded on the instance still being armed. Unwinding must proceed exactly
- * when the forward path may not — the strategy was paused, halted or expired mid-order — and
- * refusing to refund a paused strategy would strand the user's money in the spender wallet.
+ * Nothing unwinds. USDC sits in the user's wallet until the swap moves it into the pool in the
+ * same transaction that delivers the shares; a stale router allowance is the only residue of an
+ * order that stopped between legs, and it is harmless.
  */
-export const UNWIND_LEGS: readonly TransactionLeg[] = Object.freeze(["reset", "refund"]);
+export const UNWIND_LEGS: readonly TransactionLeg[] = Object.freeze([]);
 
 export function isUnwindLeg(leg: TransactionLeg): boolean {
   return (UNWIND_LEGS as readonly string[]).includes(leg);
