@@ -289,10 +289,30 @@ test("API_DOCS is a strict 0/1 flag, not a truthiness test", () => {
  */
 test("PRIVY_KEY_QUORUM_ID is optional, and absent means signals only", () => {
   expect(loadConfig(env()).privySignerId).toBeUndefined();
-  expect(loadConfig(env({ PRIVY_KEY_QUORUM_ID: "signer_abc123" })).privySignerId).toBe("signer_abc123");
+  expect(loadConfig(env({ PRIVY_KEY_QUORUM_ID: "signer_abc123" })).privySignerId).toBe(
+    "signer_abc123",
+  );
   // A blank is absent, not a signer named "": that is the min(1) doing its job after the
   // normalisation has already turned `""` into undefined.
   expect(loadConfig(env({ PRIVY_KEY_QUORUM_ID: "" })).privySignerId).toBeUndefined();
+});
+
+test("demo mode is explicit, and survives production because the fork is what makes it a demo", () => {
+  expect(loadConfig(env()).demo).toBe(false);
+  expect(loadConfig(env({ MANDATE_DEMO: "0" })).demo).toBe(false);
+  expect(loadConfig(env({ MANDATE_DEMO: "1" })).demo).toBe(true);
+  // Deliberately NOT forced off the way devCountry is. The hosted demo runs NODE_ENV=production
+  // against an isolated fork; forcing the flag off there would disable the faucet on the one
+  // deployment that exists to hand out test funds.
+  expect(
+    loadConfig(
+      env({
+        NODE_ENV: "production",
+        APP_ORIGIN: "https://mandate.example.com",
+        MANDATE_DEMO: "1",
+      }),
+    ).demo,
+  ).toBe(true);
 });
 
 test("the loaded object is the flat, derived surface the rest of the API reads", () => {
@@ -325,6 +345,9 @@ test("the loaded object is the flat, derived surface the rest of the API reads",
       googleBaseUrl: undefined,
     },
     privySignerId: undefined,
+    // Off unless a deployment opts in. A faucet that writes chain state is registered on this
+    // flag alone, so defaulting it true anywhere would put one in front of real money.
+    demo: false,
     privyAppId: "app-id",
     privyAppSecret: "privy-secret",
     eligibleCountries: [],

@@ -9,6 +9,7 @@ import Fastify from "fastify";
 import { ZodError } from "zod";
 import { registerAuth } from "./modules/auth/index.js";
 import { registerAutomation, type WalletReader } from "./modules/automation/index.js";
+import { registerDemo } from "./modules/demo/index.js";
 import type { ExecutionDependencies } from "./modules/executions/index.js";
 import { registerExecutions, registerInstanceExecutions } from "./modules/executions/index.js";
 import { registerHealth } from "./modules/health/index.js";
@@ -203,6 +204,9 @@ export async function buildApp(deps: ApiDependencies) {
     });
 
     const executions = { repository: trading.repository, ...(deps.executions ?? {}) };
+    // Registered only on a demo deployment, so a real one has no faucet route to discover.
+    if (config.demo) await registerDemo(app, config);
+
     await registerExecutions(app, executions);
     await registerInstanceExecutions(app, executions);
 

@@ -2894,6 +2894,20 @@ fieldset.periods {
   padding-top: 18px;
   border-top: 1px solid var(--line-soft);
 }
+/*
+ * The demo faucet, wrapped onto its own row.
+ *
+ * `deposit-foot` is a two-item row (balance, explanation) that the button would squeeze into a
+ * third column, shrinking the address card's one paragraph. Given its own full-width line it
+ * reads as the action the sentence above it just described.
+ */
+.deposit-fund {
+  flex-basis: 100%;
+  align-self: flex-start;
+}
+.deposit-foot {
+  flex-wrap: wrap;
+}
 .deposit-balance > span {
   display: block;
   font-size: 10px;

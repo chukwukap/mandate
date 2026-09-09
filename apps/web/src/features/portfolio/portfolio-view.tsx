@@ -67,6 +67,19 @@ export function PortfolioView({ model }: { model: WorkspaceModel }) {
           : null
       }
       notify={setToast}
+      fund={
+        process.env.NEXT_PUBLIC_DEMO_MODE === "1"
+          ? async () => {
+              const result = await call<{ notice: string }>("/v1/demo/fund", {
+                wallet: depositAddress,
+              });
+              // Refresh before the toast: the number on the card is the thing the click was
+              // about, and announcing success over a stale balance reads as a broken button.
+              await refresh();
+              setToast(result.notice);
+            }
+          : undefined
+      }
     />
   ) : session.authenticated ? (
     <section className="deposit-card" aria-label="Trading wallet setup">

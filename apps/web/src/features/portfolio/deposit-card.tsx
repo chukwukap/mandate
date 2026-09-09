@@ -1,5 +1,5 @@
 "use client";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 import { money } from "../trading/market-data";
 
@@ -15,13 +15,34 @@ export function DepositCard({
   address,
   balance,
   notify,
+  fund,
 }: {
   address: string;
   /** USDC held at `address`, or null while that is not yet known. */
   balance: string | null;
   notify(message: string): void;
+  /**
+   * Hand this wallet test funds. Present only on the demo deployment.
+   *
+   * A demo whose first step is "send yourself USDC from an exchange" is a demo nobody
+   * completes, so the isolated fork hands them over on request instead.
+   */
+  fund?: (() => Promise<void>) | undefined;
 }) {
   const [copied, setCopied] = useState(false);
+  const [funding, setFunding] = useState(false);
+  const demo = process.env.NEXT_PUBLIC_DEMO_MODE === "1";
+  const getFunds = async () => {
+    if (!fund) return;
+    setFunding(true);
+    try {
+      await fund();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Couldn't add test funds. Try again.");
+    } finally {
+      setFunding(false);
+    }
+  };
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(address);
@@ -65,10 +86,21 @@ export function DepositCard({
           </strong>
         </div>
         <p>
-          {process.env.NEXT_PUBLIC_DEMO_MODE === "1"
+          {demo
             ? "This demo uses test funds on an isolated Base fork. Do not send real funds to this address for the demo."
             : "Send USDC on Base to this address. It is your wallet: strategies buy from it, and you can withdraw any time."}
         </p>
+        {demo && fund && (
+          <button
+            type="button"
+            className="button primary deposit-fund"
+            onClick={() => void getFunds()}
+            disabled={funding}
+          >
+            {funding ? <Loader2 size={15} className="spin" /> : <Plus size={15} />}
+            {funding ? "Adding test funds…" : "Get test USDC"}
+          </button>
+        )}
       </div>
     </section>
   );

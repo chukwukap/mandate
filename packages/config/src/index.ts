@@ -35,6 +35,14 @@ const envSchema = z.object({
    * still works as signals only: nothing can be armed for automatic buying.
    */
   PRIVY_KEY_QUORUM_ID: z.string().min(1).optional(),
+  /**
+   * Demo deployment: an isolated Base fork with test funds, not real money.
+   *
+   * Deliberately NOT forced off in production the way DEV_COUNTRY is. The hosted demo runs with
+   * NODE_ENV=production because it is a real deployment; what makes it a demo is the fork it
+   * points at, so the flag has to survive that. It is opt-in and set on exactly one service.
+   */
+  MANDATE_DEMO: z.enum(["0", "1"]).default("0"),
   PRIVY_APP_ID: z.string().min(1),
   PRIVY_APP_SECRET: z.string().min(1),
   ELIGIBLE_COUNTRIES: z.string().default(""),
@@ -104,6 +112,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       googleBaseUrl: parsed.GOOGLE_BASE_URL,
     },
     privySignerId: parsed.PRIVY_KEY_QUORUM_ID,
+    demo: parsed.MANDATE_DEMO === "1",
     privyAppId: parsed.PRIVY_APP_ID,
     privyAppSecret: parsed.PRIVY_APP_SECRET,
     eligibleCountries: countries,
