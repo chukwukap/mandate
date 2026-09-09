@@ -54,8 +54,16 @@ const DEX = "https://api.dexscreener.com/latest/dex/tokens";
 
 /** Pools are stable; a resolved address is worth keeping for the life of the process. */
 const pools = new Map<string, string>();
-/** Candles are not. Sixty seconds is shorter than the shortest interval offered. */
-const CANDLE_TTL_MS = 60_000;
+/**
+ * Candles are not — but they are slower than a minute.
+ *
+ * Every (symbol, interval) pair the overview, market and discover pages draw is its own upstream
+ * call, and with a 60s window that steady state alone sat at ~20 calls a minute against a free
+ * tier that allows 30. Any second viewer, or a cold start, tipped it into 429s and the cards read
+ * "Price history is unavailable right now" — the shortest interval offered is fifteen minutes,
+ * so a five-minute window costs nothing a viewer could notice and cuts the upstream rate by 5x.
+ */
+const CANDLE_TTL_MS = 5 * 60_000;
 const cache = new Map<string, { at: number; candles: Candle[] }>();
 
 type Fetcher = (
@@ -116,28 +124,43 @@ function toCandles(raw: unknown): Candle[] {
   const list = (raw as { data?: { attributes?: { ohlcv_list?: unknown[] } } })?.data?.attributes
     ?.ohlcv_list;
   if (!Array.isArray(list)) return [];
-  return list
-    .flatMap((entry): Candle[] => {
-      if (!Array.isArray(entry) || entry.length < 6) return [];
-      const [time, open, high, low, close, volume] = entry.map(Number) as (number | undefined)[];
-      // A candle with a non-finite or non-positive price is not a datum to plot around; drawing
-      // it would rescale the whole chart around a point that never traded.
-      const prices = [time, open, high, low, close];
-      if (!prices.every((n): n is number => typeof n === "number" && Number.isFinite(n) && n > 0)) {
-        return [];
-      }
-      return [
-        {
-          time: time as number,
-          open: open as number,
-          high: high as number,
-          low: low as number,
-          close: close as number,
-          volume: typeof volume === "number" && Number.isFinite(volume) ? volume : 0,
-        },
-      ];
-    })
-    .sort((a, b) => a.time - b.time);
+  return (
+    list
+      .flatMap((entry): Candle[] => {
+        if (!Array.isArray(entry) || entry.length < 6) return [];
+        const [time, open, high, low, close, volume] = entry.map(Number) as (number | undefined)[];
+        // A candle with a non-finite or non-positive price is not a datum to plot around; drawing
+        // it would rescale the whole chart around a point that never traded.
+        const prices = [time, open, high, low, close];
+        if (
+          !prices.every((n): n is number => typeof n === "number" && Number.isFinite(n) && n > 0)
+        ) {
+          return [];
+        }
+        return [
+          {
+            time: time as number,
+            open: open as number,
+            high: high as number,
+            low: low as number,
+            close: close as number,
+            volume: typeof volume === "number" && Number.isFinite(volume) ? volume : 0,
+          },
+        ];
+      })
+      .sort((a, b) => a.time - b.time)
+      /**
+       * One candle per timestamp, strictly ascending.
+       *
+       * GeckoTerminal has returned the same bucket twice at an aggregation boundary, and the chart
+       * library asserts on that ("data must be asc ordered by time") — which took the whole
+       * Markets page down to the error boundary on a range click. The later entry wins: after the
+       * sort it is the one GeckoTerminal listed first, i.e. the freshest reading of that bucket.
+       */
+      .filter(
+        (candle, index, all) => index === all.length - 1 || all[index + 1]?.time !== candle.time,
+      )
+  );
 }
 
 /**
@@ -150,7 +173,7 @@ function toCandles(raw: unknown): Candle[] {
  * between calls rather than a cap on how many overlap.
  *
  * 220ms is ~4.5 calls a second. Seven cold sparklines therefore take about 1.5s to fill, against
- * a per-call latency of several hundred milliseconds anyway, and the 60s cache means this is
+ * a per-call latency of several hundred milliseconds anyway, and the five-minute cache means this is
  * paid once per interval rather than per viewer.
  */
 const SPACING_MS = 220;
@@ -216,7 +239,20 @@ export async function candlesFor(
 
   const running = inflight.get(key);
   if (running) return running;
-  const request = load(asset, interval, key, fetcher).finally(() => inflight.delete(key));
+  const request = load(asset, interval, key, fetcher)
+    .catch((error: unknown) => {
+      if (error instanceof Problem) throw error;
+      /**
+       * A timeout, a dropped connection, or an HTML error page where JSON was expected.
+       *
+       * These are the upstream being unavailable, and they were reaching the browser as 500
+       * "Unexpected error" — the one status the chart cannot distinguish from a bug of ours.
+       * A stale window is still the better answer when there is one.
+       */
+      if (hit) return hit.candles;
+      throw Problem.unavailable("Price history is temporarily unavailable for this market.");
+    })
+    .finally(() => inflight.delete(key));
   inflight.set(key, request);
   return request;
 }

@@ -123,7 +123,21 @@ export function whyIdle(
 ): Idle | null {
   if (status === "paused")
     return { headline: "Paused", action: "Arm it to start buying.", tone: "waiting" };
-  if (status === "ended") return { headline: "Stopped", action: null, tone: "attention" };
+  if (status === "ended")
+    return {
+      headline: "Ended",
+      action: "It reached its end date. Create a new strategy to keep going.",
+      tone: "attention",
+    };
+  // A stopped strategy keeps its last evaluation, which was usually a cooldown or a "not met".
+  // Read below, that row would say "Waiting for the next scheduled buy" about a strategy that
+  // will never buy again. A halt the machine imposed (drawdown, a guard) keeps its own words.
+  if (status === "halted" && latest?.outcome !== "halted")
+    return {
+      headline: "Stopped",
+      action: "This strategy was stopped and cannot be restarted.",
+      tone: "attention",
+    };
   /**
    * Asked for automatic, still running as signals.
    *

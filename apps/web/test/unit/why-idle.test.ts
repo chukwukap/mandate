@@ -14,6 +14,15 @@ const evaluation = (over: Partial<Evaluation>): Evaluation => ({
 });
 
 describe("why a strategy is idle", () => {
+  test("a stopped strategy says so, whatever its last evaluation was", () => {
+    // Stopping keeps the final evaluation row — usually a cooldown — and read through that row
+    // the page said "Waiting for the next scheduled buy" about a strategy that never buys again.
+    const idle = whyIdle(evaluation({ refused: "Cooldown active" }), "halted");
+    expect(idle?.headline).toBe("Stopped");
+    expect(idle?.tone).toBe("attention");
+    expect(idle?.action).toMatch(/cannot be restarted/);
+  });
+
   test("a cooldown reads as waiting, not as failure", () => {
     // The recurring shape refuses on every tick between buys. If that read as an error, a
     // working daily strategy would look broken hundreds of times a day.
@@ -42,7 +51,9 @@ describe("why a strategy is idle", () => {
   test("status wins over the last tick, because a paused strategy is not waiting on the market", () => {
     const stale = evaluation({ refused: "Cooldown active" });
     expect(whyIdle(stale, "paused")?.headline).toBe("Paused");
-    expect(whyIdle(stale, "ended")?.headline).toBe("Stopped");
+    // Reaching an end date and being stopped by hand are different facts; each gets its word.
+    expect(whyIdle(stale, "ended")?.headline).toBe("Ended");
+    expect(whyIdle(stale, "halted")?.headline).toBe("Stopped");
   });
 
   test("a strategy that has never ticked says so instead of showing nothing", () => {

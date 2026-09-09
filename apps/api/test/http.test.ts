@@ -123,3 +123,16 @@ test("OpenAPI declares the Privy bearer contract", async () => {
   expect(response.statusCode).toBe(200);
   expect(response.json().paths["/v1/me"].get.security).toEqual([{ privy: [] }]);
 });
+
+test("the rate limiter's refusal is reported as one, not as a malformed request", async () => {
+  const app = await setup();
+  const headers = { authorization: "Bearer valid" };
+  let last = await app.inject({ url: "/v1/me", headers });
+  for (let i = 0; i < 120 && last.statusCode !== 429; i += 1)
+    last = await app.inject({ url: "/v1/me", headers });
+  expect(last.statusCode).toBe(429);
+  expect(last.headers["content-type"]).toContain("application/problem+json");
+  expect(last.json()).toMatchObject({ status: 429, code: "rate-limited" });
+  expect(last.json().detail).toMatch(/more requests than allowed/);
+  expect(last.json().detail).not.toMatch(/request format/);
+});

@@ -120,28 +120,42 @@ export function project(
   if (form.shape === "ladder") {
     const only = form.symbols[0];
     if (!only) return null;
+    /**
+     * The prices of the steps do not depend on the money, so a ladder whose amount has not been
+     * typed yet still reads back where it would buy — and still gets the every-step-crossed
+     * warning below, which is about prices alone. Before this, an empty amount emptied the whole
+     * panel and left the text-mode placeholder in its place.
+     */
     let rungs: { price: string; amount: string }[];
+    let priced = true;
     try {
       rungs = ladderRungs(form);
     } catch {
-      return null;
+      try {
+        rungs = ladderRungs({ ...form, amount: "1" });
+        priced = false;
+      } catch {
+        return null;
+      }
     }
     const total = rungs.reduce((sum, r) => sum + Number(r.amount), 0);
     const deepest = Number(rungs.at(-1)?.amount ?? 0);
     const spot = num(price(only));
     facts.push({ label: "Steps", value: `${rungs.length}` });
-    facts.push({ label: "Total if every step fills", value: money(total) });
-    // The per-order cap is signed at the LARGEST rung, which is not the number the user typed
-    // into "amount per buy" and is the one surprise this shape reliably produces.
-    facts.push({ label: "Largest single buy", value: money(deepest) });
-    if (budget && total > budget)
-      warnings.push(
-        `Every step filling costs ${money(total)}, more than the ${money(budget)} budget. The last steps would be refused.`,
-      );
-    if (available !== undefined && total > available)
-      warnings.push(
-        `Every step filling costs ${money(total)}, more than the ${money(available)} USDC you hold.`,
-      );
+    if (priced) {
+      facts.push({ label: "Total if every step fills", value: money(total) });
+      // The per-order cap is signed at the LARGEST rung, which is not the number the user typed
+      // into "amount per buy" and is the one surprise this shape reliably produces.
+      facts.push({ label: "Largest single buy", value: money(deepest) });
+      if (budget && total > budget)
+        warnings.push(
+          `Every step filling costs ${money(total)}, more than the ${money(budget)} budget. The last steps would be refused.`,
+        );
+      if (available !== undefined && total > available)
+        warnings.push(
+          `Every step filling costs ${money(total)}, more than the ${money(available)} USDC you hold.`,
+        );
+    }
     warnings.push(
       "Nothing sells this back. It stops after the last step and holds what it bought.",
     );
@@ -158,19 +172,27 @@ export function project(
      */
     if (spot !== undefined && spot < deepestPrice)
       warnings.push(
-        `Every step is above ${money(spot)}, today's price — all ${rungs.length} would trigger at once and spend ${money(total)} straight away. Set the first step below the current price to step in gradually.`,
+        `Every step is above ${money(spot)}, today's price — all ${rungs.length} would trigger at once${priced ? ` and spend ${money(total)} straight away` : ""}. Set the first step below the current price to step in gradually.`,
       );
     return {
-      sentence: `Buy ${who} in ${rungs.length} steps as it falls, starting under ${money(first)} and buying more at each step, up to ${money(total)}.`,
+      sentence: priced
+        ? `Buy ${who} in ${rungs.length} steps as it falls, starting under ${money(first)} and buying more at each step, up to ${money(total)}.`
+        : `Buy ${who} in ${rungs.length} steps as it falls, starting under ${money(first)} and buying more at each step — set the first step's amount to see the total.`,
       today:
         spot === undefined
           ? null
           : spot < first
             ? { firing: true, detail: `${who} is ${money(spot)}, already below the first step.` }
-            : {
-                firing: false,
-                detail: `${who} is ${money(spot)}. The first step needs ${money(first)}, ${(((first - spot) / spot) * 100).toFixed(1)}% away.`,
-              },
+            : ((spot - first) / spot) * 100 < 0.05
+              ? {
+                  firing: false,
+                  detail: `${who} is ${money(spot)}, right at the first step — the next dip triggers it.`,
+                }
+              : {
+                  firing: false,
+                  // A distance, stated as one: "-3.0% away" read as a sign, not a gap.
+                  detail: `${who} is ${money(spot)}. The first step needs ${money(first)}, ${(((spot - first) / spot) * 100).toFixed(1)}% below today.`,
+                },
       facts,
       warnings,
     };

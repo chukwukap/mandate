@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { statusLabel } from "../../components/status";
 import { currency, shortAddress } from "../../lib/format";
 import type { WorkspaceModel } from "../../providers/use-workspace";
 import { companies, stocks } from "../market/catalog";
@@ -196,7 +197,7 @@ export function OverviewView({ model }: { model: WorkspaceModel }) {
               </dd>
             </div>
             <div>
-              <dt>Armed</dt>
+              <dt>Watching</dt>
               <dd>
                 {watching.length}
                 <small> / {strategies.length}</small>
@@ -360,7 +361,7 @@ export function OverviewView({ model }: { model: WorkspaceModel }) {
                   className={`desk-status ${strategy.status === "armed" ? "running" : strategy.status}`}
                 >
                   <i />
-                  {strategy.status}
+                  {statusLabel(strategy.status)}
                 </span>
               </Link>
             ))
@@ -424,7 +425,7 @@ export function OverviewView({ model }: { model: WorkspaceModel }) {
                 </span>
                 <span className={`desk-status ${execution.status}`}>
                   <i />
-                  {execution.status}
+                  {statusLabel(execution.status)}
                 </span>
               </Link>
             ))

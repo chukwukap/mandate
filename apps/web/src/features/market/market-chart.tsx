@@ -250,20 +250,27 @@ export function MarketChart({
     // asks the provider for a range then. Assigning this during render instead let an empty
     // array reach the first call, so the provider returned null and the default autoscale —
     // the one that puts a $230 stock on a $500 axis — was used.
-    latest.current = candles;
+    // The library asserts on a repeated or out-of-order timestamp, and an assertion here is not a
+    // blank chart — it is the whole page replaced by the error boundary. The API sends one
+    // candle per bucket; this is the guarantee restated where the failure would land.
+    const series = candles
+      .slice()
+      .sort((a, b) => a.time - b.time)
+      .filter((c, i, all) => i === 0 || c.time > (all[i - 1] as { time: number }).time);
+    latest.current = series;
 
     if (type === "candles") {
       (price.current as ISeriesApi<"Candlestick">).setData(
-        candles.map((c) => ({ ...c, time: c.time as UTCTimestamp })),
+        series.map((c) => ({ ...c, time: c.time as UTCTimestamp })),
       );
     } else {
       (price.current as ISeriesApi<"Line">).setData(
-        candles.map((c) => ({ time: c.time as UTCTimestamp, value: c.close })),
+        series.map((c) => ({ time: c.time as UTCTimestamp, value: c.close })),
       );
     }
 
     volume.current?.setData(
-      candles.map((c) => ({
+      series.map((c) => ({
         time: c.time as UTCTimestamp,
         value: c.volume,
         // Tinted by the candle's own direction, so the volume row reads as part of the price
@@ -271,7 +278,7 @@ export function MarketChart({
         color: `${c.close >= c.open ? theme.up : theme.down}33`,
       })),
     );
-    mean.current?.setData(average ? movingAverage(candles, MA_PERIOD) : []);
+    mean.current?.setData(average ? movingAverage(series, MA_PERIOD) : []);
     chart.current.timeScale().fitContent();
   }, [candles, type, average]);
 

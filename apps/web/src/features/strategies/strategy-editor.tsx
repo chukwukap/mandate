@@ -9,7 +9,7 @@ import {
   Loader2,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog } from "../../components/dialog";
 import { ApiError } from "../../lib/api";
 import { companies, stocks } from "../market/catalog";
@@ -134,6 +134,42 @@ export function StrategyEditor({
     };
   }, [call]);
 
+  /**
+   * A prefill asked for before the market had answered.
+   *
+   * Starters and the ladder's first step are seeded from today's price, and someone who opens
+   * the builder and clicks a starter within the first second does so before that price has
+   * arrived. Left as it was, the field stayed blank next to a "now $316.26" that landed a moment
+   * later. The ask is remembered and written the moment the price exists — unless a value was
+   * typed in the meantime, which is never overwritten.
+   */
+  const pending = useRef<{ symbol: string; field: "ladder" | "level"; factor: number } | null>(
+    null,
+  );
+  const seed = (symbol: string, field: "ladder" | "level", factor = 1) => {
+    const spot = price(symbol);
+    // Floored to the cent, never rounded: a seed half a cent above today's price would read as
+    // "already below the first step" on a strategy the user has not touched yet.
+    if (spot) return (Math.floor(Number(spot) * factor * 100) / 100).toFixed(2);
+    pending.current = { symbol, field, factor };
+    return "";
+  };
+  useEffect(() => {
+    const ask = pending.current;
+    if (!ask) return;
+    const spot = price(ask.symbol);
+    if (!spot) return;
+    pending.current = null;
+    const value = (Math.floor(Number(spot) * ask.factor * 100) / 100).toFixed(2);
+    setForm((current) => {
+      if (ask.field === "ladder")
+        return current.ladderStart ? current : { ...current, ladderStart: value };
+      return current.thresholds[ask.symbol]
+        ? current
+        : { ...current, thresholds: { ...current.thresholds, [ask.symbol]: value } };
+    });
+  });
+
   const update = <K extends keyof StrategyForm>(key: K, value: StrategyForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
@@ -148,7 +184,7 @@ export function StrategyEditor({
       symbols: shapeById(id).single ? current.symbols.slice(0, 1) : current.symbols,
       ladderStart:
         id === "ladder" && !current.ladderStart
-          ? (price(current.symbols[0] ?? symbol) ?? "")
+          ? seed(current.symbols[0] ?? symbol, "ladder")
           : current.ladderStart,
     }));
     setStep("setup");
@@ -165,11 +201,9 @@ export function StrategyEditor({
       authoring: "rule",
       symbols: [...starter.symbols],
       // Prices come from today's market, never from a constant written weeks ago.
-      ladderStart: starter.shape === "ladder" ? (price(anchor) ?? "") : current.ladderStart,
+      ladderStart: starter.shape === "ladder" ? seed(anchor, "ladder") : current.ladderStart,
       thresholds:
-        starter.shape === "levels" && price(anchor)
-          ? { [anchor]: (Number(price(anchor)) * 0.95).toFixed(2) }
-          : current.thresholds,
+        starter.shape === "levels" ? { [anchor]: seed(anchor, "level", 0.95) } : current.thresholds,
       name: starter.title,
     }));
     setStep("setup");
@@ -177,7 +211,16 @@ export function StrategyEditor({
 
   const toggle = (ticker: string) =>
     setForm((current) => {
-      if (shapeById(current.shape).single) return { ...current, symbols: [ticker] };
+      if (shapeById(current.shape).single) {
+        // Re-clicking the chosen stock is not a change, and must not touch a typed first step.
+        if (current.symbols[0] === ticker) return current;
+        return {
+          ...current,
+          symbols: [ticker],
+          // A ladder's first step follows the stock: the old stock's price is no step at all.
+          ladderStart: current.shape === "ladder" ? seed(ticker, "ladder") : current.ladderStart,
+        };
+      }
       const selected = current.symbols.includes(ticker);
       // Never empty and never over the machine cap: the picker refuses rather than letting the
       // form reach a state whose only outcome is an error on submit.
@@ -760,11 +803,6 @@ export function StrategyEditor({
                 {clarification}
               </p>
             )}
-            {error && (
-              <p className="form-error" role="alert">
-                {error}
-              </p>
-            )}
           </div>
 
           <aside className="setup-side">
@@ -798,7 +836,9 @@ export function StrategyEditor({
                 </>
               ) : (
                 <p className="preview-empty">
-                  Describe what you want and the compiled rule will appear here before you sign.
+                  {form.authoring === "text"
+                    ? "Describe what you want and the compiled rule will appear here before you sign."
+                    : "Set the numbers on the left and it is spelled out here before you sign."}
                 </p>
               )}
             </div>
@@ -811,6 +851,14 @@ export function StrategyEditor({
                 Review
               </button>
             </div>
+            {/* Under the button that was just pressed. At the foot of the long left column the
+                message sat below the fold, and a refused Review looked like a button that did
+                nothing. */}
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
           </aside>
         </form>
       )}

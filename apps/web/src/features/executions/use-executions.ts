@@ -17,23 +17,25 @@ export function useExecutions(
   const [executions, setExecutions] = useState<Execution[]>([]);
   useEffect(() => {
     setExecutions([]);
-    // Both sections that render executions. Gated at all because this fans out to one request
-    // per strategy, and a page that never displays them should not pay for them — but the
-    // overview does display them, and with "activity" alone its panel was permanently empty
-    // while truthfully reporting that it had nothing.
+    // Only the sections that render executions pay for them. This used to fan out to one
+    // request per strategy on every refresh, which at eighteen strategies was 36 requests a
+    // minute from an idle Overview — a third of the API's whole per-minute allowance, spent
+    // before the user had touched anything. The owned-executions list already joins the
+    // strategy name, so one page covers every strategy at once.
     if (!SHOWS_EXECUTIONS.has(section) || !authenticated || !strategies.length) return;
     let active = true;
-    void Promise.all(
-      strategies.map(async (strategy) => {
-        const page = await call<Page<Execution>>(
-          `/v1/instances/${strategy.id}/executions?limit=20`,
-        );
-        return page.items.map((item) => ({ ...item, name: strategy.name }));
-      }),
-    )
-      .then((rows) => {
+    const names = new Map(strategies.map((strategy) => [strategy.id, strategy.name]));
+    void call<Page<Execution>>("/v1/executions?limit=100")
+      .then((page) => {
         if (active)
-          setExecutions(rows.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+          setExecutions(
+            page.items
+              .map((item) => {
+                const name = item.strategy_name ?? names.get(item.instanceId) ?? item.name;
+                return name ? { ...item, name } : item;
+              })
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+          );
       })
       .catch(() => {
         if (active) setError("Couldn't load recent activity. Try refreshing.");

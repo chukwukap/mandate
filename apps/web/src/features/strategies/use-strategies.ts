@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import type { Page } from "../../lib/api";
+import { ApiError } from "../../lib/api";
 import type { useSession } from "../auth/session-provider";
 import type { useAuthorizedApi } from "../auth/use-authorized-api";
 import type { Strategy } from "./types";
@@ -56,7 +57,18 @@ export function useStrategies(
           if (active) setDetail(value);
         })
         .catch((error) => {
-          if (active) setError(error instanceof Error ? error.message : "Couldn't load strategy.");
+          if (!active) return;
+          // A link to a strategy that is not this user's, or not anyone's, is answered with the
+          // API's schema or not-found wording. Neither says the one thing the person needs.
+          const missing =
+            error instanceof ApiError && (error.status === 404 || error.status === 400);
+          setError(
+            missing
+              ? "That strategy isn't here. Check the link, or go back to your strategies."
+              : error instanceof Error
+                ? error.message
+                : "Couldn't load strategy.",
+          );
         });
     }
     return () => {
@@ -89,6 +101,12 @@ export function useStrategies(
       // The row already on screen is a summary; the detail route carries the full review.
       const value = await call<Strategy>(`/v1/instances/${strategy.id}`);
       setDetail((current) => (current?.id === strategy.id ? value : current));
+      // The row behind the dialog is refreshed from the same read. Otherwise a strategy that
+      // has just signalled shows "1 order" in the dialog and "0 orders" in the list until the
+      // next poll — two answers to one question, on one screen.
+      setStrategies((rows) =>
+        rows.map((row) => (row.id === value.id ? { ...row, ...value } : row)),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't load the review.");
     }

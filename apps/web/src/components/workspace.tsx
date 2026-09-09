@@ -368,6 +368,11 @@ export function Workspace() {
               {session.authenticated ? "Loading strategy…" : "Log in to view this strategy."}
             </p>
           )}
+          {model.detailPage && !detail && error && (
+            <Link className="text-button" href={"/strategies"}>
+              ← All strategies
+            </Link>
+          )}
           {section === "activity" && <ActivityView model={model} empty={empty} />}
           {section === "settings" && <SettingsView model={model} />}
           <footer className="workspace-footer">

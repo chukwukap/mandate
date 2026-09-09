@@ -81,7 +81,12 @@ export function StrategiesView({
               </button>
             ))}
           </div>
-          <span className="quiet">{strategies.length} strategies</span>
+          {/* Past the first page the number is how many are on screen, and must say so. */}
+          <span className="quiet">
+            {nextPage
+              ? `${strategies.length} loaded · more below`
+              : `${strategies.length} strategies`}
+          </span>
         </div>
         {loading ? (
           <div className="loading-state">

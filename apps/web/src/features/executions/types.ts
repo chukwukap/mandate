@@ -20,6 +20,8 @@ export type Execution = {
    */
   reason: { code: string; message: string; raw: string } | string | null;
   intent?: { side: string; amount: string; asset: number } | null;
+  /** Joined by the owned-executions list; the per-instance feed leaves it out. */
+  strategy_name?: string | null;
   name?: string;
 };
 /** The reason as text, whichever shape it arrived in. */

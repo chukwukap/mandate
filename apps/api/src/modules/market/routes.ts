@@ -104,7 +104,12 @@ export async function registerMarket(app: FastifyInstance, deps: MarketDependenc
       },
       // Public, like /v1/market. A price chart is the first thing a visitor looks at, and
       // requiring a wallet to see one asks for a commitment before showing anything.
-      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+      //
+      // 240, not 60: one person moving between Overview (eight sparklines), Markets (eight
+      // more) and Trade inside a minute makes over sixty candle requests on their own, and at
+      // sixty the second page's charts came back 429 and blank. The five-minute cache means
+      // these calls cost the upstream nothing; the limit only has to stop a flood.
+      config: { rateLimit: { max: 240, timeWindow: "1 minute" } },
     },
     async (request) => {
       const query = request.query as { symbol?: string; interval?: string };

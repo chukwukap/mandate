@@ -2,6 +2,7 @@
 import { Suspense } from "react";
 import { useSession } from "../features/auth/session-provider";
 import { OnboardingView } from "../features/onboarding/onboarding-view";
+import { Boot } from "./boot";
 import { Workspace } from "./workspace";
 
 /**
@@ -19,13 +20,7 @@ import { Workspace } from "./workspace";
  */
 function Root() {
   const session = useSession();
-  if (!session.ready)
-    return (
-      <div className="boot">
-        <span className="brand-mark">m</span>
-        <span>Opening your workspace…</span>
-      </div>
-    );
+  if (!session.ready) return <Boot />;
   return session.authenticated ? <Workspace /> : <OnboardingView />;
 }
 

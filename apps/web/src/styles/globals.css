@@ -2034,6 +2034,25 @@ h1 {
    * indistinguishable from a blank page.
    */
   color: var(--text-2);
+  /* Wrapped rows stay together in the middle rather than spreading over the viewport. */
+  flex-wrap: wrap;
+  align-content: center;
+  row-gap: 18px;
+}
+
+/* The splash after it has waited longer than a healthy connection needs. */
+.boot-stalled {
+  flex-basis: 100%;
+  margin: 0;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
 }
 .brand-mark {
   font-size: 36px;

@@ -84,19 +84,28 @@ export async function buildApp(deps: ApiDependencies) {
               "Invalid request",
               "The request does not match the endpoint schema.",
             )
-          : e.statusCode && e.statusCode >= 400 && e.statusCode < 500
-            ? new Problem(
-                e.statusCode,
-                "request-rejected",
-                "Request rejected",
-                "Check the request format or retry later.",
+          : e.statusCode === 429
+            ? // The rate limiter's own error, worded as what it is. Under the generic 4xx text
+              // below, a client that was merely fast was told to "check the request format".
+              new Problem(
+                429,
+                "rate-limited",
+                "Too many requests",
+                "This client sent more requests than allowed in a minute. Try again in a minute.",
               )
-            : new Problem(
-                500,
-                "internal-error",
-                "Unexpected error",
-                "The request could not be completed.",
-              );
+            : e.statusCode && e.statusCode >= 400 && e.statusCode < 500
+              ? new Problem(
+                  e.statusCode,
+                  "request-rejected",
+                  "Request rejected",
+                  "Check the request format or retry later.",
+                )
+              : new Problem(
+                  500,
+                  "internal-error",
+                  "Unexpected error",
+                  "The request could not be completed.",
+                );
     // Never log upstream error objects; SDK errors can include credentials or bodies.
     if (problem.status >= 500) request.log.error({ code: problem.code }, "Request failed");
     void reply
