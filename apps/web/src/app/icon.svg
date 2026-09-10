@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Mandate">
+  <title>Mandate</title>
+  <!--
+    The sidebar, shrunk to 16 pixels.
+
+    A tab icon is read at 16px next to a dozen others, so this is the one place the wordmark
+    cannot be set in Geist and left to render: at that size the letterform thins out and the
+    tail of the "m" disappears. It is drawn as a stroked path instead, at a weight that survives
+    the downscale, on the same #202a26 the sidebar uses so the tab and the app read as one thing.
+
+    Deliberately one fixed pair of colours rather than a prefers-color-scheme swap: a favicon is
+    shown against the browser's chrome, not against our page, and a mark that changed with the
+    page theme would be inconsistent with whichever chrome it actually sits in.
+  -->
+  <rect width="64" height="64" rx="14" fill="#202a26" />
+  <path
+    d="M16 44 V28 A8 8 0 0 1 32 28 V44 M32 28 A8 8 0 0 1 48 28 V44"
+    fill="none"
+    stroke="#8ed3a8"
+    stroke-width="7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
