@@ -28,6 +28,14 @@ const schema = z.object({
    * whole execution path can only be exercised between 09:35 and 15:55 ET on a weekday, which
    * makes testing depend on the time of day.
    */
+  /**
+   * This worker drives an isolated demo fork.
+   *
+   * Unlike WORKER_IGNORE_SESSION this is not a safety control being switched off, so it is not
+   * forced off in production: it says what the chain underneath is, and the hosted demo runs
+   * with NODE_ENV=production because it is a real deployment.
+   */
+  MANDATE_DEMO: z.enum(["0", "1"]).default("0"),
   WORKER_IGNORE_SESSION: z.enum(["0", "1"]).default("0"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
@@ -60,6 +68,7 @@ export function loadWorkerConfig(env: Record<string, string | undefined> = proce
     rpcUrl: value.BASE_RPC_URL,
     origin: value.APP_ORIGIN,
     execute,
+    demo: value.MANDATE_DEMO === "1",
     eligibleCountries: countries,
     privy:
       value.PRIVY_APP_ID && value.PRIVY_APP_SECRET && value.PRIVY_AUTHORIZATION_KEY

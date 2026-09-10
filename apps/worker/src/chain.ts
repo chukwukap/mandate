@@ -70,7 +70,12 @@ export function executionSession(now: Date) {
  */
 const ORDER_DEADLINE_MS = 600_000;
 
+/** How often the demo fork's clock is nudged. Matches the local ticker in fork-up.sh. */
+const DEMO_CLOCK_INTERVAL_MS = 10_000;
+
 export class WorkerChain implements Observations, Executor {
+  /** When `alignDemoClock` last ran, so a 2-second cycle does not mine 30 blocks a minute. */
+  private alignedAt = 0;
   readonly reader: BaseReader;
   readonly client;
   private readonly transport: Transport;
@@ -96,6 +101,42 @@ export class WorkerChain implements Observations, Executor {
     this.reader = new BaseReader(this.client);
     this.signer =
       signer ?? (config.execute && config.privy ? new PrivySigner(config.privy) : undefined);
+  }
+  /**
+   * Hold the demo fork's clock against wall time.
+   *
+   * The seven price feeds on a fork are FeedMocks reporting `block.timestamp`, because a pinned
+   * fork freezes the real aggregators' `updatedAt` (apps/api/fork/seed.ts). Admission then
+   * refuses any reference more than 300 seconds old, measured against `Date.now()`. A fork
+   * produces no blocks on its own, so within five minutes of its last one every feed reads as
+   * stale and no strategy can ever execute.
+   *
+   * The hosted demo sat in exactly that state: the API reported prices as fresh because it
+   * judges them against chain time, while the worker refused every strategy because it judges
+   * them against the wall clock. Locally `scripts/dev/fork-up.sh` runs a ticker to prevent this;
+   * a hosted fork has nowhere to run one, so the worker that needs the reference fresh is the
+   * thing that keeps it fresh.
+   *
+   * Best effort: a fork that will not take the call is not a reason to abandon the cycle that
+   * would have reported it.
+   */
+  async alignDemoClock(now = Date.now()) {
+    if (now - this.alignedAt < DEMO_CLOCK_INTERVAL_MS) return;
+    this.alignedAt = now;
+    try {
+      for (const [method, params] of [
+        ["evm_setTime", [Math.floor(now / 1000)]],
+        ["evm_mine", []],
+      ] as const)
+        await fetch(this.config.rpcUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+          signal: AbortSignal.timeout(5000),
+        });
+    } catch {
+      /* Reported by the next admission refusal, which names the stale reference. */
+    }
   }
   verifyMessage(account: Hex, message: string, signature: Hex) {
     return this.reader.verifyMessage(account, message, signature);

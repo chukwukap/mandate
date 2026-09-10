@@ -93,6 +93,9 @@ export class Worker {
         : undefined;
   }
   async cycle(signal: AbortSignal) {
+    // Before anything reads a price: on a demo fork the reference is only as fresh as the last
+    // block, and nothing else produces one.
+    if (this.config.demo) await this.chain.alignDemoClock();
     const active = await this.store.activeExecution();
     await this.lease.heartbeat(this.config.execute && active?.status !== "recovery_required");
     if (signal.aborted) return;

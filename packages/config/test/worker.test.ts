@@ -206,6 +206,8 @@ test("a production worker configuration is loaded whole", () => {
   expect(config).toEqual({
     env: "production",
     ignoreSession: false,
+    // A real deployment, so the demo affordances are off: no fork clock is nudged here.
+    demo: false,
     databaseUrl: required.DATABASE_URL,
     rpcUrl: "https://base-mainnet.example.com/v2/rpc-key",
     origin: "https://app.example.com",
@@ -255,5 +257,31 @@ test("the session override cannot be switched on in production", () => {
       APP_ORIGIN: "http://localhost:3000",
       WORKER_IGNORE_SESSION: "0",
     }).ignoreSession,
+  ).toBe(false);
+});
+
+test("a demo worker says so, and unlike the session bypass it survives production", () => {
+  // MANDATE_DEMO describes the chain underneath, it does not switch a protection off, so it is
+  // not forced off the way WORKER_IGNORE_SESSION is. The hosted demo runs NODE_ENV=production.
+  expect(loadWorkerConfig(env()).demo).toBe(false);
+  expect(loadWorkerConfig(env({ MANDATE_DEMO: "1" })).demo).toBe(true);
+  expect(
+    loadWorkerConfig(
+      env({
+        NODE_ENV: "production",
+        APP_ORIGIN: "https://mandate.example.com",
+        MANDATE_DEMO: "1",
+      }),
+    ).demo,
+  ).toBe(true);
+  // The session bypass, by contrast, is a control and is refused in production.
+  expect(
+    loadWorkerConfig(
+      env({
+        NODE_ENV: "production",
+        APP_ORIGIN: "https://mandate.example.com",
+        WORKER_IGNORE_SESSION: "1",
+      }),
+    ).ignoreSession,
   ).toBe(false);
 });
