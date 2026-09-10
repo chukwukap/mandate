@@ -2,111 +2,99 @@
 
 **Target length:** 4–5 minutes. Read only the quoted narration aloud, at about 125–140 words per minute. Pause briefly on each screen change. Screen directions and checklists are not narration.
 
-**Recording title:** Mandate — automated tokenized-stock strategies on Base
+**Recording title:** Mandate — trading strategies for tokenized stocks on Base
 
-**Demo environment:** <https://mandate.up.railway.app>
+**Demo environment:** <https://mandate.up.railway.app>, a live deployment running against an **isolated Base fork with test funds**. Say that plainly on camera. Fork transactions do not appear on the public Base explorer, and claiming otherwise is the one thing that would undermine an otherwise honest demo.
 
-This is a live deployment anyone can open, running against an **isolated Base fork with test funds**. Say that plainly on camera. Fork transactions will not appear on the public Base explorer, and claiming otherwise is the one thing that would undermine an otherwise honest demo.
+## What this demo has to prove
 
-Because it is live and self-serve, a judge can follow the same path you record. That is the point of demoing here rather than on a laptop.
+Mandate is a **strategy platform**, not a scheduled-buy button. Several Base apps already let someone buy a tokenized stock. The thing to show is that a person can author the strategies traders actually run — dollar-cost averaging, martingale scale-ins, basket rebalancing, and a basis trade that only exists onchain — and run them from a wallet they control, inside limits they signed.
+
+If a viewer comes away thinking "recurring purchases", the demo has failed, however polished it looks. Lead with the strategy chooser and the ladder, not with the weekly buy.
 
 ## Before you press Record
 
-1. Open <https://mandate.up.railway.app> and sign in. Privy creates an embedded wallet for the account on first login; that wallet is the strategy account.
-2. Go to **Portfolio** and press **Get test USDC**. The balance should land at 10,000 test USDC. Do this before recording so you are not filming a loading state — you will point at the button during the demo rather than pressing it.
-3. Decide which story you are telling, and prepare accordingly:
-   - **Recommended — show a completed trade.** Before recording, run one strategy all the way through (steps 4–7 of the script) so a filled order already exists in Activity. During the recording you build a second strategy and stop at review, then cut to the completed one. Nobody waits on camera.
-   - **Riskier — execute live.** Arm during the recording and wait for the fill. It usually lands in well under a minute, but it is a live system and you are betting the take on it.
-4. Confirm **Settings → Automatic buying** is on for your wallet. If it is already on, leave it on and explain it; do not toggle it off just to demonstrate a click.
-5. Use a window at least 1,000 pixels tall. Pick one theme, close developer tools and unrelated tabs, and keep environment files and credentials off camera.
-6. Enable Do Not Disturb, check your microphone, and record only the browser window.
+1. Sign in at <https://mandate.up.railway.app>. Privy creates the embedded wallet that is the strategy account.
+2. **Portfolio → Get test USDC.** Do this before recording so you are not filming a loading state.
+3. **Run one strategy to a fill in advance.** Create the weekly NVIDIA starter, choose *Buy it for me*, turn on automatic buying, and arm it. It fills in about a minute. You need a completed order to point at in section 5, and nobody should watch you wait.
+4. Rehearse section 3 once: New strategy → **Step into Tesla as it falls** → look at the rung table → Review → close without signing. Know where the numbers sit before the take.
+5. Confirm **Settings → Automatic buying** is on for your wallet. Leave it on; do not toggle it off just to demonstrate a click.
+6. Browser on the external 1080p monitor, window maximised, page zoom 110%. Do Not Disturb on, dock hidden, unrelated tabs closed.
 7. Return to **Overview** before starting.
 
 ## Spoken script
 
-### 0:00–0:35 — The problem
+### 0:00–0:30 — What this actually is
 
-**Screen:** Overview. Keep the cursor still.
+**Screen:** Overview. Cursor still.
 
-> Buying a stock is one decision. Following a plan over the next few weeks is a whole series of them: watching the price, remembering your budget, and deciding whether today is the day.
+> Traders don't just buy and hold. They average in over time, they scale into a dip, they rebalance a basket, they trade a price gap. Running any of that has meant handing API keys to a centralised bot, or doing it by hand at the screen.
 >
-> Mandate is a trading workspace for Coinbase tokenized stocks on Base. You write a rule, review exactly what it can spend, and sign it. Mandate watches the market and executes from your own wallet when you have turned automatic buying on.
+> Mandate is a strategy platform for Coinbase's tokenized stocks on Base. You author the strategy, you review exactly what it is allowed to spend, you sign it, and it runs from your own wallet.
+
+### 0:30–1:15 — The strategies
+
+**Screen:** New strategy. Rest on the shape chooser and move down the five options as you name them.
+
+> These are the shapes it can run. Buy at a level you pick. Put the same amount in on a schedule. Step in progressively larger the further it falls, which is a martingale-style scale-in. Keep a basket of all seven names at an even weight. Or buy only when the onchain pool is trading below the reference price.
 >
-> This is running live. I'll show you funding, a strategy, and a completed trade.
+> That last one is worth a moment. It compares the Aerodrome pool against the Chainlink reference and buys the gap. It is a strategy that only exists because these are programmable equities — no broker can offer it, because off-chain there are no two prices to compare.
 
-### 0:35–1:05 — Be honest about the environment, and fund the wallet
+### 1:15–2:15 — Author a real strategy
 
-**Screen:** Portfolio. Point at the wallet address and the **Get test USDC** button.
+**Screen:** Choose **Step into Tesla as it falls**. Show steps, step size, multiplier, then the rung table, then the money and expiry fields.
 
-> This demo runs against an isolated fork of Base with test funds, so nothing here touches real money, and these transactions won't show up on a public explorer.
+> Let's build one properly. Step into Tesla as it falls: four steps, each one four percent lower and one-point-six times larger than the last.
 >
-> Every account gets its own wallet. This is it — deposits arrive here, and buys leave from here. On the demo, this button funds it with test dollars, so you can try the whole flow yourself at this URL.
+> As I set that, Mandate works out the actual ladder — the price every step triggers at, the size of every buy, and the largest single order. That last number is the one that surprises people about martingale sizing, so it is on screen rather than buried.
 >
-> What matters is that the money stays in the user's wallet. There is no shared account holding funds in between.
+> Underneath are the limits: the most any single order can spend, the total budget, and the date it stops. That is the entire authority I am granting.
 
-### 1:05–2:00 — Build a strategy
+**Screen:** Review.
 
-**Screen:** New strategy → the weekly NVIDIA recipe → **Buy it for me** → Review.
+> Before signing, it reads the rule back in plain language, worst case first, and I can open the exact text I am about to sign. This is a forward projection from today's real prices, not a backtest — there is no price history here to invent one from.
 
-> Here's the example: fifty dollars of tokenized NVIDIA every week.
+**Action:** Close the builder without signing.
+
+### 2:15–2:50 — The wallet, and staying in control
+
+**Screen:** Settings → Account. Point at the wallet and the Automatic buying switch.
+
+> Every account gets its own wallet. I fund it directly, and purchases leave from it. Nothing is pooled, and nothing is held by us in between.
 >
-> I pick the NVIDIA recipe and choose automatic buying. I set what each purchase spends, the total budget, and when it expires — so the instruction has a stopping point rather than running forever.
+> Automatic buying is a single switch, granted once for the wallet rather than per strategy, and it is revocable right here. Any individual strategy can also be paused on its own. Pausing stops new work; a transaction already submitted can still settle, and the app says so rather than pretending otherwise.
+
+### 2:50–3:40 — Evidence that it runs
+
+**Screen:** Strategies → the completed weekly NVIDIA strategy → Orders & signals. Then Activity.
+
+> The Tesla ladder is waiting for a dip, so it hasn't fired. Here is one that has.
 >
-> Before signing, Mandate shows the rule back to me: what it will do, the most it can ever spend, and the exact text I'm signing. Signing records the instruction. It does not hand over the wallet.
+> Mandate signed two transactions from my wallet: an approval, then the swap. Fifty dollars of USDC left the wallet and tokenized NVIDIA arrived in it.
 >
-> I'll leave this one at review and show you a strategy that has already run.
+> The completed order is here, the same event appears in Activity, and every evaluation is recorded — including the checks that decided to do nothing. You should be able to answer what your strategy did, what it spent, and whether it finished.
 
-**Action:** Close the builder. Do not imply this unsigned example is the completed strategy you show next.
+### 3:40–4:15 — Where the assets are, and close
 
-### 2:00–2:40 — Wallet and user control
+**Screen:** Portfolio, showing the NVDAc holding and reduced cash.
 
-**Screen:** Settings → Account. Point at the wallet and the Automatic buying control.
-
-> Automatic buying is a single, separate switch. Turning it on lets Mandate's signer execute from this wallet while I'm away — one decision, once, rather than an approval for every strategy.
+> And the holding is in the same wallet that paid for it.
 >
-> There's no shared spender wallet and no smart-wallet requirement. And it's reversible: this switch turns it off, and any individual strategy can be paused on its own.
+> That's Mandate: the strategies traders actually run, expressed in language you can read, bounded by limits you sign, and executed from a wallet you keep control of.
 >
-> Pausing stops new work. A transaction already submitted can still settle, and the interface says so rather than pretending otherwise.
-
-### 2:40–3:35 — Evidence that it executed
-
-**Screen:** Strategies → the completed strategy → Orders & signals. Then Activity.
-
-> This is the strategy that already ran.
->
-> Mandate signed two transactions from my wallet: an approval, then the swap. Fifty test dollars left the wallet and tokenized NVIDIA arrived in the same wallet.
->
-> The completed order is here, and the same event appears in Activity. That link between the instruction and the result is the part I care about — you should be able to answer what your strategy did, what it spent, and whether it finished.
->
-> Because this ran on a fork, I'm showing the result in the app rather than presenting it as a mainnet explorer transaction.
-
-### 3:35–4:15 — Where the assets are
-
-**Screen:** Portfolio, showing the NVDAc holding and the reduced cash balance.
-
-> And here's the holding, in the same wallet that paid for it. Cash went down, the position appeared.
->
-> That's the whole loop: fund a wallet, write a rule, review the limits, sign, and let it run — with the assets ending up somewhere the user controls.
-
-### 4:15–4:45 — Close
-
-**Screen:** Overview.
-
-> Mandate makes tokenized equities useful beyond a single swap: a plan you can express, limits you can read, and a record of what actually happened.
->
-> It's live at mandate dot up dot railway dot app, with test funds, so you can run this exact flow yourself.
+> It's live at mandate dot up dot railway dot app, with test funds, so you can build one yourself.
 
 ## After recording
 
-- Watch it once for anything that overstates the system: this is a fork, executions are test funds, and no claim about mainnet volume or real custody should survive the edit.
-- Confirm no credential, private key, or environment file appears in any frame.
-- Post the demo on X tagging **@buildonbase**, then submit via the Builder Quest form.
+- Watch it once for anything that overstates the system. This is a fork, executions use test funds, and no claim about mainnet volume or real custody should survive the edit.
+- Check that no credential, private key, or environment file appears in any frame.
+- Post on X tagging **@buildonbase**, then submit the Builder Quest form.
 
 ## If something misbehaves mid-recording
 
 | Symptom | Cause | What to do |
 |---|---|---|
-| **Get test USDC** does nothing | Wallet already funded above the threshold | Expected — it refuses to top up. Carry on. |
-| A strategy stays "Automatic buying is off" | Delegation not registered yet | Settings → toggle Automatic buying, then reopen the strategy. |
-| An armed strategy does not fill | Worker or fork restarting | Check `/api/mandate/ready` shows `execution_available: true`, then re-arm. |
+| **Get test USDC** does nothing | Wallet already funded above the threshold | Expected. It refuses to top up. Carry on. |
+| Strategy says "Automatic buying is off" | Delegation is granted per wallet | Settings → Automatic buying, then reopen the strategy. |
+| An armed strategy does not fill | Failure backoff from an earlier attempt | Pause and re-arm; that resets the next check to now. |
 | Any action fails with a permission error | `APP_ORIGIN` no longer matches the domain | The API and worker must both carry the exact origin the browser uses. |
