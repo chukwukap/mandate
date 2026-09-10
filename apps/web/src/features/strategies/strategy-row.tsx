@@ -3,6 +3,22 @@ import { Status } from "../../components/status";
 import { currency } from "../../lib/format";
 import { StockLogo } from "../market/stock-logo";
 import type { Strategy } from "./types";
+/**
+ * How much of the signed budget is spent, as a percentage, or zero when that is not known.
+ *
+ * The arithmetic this replaces was `Math.min(100, spent / Math.max(1, lifetime) * 100)`, and
+ * `Math.max(1, NaN)` is NaN rather than 1 — so a strategy missing either figure produced
+ * `width: NaN%`, which CSS discards, leaving the bar at its natural full width. A row we had no
+ * numbers for rendered as a fully spent budget, which is the most alarming thing it could have
+ * said and the one thing we did not know.
+ */
+export function budgetFilled(spent: unknown, lifetime: unknown): number {
+  const used = Number(spent);
+  const cap = Number(lifetime);
+  if (!Number.isFinite(used) || !Number.isFinite(cap) || cap <= 0) return 0;
+  return Math.max(0, Math.min(100, (used / cap) * 100));
+}
+
 export function StrategyRow({
   strategy,
   full = false,
@@ -51,11 +67,7 @@ export function StrategyRow({
             {currency(strategy.spent)} <small>/ {currency(strategy.lifetime)}</small>
           </span>
           <div className="budget-track">
-            <i
-              style={{
-                width: `${Math.min(100, (Number(strategy.spent) / Math.max(1, Number(strategy.lifetime))) * 100)}%`,
-              }}
-            />
+            <i style={{ width: `${budgetFilled(strategy.spent, strategy.lifetime)}%` }} />
           </div>
         </div>
       )}

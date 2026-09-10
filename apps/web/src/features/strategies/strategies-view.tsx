@@ -62,7 +62,12 @@ export function StrategiesView({
         <div>
           <span>Orders recorded</span>
           <strong>
-            {strategies.reduce((n, s) => n + s.orders, 0)}
+            {/* Only the rows that reported a count. One instance without it turned the whole
+                figure into NaN, which is worse than a total that is quietly short. */}
+            {strategies.reduce(
+              (n, s) => n + (Number.isFinite(Number(s.orders)) ? Number(s.orders) : 0),
+              0,
+            )}
             <small>across loaded strategies</small>
           </strong>
         </div>
